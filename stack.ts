@@ -6,7 +6,7 @@ import {Node, Tree, TreeBuffer, SyntaxTree, MAX_BUFFER_LENGTH, MAX_BUFFER_SIZE} 
 const VALUE_INDEX_SIZE = 15, VALUE_INDEX_MASK = 2**VALUE_INDEX_SIZE - 1
 
 const BADNESS_DELETE = 100, BADNESS_RECOVER = 90
-const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between which stacks are less agressively pruned
+export const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between which stacks are less agressively pruned
 
 // (FIXME: this will go out of date before I know it, revisit at some
 // point)
@@ -35,7 +35,7 @@ const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between which st
 // applied when its badness is < BADNESS_WILD, or no better parse
 // exists at that point.
 
-class Stack {
+export class Stack {
   constructor(readonly parser: Parser,
               // Holds state, pos, value stack pos (15 bits array index, 15 bits buffer index) triplets for all but the top state
               readonly stack: number[],

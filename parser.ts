@@ -16,9 +16,26 @@ export class Token {
 export interface InputStream {
   pos: number
   next(): number
-  adv(ch: number): void
-  goto(n: number): void
+  adv(): void
+  goto(n: number): InputStream
   read(from: number, to: number): string
+}
+
+export class StringInput implements InputStream {
+  pos = 0
+
+  constructor(readonly string: string) {}
+
+  next(): number {
+    if (this.pos == this.string.length) return -1
+    return this.string.charCodeAt(this.pos)
+  }
+  
+  adv() { this.pos++ }
+
+  goto(n: number) { this.pos = n; return this }
+
+  read(from: number, to: number): string { return this.string.slice(from, to) }
 }
 
 export type Tokenizer = (input: InputStream) => number
@@ -35,7 +52,12 @@ export class ParseState {
               readonly skip: Tokenizer,
               readonly tokenizers: ReadonlyArray<Tokenizer>) {}
 
-  hasAction(terminal: number) { return lookup(this.actions, terminal) != 0 }
+  hasAction(terminal: number, startIndex = 0) {
+    for (let i = startIndex; i < this.actions.length; i+= 2)
+      if (this.actions[i] == terminal) return true
+    return false
+  }
+
   anyReduce() {
     for (let i = 0; i < this.actions.length; i += 2) {
       let action = this.actions[i + 1]

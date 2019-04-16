@@ -7,7 +7,11 @@ export interface ChangedRange {
   toB: number
 }
 
-export let MAX_BUFFER_LENGTH = 2048
+export const DEFAULT_BUFFER_LENGTH = 2048
+export let MAX_BUFFER_LENGTH = DEFAULT_BUFFER_LENGTH
+
+export function setBufferLength(len: number) { MAX_BUFFER_LENGTH = len }
+
 // The size after which a buffer must be split on the next shift or
 // childless reduce (to avoid overflowing the value index bits)
 export const MAX_BUFFER_SIZE = 2**16 - 1
