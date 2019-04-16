@@ -2,6 +2,9 @@
 // the first 20 bits holding the term that's being reduced, and the
 // bits after that the number of values consumed.
 
+import {parse} from "./parse"
+import {SyntaxTree} from "./tree"
+
 export const REDUCE_NAME_SIZE = 20, REDUCE_NAME_MASK = 2**REDUCE_NAME_SIZE - 1
 
 export const none: ReadonlyArray<any> = []
@@ -21,7 +24,7 @@ export interface InputStream {
   read(from: number, to: number): string
 }
 
-export class StringInput implements InputStream {
+export class StringStream implements InputStream {
   pos = 0
 
   constructor(readonly string: string) {}
@@ -84,6 +87,8 @@ export const FIRST_ANON_TERM = 2 * FIRST_REPEAT_TERM, MAX_REPEAT_TERM = FIRST_AN
 
 export const TERM_ERR = 0, TERM_EOF = MAX_REPEAT_TERM + 1
 
+export type ParseOptions = {cache?: SyntaxTree | null, strict?: boolean, bufferLength?: number}
+
 export class Parser {
   constructor(readonly states: ReadonlyArray<ParseState>,
               readonly tags: ReadonlyArray<string>,
@@ -93,5 +98,9 @@ export class Parser {
 
   getTag(term: number): string | null {
     return term >= MAX_TAGGED_TERM ? null : this.tags[term]
+  }
+
+  parse(input: InputStream, options?: ParseOptions) {
+    return parse(input, this, options)
   }
 }

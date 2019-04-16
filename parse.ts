@@ -1,5 +1,5 @@
 import {Stack, BADNESS_WILD} from "./stack"
-import {Parser, ParseState, Tokenizer, InputStream,
+import {Parser, ParseOptions, ParseState, Tokenizer, InputStream,
         TERM_EOF, TERM_ERR, MAX_TAGGED_TERM} from "./parser"
 import {Node, Tree, TreeBuffer, SyntaxTree, DEFAULT_BUFFER_LENGTH, setBufferLength} from "./tree"
 
@@ -122,8 +122,6 @@ class TokenCache {
     return this.tokens[0]
   }
 }
-
-export type ParseOptions = {cache?: SyntaxTree | null, strict?: boolean, bufferLength?: number}
 
 export function parse(input: InputStream, parser: Parser, {
   cache = null,

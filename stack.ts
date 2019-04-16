@@ -88,7 +88,7 @@ export class Stack {
 
   reduce(depth: number, tag: number) {
     if (depth == 0) {
-      this.pushState(this.parser.states[this.state.getGoto(name)], this.pos)
+      this.pushState(this.parser.states[this.state.getGoto(tag)], this.pos)
       return
     }
 
@@ -118,7 +118,7 @@ export class Stack {
         pushed = true
       }
       if (!pushed) {
-        this.values.push(this.reduceValue(stackIndex, stackOffset, start).toNode(name, length))
+        this.values.push(this.reduceValue(stackIndex, stackOffset, start).toNode(tag, length))
         this.valueInfo.push(start)
       }
     } else if (tag <= MAX_REPEAT_TERM && this.pos - start > MAX_BUFFER_LENGTH) {
@@ -129,7 +129,7 @@ export class Stack {
       this.valueInfo.push(start)
     }
     let baseState = this.parser.states[this.stack[base - 3]]
-    this.state = this.parser.states[baseState.getGoto(name)]
+    this.state = this.parser.states[baseState.getGoto(tag)]
     if (depth > 1) this.stack.length = base
   }
 
