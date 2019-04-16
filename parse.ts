@@ -1,5 +1,5 @@
 import {Term, termTable, Grammar} from "../grammar/grammar"
-import {Token, Tokenizer, State as TokState} from "../grammar/token"
+import {Token, Tokenizer, State as TokState, InputStream} from "../grammar/token"
 import {State, Shift, Reduce} from "../grammar/automaton"
 import log from "../log"
 import {takeFromHeap, addToHeap} from "./heap"
@@ -582,8 +582,25 @@ class NodeCursor {
   }
 }
 
-let skipTok = new Token
+class StringInput implements InputStream {
+  pos = 0
 
+  constructor(readonly string: string) {}
+
+  next(): number {
+    if (this.pos == this.string.length) return -1
+    return this.string.charCodeAt(this.pos)
+  }
+  
+  adv(n: number) {
+    this.pos += (n < 0x10000 ? 1 : 2)
+  }
+
+  goto(n: number) { this.pos = n }
+
+  read(from: number, to: number): string { return this.string.slice(from, to) }
+}
+  
 class TokenCache {
   tokens: Token[] = []
   tokenizers: Tokenizer[] = []
@@ -593,18 +610,18 @@ class TokenCache {
   skipPos = 0
   skipTo = 0
   skipContent: number[] = []
-  skipType: TokState | null = null
+  skipType: ((input: InputStream) => number) | null = null
 
-  update(grammar: Grammar, tokenizers: ReadonlyArray<Tokenizer>, input: string, pos: number) {
-    if (pos > this.pos) { this.index = 0; this.pos = pos }
+  update(grammar: Grammar, tokenizers: ReadonlyArray<Tokenizer>, input: StringInput) {
+    if (input.pos > this.pos) { this.index = 0; this.pos = input.pos }
     tokenize: for (let tokenizer of tokenizers) {
       for (let i = 0; i < this.index; i++) if (this.tokenizers[i] == tokenizer) continue tokenize
       let token
       if (this.tokens.length <= this.index) this.tokens.push(token = new Token)
       else token = this.tokens[this.index]
       this.tokenizers[this.index++] = tokenizer
-      if (!tokenizer.simulate(input, pos, token)) {
-        if (token.start == input.length) {
+      if (!tokenizer.simulate(input, token, grammar.terms.terms)) {
+        if (input.next() < 0) {
           token.end = token.start
           token.term = grammar.terms.eof
         } else {
@@ -615,16 +632,16 @@ class TokenCache {
     }
   }
 
-  updateSkip(skip: TokState, input: string, pos: number): number {
-    if (pos == this.skipPos && skip == this.skipType) return this.skipTo
+  updateSkip(grammar: Grammar, skip: (input: InputStream) => number, input: InputStream): number {
+    if (input.pos == this.skipPos && skip == this.skipType) return this.skipTo
     this.skipType = skip
-    this.skipPos = pos
+    this.skipPos = input.pos
     this.skipContent.length = 0
     for (;;) {
-      let ok = skip.simulate(input, pos, skipTok)
-      if (!ok || skipTok.end == pos) return this.skipTo = pos
-      if (ok.tag) this.skipContent.push(pos, skipTok.end, ok.id)
-      pos = skipTok.end
+      let start = input.pos, result = skip(input)
+      if (result < 0 || input.pos == start) return this.skipTo = start
+      let term = grammar.terms.terms[result]
+      if (term.tag) this.skipContent.push(start, input.pos, term.id)
     }
   }
 
@@ -663,18 +680,20 @@ function compareStacks(a: Stack, b: Stack) {
   return a.pos - b.pos || a.badness - b.badness
 }
 
-export function parseInner(input: string, grammar: Grammar, cache: SyntaxTree | null, strict: boolean): SyntaxTree {
+export function parseInner(inputText: string, grammar: Grammar, cache: SyntaxTree | null, strict: boolean): SyntaxTree {
   let verbose = log.parse
   let parses = [Stack.start(grammar)]
   let cacheCursor = cache && new CacheCursor(cache)
+  let input = new StringInput(inputText)
 
   let tokens = new TokenCache
 
   parse: for (;;) {
     let stack = takeFromHeap(parses, compareStacks), pos = stack.pos
+    input.goto(pos)
 
     let tokenizers = grammar.tokenTable[stack.state.id]
-    if (tokenizers.length && tokenizers[0].skip) pos = tokens.updateSkip(tokenizers[0].skip, input, pos)
+    if (tokenizers.length && tokenizers[0].skip) pos = tokens.updateSkip(grammar, tokenizers[0].skip, input)
 
     if (cacheCursor && !stack.state.ambiguous) { // FIXME this isn't robust
       for (let cached = cacheCursor.nodeAt(pos); cached;) {
@@ -692,7 +711,8 @@ export function parseInner(input: string, grammar: Grammar, cache: SyntaxTree | 
       }
     }
 
-    tokens.update(grammar, tokenizers, input, pos)
+    input.goto(pos)
+    tokens.update(grammar, tokenizers, input)
 
     let sawEof = false, state = stack.state, advanced = false
     for (let i = 0; i < tokens.index; i++) {
@@ -721,11 +741,13 @@ export function parseInner(input: string, grammar: Grammar, cache: SyntaxTree | 
     // If we're here, the stack failed to advance normally
 
     let token = tokens.some(), term = token.specialized || token.term
-    if (term.eof) return stack.toTree()
+    if (term.eof) {
+      stack.shiftSkipped(tokens.skipContent)
+      return stack.toTree()
+    }
 
     if (!strict &&
         !(stack.badness > BADNESS_WILD && parses.some(s => s.pos >= stack.pos && s.badness <= stack.badness))) {
-      console.log("REC")
       let inserted = stack.recoverByInsert(term, token.start, token.end)
       if (inserted) {
         if (verbose) console.log("insert to " + inserted)
