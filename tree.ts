@@ -7,12 +7,10 @@ export interface ChangedRange {
   toB: number
 }
 
-const VALUE_INDEX_SIZE = 15, VALUE_INDEX_MASK = 2**VALUE_INDEX_SIZE - 1
-
-let MAX_BUFFER_LENGTH = 2048
+export let MAX_BUFFER_LENGTH = 2048
 // The size after which a buffer must be split on the next shift or
 // childless reduce (to avoid overflowing the value index bits)
-const MAX_BUFFER_SIZE = VALUE_INDEX_MASK << 1
+export const MAX_BUFFER_SIZE = 2**16 - 1
 
 const BALANCE_BRANCH_FACTOR = 5
 

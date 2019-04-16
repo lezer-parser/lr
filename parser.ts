@@ -26,13 +26,32 @@ export type Tokenizer = (input: InputStream) => number
 export function noToken(input: InputStream) { return -1 }
 
 export class ParseState {
-  constructor(readonly actions: ReadonlyArray<number>,
+  constructor(readonly id: number,
+              readonly actions: ReadonlyArray<number>,
               readonly goto: ReadonlyArray<number>,
               readonly recover: ReadonlyArray<number>,
               readonly alwaysReduce: number,
               readonly defaultReduce: number,
               readonly skip: Tokenizer,
               readonly tokenizers: ReadonlyArray<Tokenizer>) {}
+
+  hasAction(terminal: number) { return lookup(this.actions, terminal) != 0 }
+  anyReduce() {
+    for (let i = 0; i < this.actions.length; i += 2) {
+      let action = this.actions[i + 1]
+      if (action > 0) return action
+    }
+    return 0
+  }
+  // Zero means no entry found, otherwise it'll be a state id (never
+  // zero because no goto edges to the start state exist)
+  getGoto(term: number) { return lookup(this.goto, term) }
+  getRecover(terminal: number) { return lookup(this.recover, terminal) }
+}
+
+function lookup(actions: ReadonlyArray<number>, term: number) {
+  for (let i = 0; i < actions.length; i+= 2) if (actions[i] == term) return actions[i + 1]
+  return 0
 }
 
 // Terms can be tagged (in which case they need to be included in the
