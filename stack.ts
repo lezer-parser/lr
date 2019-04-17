@@ -90,7 +90,7 @@ export class Stack {
     let depth = action >> REDUCE_NAME_SIZE, tag = action & REDUCE_NAME_MASK
     if (depth == 0) {
       this.pushState(this.parser.states[this.state.getGoto(tag)], this.pos)
-      return this
+      return
     }
 
     let base = this.stack.length - ((depth - 1) * 3)
@@ -132,7 +132,6 @@ export class Stack {
     let baseState = this.parser.states[this.stack[base - 3]]
     this.state = this.parser.states[baseState.getGoto(tag)]
     if (depth > 1) this.stack.length = base
-    return this
   }
 
   shiftValue(term: number, start: number, end: number, childCount = 0) {
@@ -158,7 +157,6 @@ export class Stack {
       if (next <= MAX_TAGGED_TERM) this.shiftValue(next, nextStart, nextEnd)
       this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
     }
-    return this
   }
 
   useCached(value: Node, start: number, next: ParseState) {
@@ -191,7 +189,7 @@ export class Stack {
   canRecover(next: number) {
     // Scan for a state that has either a direct action or a recovery
     // action for next, without actually building up a new stack
-    // FIXME this can continue infinitely without the i < 100 limit
+    // FIXME this can continue infinitely without the i < 100 limit, should built up a set of visited states
     for (let top = this.state, rest = this.stack, offset = rest.length, i = 0; i < 100; i++) {
       if (top.hasAction(next) || top.getRecover(next) != 0) return true
       // Find a way to reduce from here

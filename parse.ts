@@ -3,6 +3,8 @@ import {Parser, ParseOptions, ParseState, Tokenizer, InputStream,
         TERM_EOF, TERM_ERR, MAX_TAGGED_TERM} from "./parser"
 import {Node, Tree, TreeBuffer, SyntaxTree, DEFAULT_BUFFER_LENGTH, setBufferLength} from "./tree"
 
+const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
+
 class CacheCursor {
   trees: Tree[]
   start = [0]
@@ -67,6 +69,8 @@ class TokenCache {
 
   update(parser: Parser, tokenizers: ReadonlyArray<Tokenizer>, input: InputStream, pos: number) {
     if (pos > this.pos) { this.index = 0; this.pos = pos }
+    // FIXME this doesn't actually communicate to the caller which of
+    // the cached tokenizers are relevant in the current state
     tokenize: for (let tokenizer of tokenizers) {
       for (let i = 0; i < this.index; i++) if (this.tokenizers[i] == tokenizer) continue tokenize
       let token
@@ -128,7 +132,6 @@ export function parse(input: InputStream, parser: Parser, {
   strict = false,
   bufferLength = DEFAULT_BUFFER_LENGTH
 }: ParseOptions = {}): SyntaxTree {
-
   setBufferLength(bufferLength)
   let parses = [Stack.start(parser)]
   let cacheCursor = cache && new CacheCursor(cache)
@@ -143,6 +146,7 @@ export function parse(input: InputStream, parser: Parser, {
         let match = stack.state.getGoto(cached.tag)
         if (match) {
           stack.useCached(cached, start, parser.states[match])
+          if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.tag)})`)
           stack.put(parses)
           continue parse
         }
@@ -154,7 +158,9 @@ export function parse(input: InputStream, parser: Parser, {
     }
 
     if (stack.state.alwaysReduce >= 0) {
-      stack.reduce(stack.state.alwaysReduce).put(parses)
+      stack.reduce(stack.state.alwaysReduce)
+      stack.put(parses)
+      if (verbose) console.log(stack + " (via always-reduce)")
       continue
     }
 
@@ -172,11 +178,14 @@ export function parse(input: InputStream, parser: Parser, {
           if (term == TERM_EOF) sawEof = true
           advanced = true
           let localStack = stack
-          if (stack.state.hasAction(token.term, k + 2) ||
-              token.specialized >= 0 && stack.state.hasAction(token.specialized, k + 2) ||
+          if (state.hasAction(token.term, k + 2) ||
+              token.specialized >= 0 && state.hasAction(token.specialized, k + 2) ||
               tokens.hasOtherMatch(state, i + 1, sawEof))
             localStack = stack.split()
-          localStack.apply(action, term, token.start, token.end, tokens.skipContent).put(parses, action < 0)
+          localStack.apply(action, term, token.start, token.end, tokens.skipContent)
+          if (verbose) console.log(localStack + ` (via ${action < 0 ? "shift" : "reduce"} for ${
+            parser.getName(term)} @ ${token.start}${localStack == stack ? "" : ", split"})`)
+          localStack.put(parses, action < 0)
           j = 0 // Don't try a non-specialized version of a token when the specialized one matches
         }
       }
@@ -195,9 +204,13 @@ export function parse(input: InputStream, parser: Parser, {
     if (!strict &&
         !(stack.badness > BADNESS_WILD && parses.some(s => s.pos >= stack.pos && s.badness <= stack.badness))) {
       let inserted = stack.recoverByInsert(term, token.start, token.end)
-      if (inserted) inserted.put(parses)
+      if (inserted) {
+        if (verbose) console.log(inserted + " (via recover-insert)")
+        inserted.put(parses)
+      }
 
       stack.recoverByDelete(term, token.start, token.end, tokens.skipContent)
+      if (verbose) console.log(stack + " (via recover-delete)")
       stack.put(parses)
     } else if (!parses.length) {
       // Only happens in strict mode

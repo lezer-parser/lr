@@ -62,6 +62,7 @@ export class ParseState {
   }
 
   anyReduce() {
+    if (this.alwaysReduce >= 0) return this.alwaysReduce
     for (let i = 0; i < this.actions.length; i += 2) {
       let action = this.actions[i + 1]
       if (action > 0) return action

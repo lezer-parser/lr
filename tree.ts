@@ -35,6 +35,7 @@ export class Tree {
     return last < 0 ? 0 : this.positions[last] + this.children[last].length
   }
 
+  // FIXME this should unwrap nodes with the matching tag to prevent repeated reuse from creating an unbalanced tree
   balanceRange(tag: number, from: number, to: number): Node {
     let start = this.positions[from], length = (this.positions[to - 1] + this.children[to - 1].length) - start
     if (from == to - 1 && start == 0) {
