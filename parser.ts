@@ -7,8 +7,6 @@ import {SyntaxTree} from "./tree"
 
 export const REDUCE_NAME_SIZE = 20, REDUCE_NAME_MASK = 2**REDUCE_NAME_SIZE - 1
 
-export const none: ReadonlyArray<any> = []
-
 export class Token {
   public start = 0
   public end = 0
@@ -18,6 +16,7 @@ export class Token {
 
 export interface InputStream {
   pos: number
+  length: number
   next(): number
   adv(): void
   goto(n: number): InputStream
@@ -28,6 +27,8 @@ export class StringStream implements InputStream {
   pos = 0
 
   constructor(readonly string: string) {}
+
+  get length() { return this.string.length }
 
   next(): number {
     if (this.pos == this.string.length) return -1
@@ -55,11 +56,7 @@ export class ParseState {
               readonly skip: Tokenizer,
               readonly tokenizers: ReadonlyArray<Tokenizer>) {}
 
-  hasAction(terminal: number, startIndex = 0) {
-    for (let i = startIndex; i < this.actions.length; i+= 2)
-      if (this.actions[i] == terminal) return true
-    return false
-  }
+  hasAction(terminal: number) { return lookup(this.actions, terminal) != 0 }
 
   anyReduce() {
     if (this.alwaysReduce >= 0) return this.alwaysReduce

@@ -59,6 +59,7 @@ class Token {
 class TokenCache {
   tokens: Token[] = []
   tokenizers: Tokenizer[] = []
+  actions: number[] = []
   pos = 0
   index = 0
 
@@ -67,35 +68,54 @@ class TokenCache {
   skipContent: number[] = []
   skipType: ((input: InputStream) => number) | null = null
 
-  update(parser: Parser, tokenizers: ReadonlyArray<Tokenizer>, input: InputStream, pos: number) {
+  actionsFor(parser: Parser, state: ParseState, input: InputStream, pos: number) {
     if (pos > this.pos) { this.index = 0; this.pos = pos }
-    // FIXME this doesn't actually communicate to the caller which of
-    // the cached tokenizers are relevant in the current state
-    tokenize: for (let tokenizer of tokenizers) {
-      for (let i = 0; i < this.index; i++) if (this.tokenizers[i] == tokenizer) continue tokenize
+    let actionIndex = 0
+    for (let tokenizer of state.tokenizers) {
       let token
-      if (this.tokens.length <= this.index) this.tokens.push(token = new Token)
-      else token = this.tokens[this.index]
-      this.tokenizers[this.index++] = tokenizer
+      for (let i = 0; i < this.index; i++) if (this.tokenizers[i] == tokenizer) token = this.tokens[i]
+      if (!token) {
+        if (this.tokens.length <= this.index) this.tokens.push(token = new Token)
+        else token = this.tokens[this.index]
+        this.tokenizers[this.index++] = tokenizer
 
-      let result = tokenizer(input.goto(pos))
-      token.start = pos
-      token.end = input.pos
-      token.specialized = -1
-      if (result >= 0) {
-        token.term = result
-        let specIndex = parser.specialized.indexOf(result)
-        if (specIndex >= 0) {
-          let found = parser.specializations[specIndex][input.read(pos, token.end)]
-          if (found != null) token.specialized = found
+        let result = tokenizer(input.goto(pos))
+        token.start = pos
+        token.specialized = -1
+        if (result < 0) {
+          token.term = TERM_ERR
+          token.end = pos + 1
+        } else {
+          token.term = result
+          token.end = input.pos
+          let specIndex = parser.specialized.indexOf(result)
+          if (specIndex >= 0) {
+            let found = parser.specializations[specIndex][input.read(pos, token.end)]
+            if (found != null) token.specialized = found
+          }
         }
-      } else if (input.next() < 0) {
-        token.term = TERM_EOF
-      } else {
-        token.end++
-        token.term = TERM_ERR
       }
+      if (token.specialized > -1) {
+        let initialIndex = actionIndex
+        actionIndex = this.addActions(state, token.specialized, token.end, actionIndex)
+        if (actionIndex > initialIndex) continue
+      }
+      if (token.term != TERM_ERR)
+        actionIndex = this.addActions(state, token.term, token.end, actionIndex)
     }
+    if (pos == input.length)
+      actionIndex = this.addActions(state, TERM_EOF, pos, actionIndex)
+    if (this.actions.length > actionIndex) this.actions.length = actionIndex
+    return this.actions
+  }
+
+  addActions(state: ParseState, token: number, end: number, index: number) {
+    for (let i = 0; i < state.actions.length; i += 2) if (state.actions[i] == token) {
+      this.actions[index++] = state.actions[i + 1]
+      this.actions[index++] = token
+      this.actions[index++] = end
+    }
+    return index
   }
 
   updateSkip(skip: Tokenizer, input: InputStream, pos: number): number {
@@ -109,16 +129,6 @@ class TokenCache {
       if (result < 0 || input.pos == start) return this.skipTo = start
       if (result <= MAX_TAGGED_TERM) this.skipContent.push(start, input.pos, result)
     }
-  }
-
-  hasOtherMatch(state: ParseState, tokenIndex: number, sawEof: boolean) {
-    for (let i = tokenIndex; i < this.index; i++) {
-      let token = this.tokens[i]
-      if (token.term == TERM_ERR || token.term == TERM_EOF && sawEof) continue
-      if (token.specialized > -1 && state.hasAction(token.specialized) || state.hasAction(token.term))
-        return true
-    }
-    return false
   }
 
   some() {
@@ -164,39 +174,22 @@ export function parse(input: InputStream, parser: Parser, {
       continue
     }
 
-    tokens.update(parser, stack.state.tokenizers, input, start)
-
-    let sawEof = false, state = stack.state, advanced = false
-    for (let i = 0; i < tokens.index; i++) {
-      let token = tokens.tokens[i]
-      if (token.term == TERM_ERR) continue
-      if (sawEof && token.term == TERM_EOF) continue
-      for (let j = token.specialized ? 1 : 0; j >= 0; j--) {
-        let term = j ? token.specialized : token.term
-        for (let k = 0, actions = state.actions; k < actions.length; k += 2) if (actions[k] == term) {
-          let action = actions[k + 1]
-          if (term == TERM_EOF) sawEof = true
-          advanced = true
-          let localStack = stack
-          if (state.hasAction(token.term, k + 2) ||
-              token.specialized >= 0 && state.hasAction(token.specialized, k + 2) ||
-              tokens.hasOtherMatch(state, i + 1, sawEof))
-            localStack = stack.split()
-          localStack.apply(action, term, token.start, token.end, tokens.skipContent)
-          if (verbose) console.log(localStack + ` (via ${action < 0 ? "shift" : "reduce"} for ${
-            parser.getName(term)} @ ${token.start}${localStack == stack ? "" : ", split"})`)
-          localStack.put(parses, action < 0)
-          j = 0 // Don't try a non-specialized version of a token when the specialized one matches
-        }
-      }
+    let actions = tokens.actionsFor(parser, stack.state, input, start)
+    for (let i = 0; i < actions.length;) {
+      let action = actions[i++], term = actions[i++], end = actions[i++]
+      let localStack = i == actions.length ? stack : stack.split()
+      localStack.apply(action, term, start, end, tokens.skipContent)
+      if (verbose) console.log(localStack + ` (via ${action < 0 ? "shift" : "reduce"} for ${
+        parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
+      localStack.put(parses, action < 0)
     }
-    if (advanced) continue
+    if (actions.length > 0) continue
 
     // If we're here, the stack failed to advance normally
 
     let token = tokens.some()
     let  term = token.specialized > -1 ? token.specialized : token.term
-    if (term == TERM_EOF) {
+    if (start == input.length) {
       stack.shiftSkipped(tokens.skipContent)
       return stack.toTree()
     }
