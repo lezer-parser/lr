@@ -143,7 +143,7 @@ export class Stack {
       this.valueInfo.push(0)
     }
     if (term == TERM_ERR && last.length && last[last.length - 4] == term &&
-        (start == end || last[last.length - 3] == start)) return
+        (start == end || last[last.length - 2] >= start)) return
     last.push(term, start, end, childCount)
   }
 
