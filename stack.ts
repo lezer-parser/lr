@@ -5,7 +5,7 @@ import {Node, Tree, TreeBuffer, SyntaxTree, MAX_BUFFER_LENGTH, MAX_BUFFER_SIZE} 
 
 const VALUE_INDEX_SIZE = 15, VALUE_INDEX_MASK = 2**VALUE_INDEX_SIZE - 1
 
-const BADNESS_DELETE = 100, BADNESS_RECOVER = 90
+const BADNESS_DELETE = 100, BADNESS_RECOVER = 100
 export const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between which stacks are less agressively pruned
 
 // (FIXME: this will go out of date before I know it, revisit at some
@@ -189,16 +189,16 @@ export class Stack {
   canRecover(next: number) {
     // Scan for a state that has either a direct action or a recovery
     // action for next, without actually building up a new stack
-    // FIXME this can continue infinitely without the i < 100 limit, should built up a set of visited states
+    // FIXME this can continue infinitely without the i < 100 limit, should build up a set of visited states
     for (let top = this.state, rest = this.stack, offset = rest.length, i = 0; i < 100; i++) {
       if (top.hasAction(next) || top.getRecover(next) != 0) return true
       // Find a way to reduce from here
       let reduce = top.anyReduce()
-      if (reduce < 0 && (reduce = top.defaultReduce) < 0) return false
+      if (reduce == 0 && (reduce = top.defaultReduce) < 0) return false
       let term = reduce & REDUCE_NAME_MASK, n = reduce >> REDUCE_NAME_SIZE
-      if (n == 0) { // FIXME
-        rest = rest.slice()
-        rest.push(term, 0, 0)
+      if (n == 0) {
+        if (rest == this.stack) rest = rest.slice()
+        rest.push(top.id, 0, 0)
         offset += 3
       } else {
         offset -= (n - 1) * 3
