@@ -153,6 +153,11 @@ export function parse(input: InputStream, parser: Parser, {
       }
     }
 
+    if (stack.state.alwaysReduce >= 0) {
+      stack.reduce(stack.state.alwaysReduce).put(parses)
+      continue
+    }
+
     tokens.update(parser, stack.state.tokenizers, input, start)
 
     let sawEof = false, state = stack.state, advanced = false
@@ -171,8 +176,7 @@ export function parse(input: InputStream, parser: Parser, {
               token.specialized >= 0 && stack.state.hasAction(token.specialized, k + 2) ||
               tokens.hasOtherMatch(state, i + 1, sawEof))
             localStack = stack.split()
-          localStack.apply(action, term, token.start, token.end, tokens.skipContent)
-          localStack.put(parses, action < 0)
+          localStack.apply(action, term, token.start, token.end, tokens.skipContent).put(parses, action < 0)
           j = 0 // Don't try a non-specialized version of a token when the specialized one matches
         }
       }
@@ -181,7 +185,8 @@ export function parse(input: InputStream, parser: Parser, {
 
     // If we're here, the stack failed to advance normally
 
-    let token = tokens.some(), term = token.specialized > -1 ? token.specialized : token.term
+    let token = tokens.some()
+    let  term = token.specialized > -1 ? token.specialized : token.term
     if (term == TERM_EOF) {
       stack.shiftSkipped(tokens.skipContent)
       return stack.toTree()
@@ -196,7 +201,7 @@ export function parse(input: InputStream, parser: Parser, {
       stack.put(parses)
     } else if (!parses.length) {
       // Only happens in strict mode
-      throw new SyntaxError("No parse at " + token.start + " with " + term + " (stack is " + stack + ")")
+      throw new SyntaxError("No parse at " + token.start + " with " + parser.getName(term) + " (stack is " + stack + ")")
     }
   }
 }

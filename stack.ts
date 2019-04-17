@@ -47,7 +47,7 @@ export class Stack {
 
   toString() {
     return "[" + this.stack.filter((_, i) => i % 3 == 0).concat(this.state.id).join(",") + "] " +
-      this.values.map((v, i) => Array.isArray(v) ? Tree.fromBuffer(v, 0) : v).join(",")
+      this.values.map((v, i) => Array.isArray(v) ? Tree.fromBuffer(v, 0) : v).map(t => t.toString(this.parser.tags)).join(",")
   }
 
   static start(parser: Parser) {
@@ -86,10 +86,11 @@ export class Stack {
     this.state = state
   }
 
-  reduce(depth: number, tag: number) {
+  reduce(action: number) { // Encoded reduction action
+    let depth = action >> REDUCE_NAME_SIZE, tag = action & REDUCE_NAME_MASK
     if (depth == 0) {
       this.pushState(this.parser.states[this.state.getGoto(tag)], this.pos)
-      return
+      return this
     }
 
     let base = this.stack.length - ((depth - 1) * 3)
@@ -131,6 +132,7 @@ export class Stack {
     let baseState = this.parser.states[this.stack[base - 3]]
     this.state = this.parser.states[baseState.getGoto(tag)]
     if (depth > 1) this.stack.length = base
+    return this
   }
 
   shiftValue(term: number, start: number, end: number, childCount = 0) {
@@ -148,7 +150,7 @@ export class Stack {
 
   apply(action: number, next: number, nextStart: number, nextEnd: number, skipped: number[]) {
     if (action >= 0) {
-      this.reduce(action >> REDUCE_NAME_SIZE, action & REDUCE_NAME_MASK)
+      this.reduce(action)
     } else { // Shift
       this.shiftSkipped(skipped)
       this.pushState(this.parser.states[-action], nextStart)
@@ -156,6 +158,7 @@ export class Stack {
       if (next <= MAX_TAGGED_TERM) this.shiftValue(next, nextStart, nextEnd)
       this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
     }
+    return this
   }
 
   useCached(value: Node, start: number, next: ParseState) {
@@ -232,7 +235,7 @@ export class Stack {
         result.shiftValue(TERM_ERR, result.pos, result.pos)
         reduce = result.state.defaultReduce
       }
-      result.reduce(reduce >> REDUCE_NAME_SIZE, reduce & REDUCE_NAME_MASK)
+      result.reduce(reduce)
     }
   }
 

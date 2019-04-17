@@ -94,10 +94,15 @@ export class Parser {
               readonly tags: ReadonlyArray<string>,
               readonly repeats: ReadonlyArray<number>,
               readonly specialized: ReadonlyArray<number>,
-              readonly specializations: ReadonlyArray<{[value: string]: number}>) {}
+              readonly specializations: ReadonlyArray<{[value: string]: number}>,
+              readonly termNames: null | {[id: number]: string} = null) {}
 
   getTag(term: number): string | null {
     return term >= MAX_TAGGED_TERM ? null : this.tags[term]
+  }
+
+  getName(term: number): string {
+    return this.termNames ? this.termNames[term] : this.getTag(term) || String(term)
   }
 
   parse(input: InputStream, options?: ParseOptions) {
