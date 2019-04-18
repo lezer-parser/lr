@@ -2,12 +2,17 @@
   "name": "lezer",
   "version": "0.0.1",
   "description": "Incremental parser",
-  "main": "index.js",
+  "main": "dist/index.js",
   "author": "Marijn Haverbeke <marijnh@gmail.com>",
   "license": "MIT",
   "devDependencies": {
     "rollup": "^1.6.0",
     "rollup-plugin-typescript2": "^0.20.1",
+    "rollup-plugin-node-resolve": "^4.2.3",
     "typescript": "^3.3.3333"
+  },
+  "scripts": {
+    "watch": "rollup -w -c rollup.config.js",
+    "prepare": "rollup -c rollup.config.js"
   }
 }
