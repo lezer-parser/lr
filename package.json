@@ -1,0 +1,13 @@
+{
+  "name": "lezer",
+  "version": "0.0.1",
+  "description": "Incremental parser",
+  "main": "index.js",
+  "author": "Marijn Haverbeke <marijnh@gmail.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "rollup": "^1.6.0",
+    "rollup-plugin-typescript2": "^0.20.1",
+    "typescript": "^3.3.3333"
+  }
+}
