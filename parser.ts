@@ -81,12 +81,16 @@ export const TERM_ERR = 0, TERM_EOF = MAX_REPEAT_TERM + 1
 export type ParseOptions = {cache?: SyntaxTree | null, strict?: boolean, bufferLength?: number}
 
 export class Parser {
+  readonly specializations: ReadonlyArray<{[value: string]: number}>
+
   constructor(readonly states: ReadonlyArray<ParseState>,
               readonly tags: ReadonlyArray<string>,
               readonly repeats: ReadonlyArray<number>,
               readonly specialized: ReadonlyArray<number>,
-              readonly specializations: ReadonlyArray<{[value: string]: number}>,
-              readonly termNames: null | {[id: number]: string} = null) {}
+              specializations: ReadonlyArray<{[value: string]: number}>,
+              readonly termNames: null | {[id: number]: string} = null) {
+    this.specializations = specializations.map(withoutPrototype)
+  }
 
   getTag(term: number): string | null {
     return term >= MAX_TAGGED_TERM ? null : this.tags[term]
@@ -99,6 +103,13 @@ export class Parser {
   parse(input: InputStream, options?: ParseOptions) {
     return parse(input, this, options)
   }
+}
+
+function withoutPrototype(obj: {}) {
+  if (!(obj instanceof Object)) return obj
+  let result: {[key: string]: any} = Object.create(null)
+  for (let prop in obj) if (Object.prototype.hasOwnProperty.call(obj, prop)) result[prop] = (obj as any)[prop]
+  return result
 }
 
 const none: ReadonlyArray<any> = []
