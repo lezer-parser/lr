@@ -1,6 +1,6 @@
 import {Parser, ParseState,
-        MAX_TAGGED_TERM, MAX_REPEAT_TERM, FIRST_REPEAT_TERM,
-        TERM_ERR, REDUCE_DEPTH_MASK, REDUCE_DEPTH_SIZE} from "./parser"
+        ANON_TERM, FIRST_REPEAT_TERM, TERM_ERR,
+        REDUCE_DEPTH_MASK, REDUCE_DEPTH_SIZE} from "./parser"
 import {Node, Tree, TreeBuffer, SyntaxTree, MAX_BUFFER_LENGTH, MAX_BUFFER_SIZE} from "./tree"
 
 const VALUE_INDEX_SIZE = 15, VALUE_INDEX_MASK = 2**VALUE_INDEX_SIZE - 1
@@ -47,7 +47,7 @@ export class Stack {
 
   toString() {
     return "[" + this.stack.filter((_, i) => i % 3 == 0).concat(this.state.id).join(",") + "] " +
-      this.values.map((v, i) => Array.isArray(v) ? Tree.fromBuffer(v, 0) : v).map(t => t.toString(this.parser.tags)).join(",")
+      this.values.map((v, i) => Array.isArray(v) ? Tree.fromBuffer(v, 0) : v).map(t => t.toString(this.parser)).join(",")
   }
 
   static start(parser: Parser) {
@@ -95,7 +95,7 @@ export class Stack {
 
     let base = this.stack.length - ((depth - 1) * 3)
     let start = this.stack[base - 2]
-    if (tag <= MAX_TAGGED_TERM) {
+    if ((tag & ANON_TERM) == 0) {
       let valueIndex = this.stack[base - 1]
       let stackIndex = valueIndex & VALUE_INDEX_MASK, stackOffset = valueIndex >> VALUE_INDEX_SIZE
       let top = this.values.length - 1
@@ -122,10 +122,10 @@ export class Stack {
         this.values.push(this.reduceValue(stackIndex, stackOffset, start).toNode(tag, length))
         this.valueInfo.push(start)
       }
-    } else if (tag <= MAX_REPEAT_TERM && this.pos - start > MAX_BUFFER_LENGTH) {
+    } else if (tag >= FIRST_REPEAT_TERM && this.pos - start > MAX_BUFFER_LENGTH) {
       let valueIndex = this.stack[base - 1]
       let balanced = this.reduceValue(valueIndex & VALUE_INDEX_MASK, valueIndex >> VALUE_INDEX_SIZE, start)
-        .balance(this.parser.repeats[tag - FIRST_REPEAT_TERM])
+        .balance(this.parser.getRepeat(tag))
       this.values.push(balanced)
       this.valueInfo.push(start)
     }
@@ -154,7 +154,7 @@ export class Stack {
       this.shiftSkipped(skipped)
       this.pushState(this.parser.states[-action], nextStart)
       this.pos = nextEnd
-      if (next <= MAX_TAGGED_TERM) this.shiftValue(next, nextStart, nextEnd)
+      if ((next & ANON_TERM) == 0) this.shiftValue(next, nextStart, nextEnd)
       this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
     }
   }
@@ -180,8 +180,8 @@ export class Stack {
 
   recoverByDelete(next: number, nextStart: number, nextEnd: number, skipped: number[]) {
     this.shiftSkipped(skipped)
-    if (next <= MAX_TAGGED_TERM) this.shiftValue(next, nextStart, nextEnd)
-    this.shiftValue(TERM_ERR, nextStart, nextEnd, next <= MAX_TAGGED_TERM ? 1 : 0)
+    if ((next & ANON_TERM) == 0) this.shiftValue(next, nextStart, nextEnd)
+    this.shiftValue(TERM_ERR, nextStart, nextEnd, (next & ANON_TERM) ? 0 : 1)
     this.pos = nextEnd
     this.badness += BADNESS_DELETE
   }

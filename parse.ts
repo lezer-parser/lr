@@ -1,6 +1,6 @@
 import {Stack, BADNESS_WILD} from "./stack"
 import {Parser, ParseOptions, ParseState, Tokenizer, InputStream,
-        TERM_EOF, TERM_ERR, MAX_TAGGED_TERM} from "./parser"
+        TERM_EOF, TERM_ERR, ANON_TERM} from "./parser"
 import {Node, Tree, TreeBuffer, SyntaxTree, DEFAULT_BUFFER_LENGTH, setBufferLength} from "./tree"
 
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
@@ -128,7 +128,7 @@ class TokenCache {
     for (;;) {
       let start = input.pos, result = skip(input)
       if (result < 0 || input.pos == start) return this.skipTo = start
-      if (result <= MAX_TAGGED_TERM) this.skipContent.push(start, input.pos, result)
+      if ((result & ANON_TERM) == 0) this.skipContent.push(start, input.pos, result)
     }
   }
 

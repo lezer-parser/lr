@@ -1,4 +1,4 @@
-import {MAX_TAGGED_TERM} from "./parser"
+import {Parser, ANON_TERM} from "./parser"
 
 export interface ChangedRange {
   fromA: number
@@ -22,8 +22,8 @@ export class Tree {
   constructor(readonly children: (Node | TreeBuffer)[],
               readonly positions: number[]) {}
 
-  toString(tagTable?: ReadonlyArray<string>) {
-    return this.children.map(c => c.toString(tagTable)).join()
+  toString(parser?: Parser) {
+    return this.children.map(c => c.toString(parser)).join()
   }
 
   toNode(tag: number, length: number) {
@@ -106,7 +106,7 @@ export class Tree {
 
   static empty = new Tree([], [])
 
-  cursor(tagTable: ReadonlyArray<string>) { return new NodeCursor(this, tagTable) }
+  cursor(parser: Parser) { return new NodeCursor(this, parser) }
 }
 
 export type SyntaxTree = TreeBuffer | Tree
@@ -121,9 +121,9 @@ export class Node extends Tree {
 
   get length() { return this._length } // Because super class already has a getter
 
-  toString(tagTable?: ReadonlyArray<string>) {
-    let name = this.tag <= MAX_TAGGED_TERM ? (tagTable ? tagTable[this.tag] : this.tag) : null
-    let children: string = this.children.map(c => c.toString(tagTable)).join()
+  toString(parser?: Parser) {
+    let name = (this.tag & ANON_TERM) ? null : parser ? parser.getTag(this.tag) : this.tag
+    let children: string = this.children.map(c => c.toString(parser)).join()
     return !name ? children : name + (children.length ? "(" + children + ")" : "")
   }
 
@@ -185,14 +185,14 @@ export class TreeBuffer {
     }
   }
 
-  toString(tagTable?: ReadonlyArray<string>) {
+  toString(parser?: Parser) {
     let pos = 0
     let next = () => {
       let tag = this.buffer[pos], count = this.buffer[pos+3]
       pos += 4
       let children = "", end = pos + (count << 2)
       while (pos < end) children += (children ? "," : "") + next()
-      return (tagTable ? tagTable[tag] : tag) + (children ? "(" + children + ")" : "")
+      return (parser ? parser.getTag(tag) : tag) + (children ? "(" + children + ")" : "")
     }
     let result = ""
     while (pos < this.buffer.length) result += (result ? "," : "") + next()
@@ -210,7 +210,7 @@ export class TreeBuffer {
     return changes.length ? Tree.empty : this
   }
 
-  cursor(tagTable: ReadonlyArray<string>) { return new NodeCursor(this, tagTable) }
+  cursor(parser: Parser) { return new NodeCursor(this, parser) }
 }
 
 export class NodeCursor {
@@ -226,7 +226,7 @@ export class NodeCursor {
   end!: number
   tag!: string
 
-  constructor(tree: SyntaxTree, readonly tagTable: ReadonlyArray<string>) {
+  constructor(tree: SyntaxTree, readonly parser: Parser) {
     if (tree instanceof Tree) this.trees.push(tree)
     else this.leaf = tree
   }
@@ -239,7 +239,7 @@ export class NodeCursor {
           this.leaf = null
           continue
         } else {
-          this.tag = this.tagTable[buf[index++]]
+          this.tag = this.parser.getTag(buf[index++])!
           this.start = this.leafOffset + buf[index++]
           this.end = this.leafOffset + buf[index++]
           this.leafIndex += 4
@@ -267,8 +267,8 @@ export class NodeCursor {
         this.trees.push(next)
         this.offset.push(start)
         this.index.push(0)
-        if (next.tag <= MAX_TAGGED_TERM) {
-          this.tag = this.tagTable[next.tag]
+        if ((next.tag & ANON_TERM) == 0) {
+          this.tag = this.parser.getTag(next.tag)!
           this.start = start
           this.end = start + next.length
           return true

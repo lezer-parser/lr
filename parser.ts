@@ -70,13 +70,13 @@ function lookup(actions: ReadonlyArray<number>, term: number) {
   return 0
 }
 
-// Terms can be tagged (in which case they need to be included in the
-// syntax tree), repeated, in which case they need to balance their
-// content on reduce, or anonymous
-export const FIRST_REPEAT_TERM = 2**16, MAX_TAGGED_TERM = FIRST_REPEAT_TERM - 1
-export const FIRST_ANON_TERM = 2 * FIRST_REPEAT_TERM, MAX_REPEAT_TERM = FIRST_ANON_TERM - 1
+// Odd numbers are anonymous terms. Even numbers have tags
+export const ANON_TERM = 1
 
-export const TERM_ERR = 0, TERM_EOF = MAX_REPEAT_TERM + 1
+export const TERM_ERR = 0, TERM_EOF = 1
+
+// Repeat terms get assigned a high id so that they are easy to recognize
+export const FIRST_REPEAT_TERM = 2**16 + 1
 
 export type ParseOptions = {cache?: SyntaxTree | null, strict?: boolean, bufferLength?: number}
 
@@ -93,11 +93,16 @@ export class Parser {
   }
 
   getTag(term: number): string | null {
-    return term >= MAX_TAGGED_TERM ? null : this.tags[term]
+    return (term & ANON_TERM) ? null : this.tags[term >> 1]
   }
 
   getName(term: number): string {
     return this.termNames ? this.termNames[term] : this.getTag(term) || String(term)
+  }
+
+  // Term should be a repeat term
+  getRepeat(term: number): number {
+    return this.repeats[(term - FIRST_REPEAT_TERM) >> 1]
   }
 
   parse(input: InputStream, options?: ParseOptions) {
