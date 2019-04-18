@@ -5,7 +5,7 @@
 import {parse} from "./parse"
 import {SyntaxTree} from "./tree"
 
-export const REDUCE_NAME_SIZE = 20, REDUCE_NAME_MASK = 2**REDUCE_NAME_SIZE - 1
+export const REDUCE_DEPTH_SIZE = 6, REDUCE_DEPTH_MASK = 2**REDUCE_DEPTH_SIZE - 1
 
 export interface InputStream {
   pos: number

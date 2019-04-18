@@ -1,6 +1,6 @@
 import {Parser, ParseState,
         MAX_TAGGED_TERM, MAX_REPEAT_TERM, FIRST_REPEAT_TERM,
-        TERM_ERR, REDUCE_NAME_MASK, REDUCE_NAME_SIZE} from "./parser"
+        TERM_ERR, REDUCE_DEPTH_MASK, REDUCE_DEPTH_SIZE} from "./parser"
 import {Node, Tree, TreeBuffer, SyntaxTree, MAX_BUFFER_LENGTH, MAX_BUFFER_SIZE} from "./tree"
 
 const VALUE_INDEX_SIZE = 15, VALUE_INDEX_MASK = 2**VALUE_INDEX_SIZE - 1
@@ -87,7 +87,7 @@ export class Stack {
   }
 
   reduce(action: number) { // Encoded reduction action
-    let depth = action >> REDUCE_NAME_SIZE, tag = action & REDUCE_NAME_MASK
+    let depth = action & REDUCE_DEPTH_MASK, tag = action >> REDUCE_DEPTH_SIZE
     if (depth == 0) {
       this.pushState(this.parser.states[this.state.getGoto(tag)], this.pos)
       return
@@ -195,13 +195,13 @@ export class Stack {
       // Find a way to reduce from here
       let reduce = top.anyReduce()
       if (reduce == 0 && (reduce = top.defaultReduce) < 0) return false
-      let term = reduce & REDUCE_NAME_MASK, n = reduce >> REDUCE_NAME_SIZE
-      if (n == 0) {
+      let term = reduce >> REDUCE_DEPTH_SIZE, depth = reduce & REDUCE_DEPTH_MASK
+      if (depth == 0) {
         if (rest == this.stack) rest = rest.slice()
         rest.push(top.id, 0, 0)
         offset += 3
       } else {
-        offset -= (n - 1) * 3
+        offset -= (depth - 1) * 3
       }
       let goto = this.parser.states[rest[offset - 3]].getGoto(term)
       if (goto < 0) return false
