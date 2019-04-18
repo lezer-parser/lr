@@ -1,4 +1,5 @@
-import {Parser, ANON_TERM} from "./parser"
+import {ANON_TERM} from "./term"
+import {Parser} from "./parse"
 
 export interface ChangedRange {
   fromA: number

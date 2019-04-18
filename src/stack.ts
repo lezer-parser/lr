@@ -1,6 +1,6 @@
-import {Parser, ParseState,
-        ANON_TERM, FIRST_REPEAT_TERM, TERM_ERR,
-        REDUCE_DEPTH_MASK, REDUCE_DEPTH_SIZE} from "./parser"
+import {ParseState, REDUCE_DEPTH_MASK, REDUCE_DEPTH_SIZE} from "./state"
+import {ANON_TERM, FIRST_REPEAT_TERM, TERM_ERR} from "./term"
+import {Parser} from "./parse"
 import {Node, Tree, TreeBuffer, SyntaxTree, MAX_BUFFER_LENGTH, MAX_BUFFER_SIZE} from "./tree"
 
 const VALUE_INDEX_SIZE = 15, VALUE_INDEX_MASK = 2**VALUE_INDEX_SIZE - 1

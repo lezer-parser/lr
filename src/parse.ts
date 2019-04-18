@@ -1,6 +1,7 @@
 import {Stack, BADNESS_WILD} from "./stack"
-import {Parser, ParseOptions, ParseState, Tokenizer, InputStream,
-        TERM_EOF, TERM_ERR, ANON_TERM} from "./parser"
+import {ParseState} from "./state"
+import {Tokenizer, InputStream} from "./token"
+import {TERM_EOF, TERM_ERR, ANON_TERM, FIRST_REPEAT_TERM} from "./term"
 import {Node, Tree, TreeBuffer, SyntaxTree, DEFAULT_BUFFER_LENGTH, setBufferLength} from "./tree"
 
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
@@ -138,6 +139,8 @@ class TokenCache {
   }
 }
 
+export type ParseOptions = {cache?: SyntaxTree | null, strict?: boolean, bufferLength?: number}
+
 export function parse(input: InputStream, parser: Parser, {
   cache = null,
   strict = false,
@@ -211,4 +214,41 @@ export function parse(input: InputStream, parser: Parser, {
       throw new SyntaxError("No parse at " + token.start + " with " + parser.getName(term) + " (stack is " + stack + ")")
     }
   }
+}
+
+export class Parser {
+  readonly specializations: ReadonlyArray<{[value: string]: number}>
+
+  constructor(readonly states: ReadonlyArray<ParseState>,
+              readonly tags: ReadonlyArray<string>,
+              readonly repeats: ReadonlyArray<number>,
+              readonly specialized: ReadonlyArray<number>,
+              specializations: ReadonlyArray<{[value: string]: number}>,
+              readonly termNames: null | {[id: number]: string} = null) {
+    this.specializations = specializations.map(withoutPrototype)
+  }
+
+  getTag(term: number): string | null {
+    return (term & ANON_TERM) ? null : this.tags[term >> 1]
+  }
+
+  getName(term: number): string {
+    return this.termNames ? this.termNames[term] : this.getTag(term) || String(term)
+  }
+
+  // Term should be a repeat term
+  getRepeat(term: number): number {
+    return this.repeats[(term - FIRST_REPEAT_TERM) >> 1]
+  }
+
+  parse(input: InputStream, options?: ParseOptions) {
+    return parse(input, this, options)
+  }
+}
+
+function withoutPrototype(obj: {}) {
+  if (!(obj instanceof Object)) return obj
+  let result: {[key: string]: any} = Object.create(null)
+  for (let prop in obj) if (Object.prototype.hasOwnProperty.call(obj, prop)) result[prop] = (obj as any)[prop]
+  return result
 }
