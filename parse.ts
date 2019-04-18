@@ -49,6 +49,7 @@ class CacheCursor {
   }
 }
 
+// FIXME use flat array
 class Token {
   public start = 0
   public end = 0

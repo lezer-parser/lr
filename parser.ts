@@ -7,13 +7,6 @@ import {SyntaxTree} from "./tree"
 
 export const REDUCE_NAME_SIZE = 20, REDUCE_NAME_MASK = 2**REDUCE_NAME_SIZE - 1
 
-export class Token {
-  public start = 0
-  public end = 0
-  public term = -1
-  public specialized = -1
-}
-
 export interface InputStream {
   pos: number
   length: number
@@ -107,3 +100,18 @@ export class Parser {
     return parse(input, this, options)
   }
 }
+
+const none: ReadonlyArray<any> = []
+
+export function s(actions: number | ReadonlyArray<number>,
+                  goto: ReadonlyArray<number>,
+                  defaultReduce: number,
+                  skip: Tokenizer,
+                  tokenizers: ReadonlyArray<Tokenizer>,
+                  recover?: ReadonlyArray<number>): ParseState {
+  return new ParseState(s.id++, typeof actions == "number" ? none : actions,
+                        goto, recover || none, typeof actions == "number" ? actions : -1,
+                        defaultReduce, skip, tokenizers)
+}
+
+s.id = 0

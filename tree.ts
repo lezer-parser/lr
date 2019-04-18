@@ -213,7 +213,7 @@ export class TreeBuffer {
   cursor(tagTable: ReadonlyArray<string>) { return new NodeCursor(this, tagTable) }
 }
 
-class NodeCursor {
+export class NodeCursor {
   trees: Tree[] = []
   offset = [0]
   index = [0]
