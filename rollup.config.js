@@ -13,9 +13,15 @@ export default {
     typescript({
       check: false,
       tsconfigOverride: {
-        compilerOptions: {lib: ["es5", "es6"], sourceMap: true, target: "es5", strict: false},
-        include: null
-      }
+        compilerOptions: {
+          lib: ["es5", "es6"],
+          sourceMap: true,
+          target: "es5",
+          strict: false,
+          declaration: true
+        }
+      },
+      include: ["src/*.ts"]
     })
   ]
 }

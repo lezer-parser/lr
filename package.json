@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "description": "Incremental parser",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "author": "Marijn Haverbeke <marijnh@gmail.com>",
   "license": "MIT",
   "devDependencies": {
