@@ -311,7 +311,6 @@ class BufferCursor {
     }
   }
 
-  // FIXME this should unwrap overbig nodes with the matching tag to prevent repeated reuse from creating an unbalanced tree
   balanceRange(tag: number,
                children: readonly (Node | TreeBuffer)[], positions: readonly number[],
                from: number, to: number): Node {
@@ -324,8 +323,16 @@ class BufferCursor {
     if (length <= MAX_BUFFER_LENGTH) {
       for (let i = from; i < to; i++) {
         let child = children[i]
-        localChildren.push(child)
-        localPositions.push(positions[i] - start)
+        if (child instanceof Node && child.tag == tag) {
+          // Unwrap child with same tag
+          for (let j = 0; j < child.children.length; j++) {
+            localChildren.push(child.children[j])
+            localPositions.push(positions[i] + child.positions[j] - start)
+          }
+        } else {
+          localChildren.push(child)
+          localPositions.push(positions[i] - start)
+        }
       }
     } else {
       let maxChild = Math.max(MAX_BUFFER_LENGTH, Math.ceil(length / BALANCE_BRANCH_FACTOR))
@@ -338,7 +345,19 @@ class BufferCursor {
         }
         if (i == groupFrom + 1) {
           let only = children[groupFrom]
-          if (!(only instanceof Node) || only.tag != tag) only = new Node(tag, only.length, [only], [0])
+          if (only instanceof Node && only.tag == tag) {
+            // Already tagged
+            if (only.length > maxChild << 1) { // Too big, collapse
+              for (let j = 0; j < only.children.length; j++) {
+                localChildren.push(only.children[j])
+                localPositions.push(only.positions[j] + groupStart - start)
+              }
+              continue
+            }
+          } else {
+            // Wrap with our tag to make reuse possible
+            only = new Node(tag, only.length, [only], [0])
+          }
           localChildren.push(only)
         } else {
           localChildren.push(this.balanceRange(tag, children, positions, groupFrom, i))
