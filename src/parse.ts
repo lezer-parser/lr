@@ -1,8 +1,8 @@
-import {Stack, BADNESS_WILD} from "./stack"
+import {Stack, BADNESS_WILD, DEFAULT_BUFFER_LENGTH, setBufferLength} from "./stack"
 import {ParseState} from "./state"
 import {Tokenizer, InputStream} from "./token"
 import {TERM_EOF, TERM_ERR, ANON_TERM, FIRST_REPEAT_TERM} from "./term"
-import {Node, Tree, TreeBuffer, SyntaxTree, DEFAULT_BUFFER_LENGTH, setBufferLength} from "./tree"
+import {Node, Tree, TreeBuffer, SyntaxTree} from "./tree"
 
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
 

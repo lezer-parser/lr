@@ -10,6 +10,7 @@ export class ParseState {
               readonly actions: ReadonlyArray<number>,
               readonly goto: ReadonlyArray<number>,
               readonly recover: ReadonlyArray<number>,
+              // FIXME allow a base reduce action to exist alongside shift actions
               readonly alwaysReduce: number,
               readonly defaultReduce: number,
               readonly skip: Tokenizer,
