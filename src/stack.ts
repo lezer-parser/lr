@@ -55,7 +55,6 @@ export class Stack {
 
   toString() {
     return "[" + this.stack.filter((_, i) => i % 3 == 0).concat(this.state.id).join(",") + "]"
-    // FIXME output values somehow
   }
 
   static start(parser: Parser) {
@@ -77,7 +76,8 @@ export class Stack {
     let base = this.stack.length - ((depth - 1) * 3)
     let start = this.stack[base - 2]
     let count = this.bufferBase + this.buffer.length - this.stack[base - 1]
-    if ((tag & ANON_TERM) == 0 || (tag >= FIRST_REPEAT_TERM && count > MAX_BUFFER_LENGTH >> 1))
+    if ((tag & ANON_TERM) == 0 ||
+        (tag >= FIRST_REPEAT_TERM && this.pos - start > MAX_BUFFER_LENGTH && count > 0))
       this.buffer.push(tag, start, this.pos, count + 4)
     let baseState = this.parser.states[this.stack[base - 3]]
     this.state = this.parser.states[baseState.getGoto(tag)]
@@ -248,6 +248,8 @@ export class Stack {
   }
 }
 
+const BALANCE_BRANCH_FACTOR = 5
+
 class BufferCursor {
   buffer: number[]
   index: number
@@ -283,17 +285,20 @@ class BufferCursor {
 
   takeNode(parentStart: number, children: (Node | TreeBuffer)[], positions: number[]) {
     let {tag, start, end, size} = this
-    // FIXME also handle repeat balancing somewhere here
     if (size == REUSED_VALUE) {
       this.forward()
       children.push(this.stack.reused[tag])
       positions.push(start - parentStart)
     } else if (end - start > MAX_BUFFER_LENGTH) { // Too big for a buffer, make it a node
-      let endCount = this.taken - size
+      let endCount = this.taken + size
       this.forward()
-      let children: (Node | TreeBuffer)[] = [], positions: number[] = []
-      while (this.taken < endCount) this.takeNode(start, children, positions)
-      children.push(new Node(tag, end - start, children.reverse(), positions.reverse()))
+      let localChildren: (Node | TreeBuffer)[] = [], localPositions: number[] = []
+      while (this.taken < endCount) this.takeNode(start, localChildren, localPositions)
+      localChildren.reverse(); localPositions.reverse()
+      if (tag >= FIRST_REPEAT_TERM)
+        children.push(this.balanceRange(this.stack.parser.getRepeat(tag), localChildren, localPositions, 0, localChildren.length))
+      else
+        children.push(new Node(tag, end - start, localChildren, localPositions))
       positions.push(start - parentStart)
     } else {
       let {bufferSize, bufferStart} = this.findBufferStart(size, start, end)
@@ -306,50 +311,43 @@ class BufferCursor {
     }
   }
 
-/*
-const BALANCE_BRANCH_FACTOR = 5
-
-
-  // FIXME this should unwrap nodes with the matching tag to prevent repeated reuse from creating an unbalanced tree
-  balanceRange(tag: number, from: number, to: number): Node {
-    let start = this.positions[from], length = (this.positions[to - 1] + this.children[to - 1].length) - start
+  // FIXME this should unwrap overbig nodes with the matching tag to prevent repeated reuse from creating an unbalanced tree
+  balanceRange(tag: number,
+               children: readonly (Node | TreeBuffer)[], positions: readonly number[],
+               from: number, to: number): Node {
+    let start = positions[from], length = (positions[to - 1] + children[to - 1].length) - start
     if (from == to - 1 && start == 0) {
-      let first = this.children[from]
+      let first = children[from]
       if (first instanceof Node) return first
     }
-    let children = [], positions = []
+    let localChildren = [], localPositions = []
     if (length <= MAX_BUFFER_LENGTH) {
       for (let i = from; i < to; i++) {
-        let child = this.children[i]
-        children.push(child)
-        positions.push(this.positions[i] - start)
+        let child = children[i]
+        localChildren.push(child)
+        localPositions.push(positions[i] - start)
       }
     } else {
       let maxChild = Math.max(MAX_BUFFER_LENGTH, Math.ceil(length / BALANCE_BRANCH_FACTOR))
       for (let i = from; i < to;) {
-        let groupFrom = i, groupStart = this.positions[i]
+        let groupFrom = i, groupStart = positions[i]
         i++
         for (; i < to; i++) {
-          let nextEnd = this.positions[i] + this.children[i].length
+          let nextEnd = positions[i] + children[i].length
           if (nextEnd - groupStart > maxChild) break
         }
         if (i == groupFrom + 1) {
-          let only = this.children[groupFrom]
+          let only = children[groupFrom]
           if (!(only instanceof Node) || only.tag != tag) only = new Node(tag, only.length, [only], [0])
-          children.push(only)
+          localChildren.push(only)
         } else {
-          children.push(this.balanceRange(tag, groupFrom, i))
+          localChildren.push(this.balanceRange(tag, children, positions, groupFrom, i))
         }
-        positions.push(groupStart - start)
+        localPositions.push(groupStart - start)
       }
     }
-    return new Node(tag, length, children, positions)
+    return new Node(tag, length, localChildren, localPositions)
   }
-
-  balance(tag: number): Node {
-    return this.balanceRange(tag, 0, this.children.length)
-  }
-*/
 
   findBufferStart(size: number, start: number, end: number) {
     let stack = this.stack, index = this.index, skip = size

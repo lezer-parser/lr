@@ -16,10 +16,6 @@ export class Tree {
     return this.children.map(c => c.toString(parser)).join()
   }
 
-  toNode(tag: number, length: number) {
-    return new Node(tag, length, this.children, this.positions)
-  }
-
   get length() {
     let last = this.children.length - 1
     return last < 0 ? 0 : this.positions[last] + this.children[last].length
