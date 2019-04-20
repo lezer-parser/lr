@@ -145,8 +145,8 @@ export class Stack {
   canRecover(next: number) {
     // Scan for a state that has either a direct action or a recovery
     // action for next, without actually building up a new stack
-    // FIXME this can continue infinitely without the i < 100 limit, should build up a set of visited states
-    for (let top = this.state, rest = this.stack, offset = rest.length, i = 0; i < 100; i++) {
+    let visited: number[] | null = null
+    for (let top = this.state, rest = this.stack, offset = rest.length, i = 0;; i++) {
       if (top.hasAction(next) || top.getRecover(next) != 0) return true
       // Find a way to reduce from here
       let reduce = top.anyReduce()
@@ -162,8 +162,13 @@ export class Stack {
       let goto = this.parser.states[rest[offset - 3]].getGoto(term)
       if (goto < 0) return false
       top = this.parser.states[goto]
+      if (i > 10) {
+        // Guard against getting stuck in a cycle
+        if (!visited) visited = []
+        else if (i == 100 || visited.includes(top.id)) return false
+        visited.push(top.id)
+      }
     }
-    return false
   }
 
   recoverByInsert(next: number, nextStart: number, nextEnd: number): Stack | null {
