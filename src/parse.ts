@@ -59,7 +59,7 @@ class Token {
 }
 
 class TokenCache {
-  tokens: Token[] = []
+  tokens: Token[] = [new Token, new Token, new Token, new Token]
   tokenizers: Tokenizer[] = []
   actions: number[] = []
   pos = 0
@@ -171,8 +171,8 @@ export function parse(input: InputStream, parser: Parser, {
       }
     }
 
-    if (stack.state.alwaysReduce >= 0) {
-      stack.reduce(stack.state.alwaysReduce)
+    if (stack.state.defaultReduce > 0) {
+      stack.reduce(stack.state.defaultReduce)
       stack.put(parses)
       if (verbose) console.log(stack + " (via always-reduce)")
       continue

@@ -150,7 +150,7 @@ export class Stack {
       if (top.hasAction(next) || top.getRecover(next) != 0) return true
       // Find a way to reduce from here
       let reduce = top.anyReduce()
-      if (reduce == 0 && (reduce = top.defaultReduce) < 0) return false
+      if (reduce == 0 && (reduce = top.forcedReduce) < 0) return false
       let term = reduce >> REDUCE_DEPTH_SIZE, depth = reduce & REDUCE_DEPTH_MASK
       if (depth == 0) {
         if (rest == this.stack) rest = rest.slice()
@@ -192,7 +192,7 @@ export class Stack {
       if (reduce == 0) {
         // Force a reduce using this state's default reduce
         result.shiftValue(TERM_ERR, result.pos, result.pos)
-        reduce = result.state.defaultReduce
+        reduce = result.state.forcedReduce
       }
       result.reduce(reduce)
     }

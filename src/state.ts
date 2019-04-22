@@ -10,16 +10,17 @@ export class ParseState {
               readonly actions: ReadonlyArray<number>,
               readonly goto: ReadonlyArray<number>,
               readonly recover: ReadonlyArray<number>,
-              // FIXME allow a base reduce action to exist alongside shift actions
-              readonly alwaysReduce: number,
               readonly defaultReduce: number,
+              readonly forcedReduce: number,
               readonly skip: Tokenizer,
               readonly tokenizers: ReadonlyArray<Tokenizer>) {}
 
-  hasAction(terminal: number) { return lookup(this.actions, terminal) != 0 }
+  hasAction(terminal: number) {
+    return lookup(this.actions, terminal) != 0
+  }
 
   anyReduce() {
-    if (this.alwaysReduce >= 0) return this.alwaysReduce
+    if (this.defaultReduce > 0) return this.defaultReduce
     for (let i = 0; i < this.actions.length; i += 2) {
       let action = this.actions[i + 1]
       if (action > 0) return action
@@ -34,15 +35,14 @@ export class ParseState {
 
 const none: ReadonlyArray<any> = []
 
-export function s(actions: number | ReadonlyArray<number>,
-                  goto: ReadonlyArray<number>,
-                  defaultReduce: number,
+export function s(actions: number | number[],
+                  goto: readonly number[],
+                  forcedReduce: number,
                   skip: Tokenizer,
-                  tokenizers: ReadonlyArray<Tokenizer>,
-                  recover?: ReadonlyArray<number>): ParseState {
-  return new ParseState(s.id++, typeof actions == "number" ? none : actions,
-                        goto, recover || none, typeof actions == "number" ? actions : -1,
-                        defaultReduce, skip, tokenizers)
+                  tokenizers: readonly Tokenizer[],
+                  recover: readonly number[] = none): ParseState {
+  return new ParseState(s.id++, typeof actions == "number" ? none : actions, goto, recover,
+                        typeof actions == "number" ? actions : 0, forcedReduce, skip, tokenizers)
 }
 
 s.id = 0
