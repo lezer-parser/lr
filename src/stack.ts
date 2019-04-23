@@ -1,5 +1,5 @@
 import {ParseState, REDUCE_DEPTH_MASK, REDUCE_DEPTH_SIZE} from "./state"
-import {ANON_TERM, FIRST_REPEAT_TERM, TERM_ERR} from "./term"
+import {TERM_TAGGED, TERM_ERR} from "./term"
 import {Parser} from "./parse"
 import {Node, Tree, TreeBuffer, SyntaxTree} from "./tree"
 
@@ -67,20 +67,20 @@ export class Stack {
   }
 
   reduce(action: number) { // Encoded reduction action
-    let depth = action & REDUCE_DEPTH_MASK, tag = action >> REDUCE_DEPTH_SIZE
+    let depth = (action & REDUCE_DEPTH_MASK) - 1, tag = action >> REDUCE_DEPTH_SIZE
     if (depth == 0) {
-      this.pushState(this.parser.states[this.state.getGoto(tag)], this.pos)
+      this.pushState(this.parser.states[this.parser.getGoto(this.state.id, tag)], this.pos)
       return
     }
 
     let base = this.stack.length - ((depth - 1) * 3)
     let start = this.stack[base - 2]
     let count = this.bufferBase + this.buffer.length - this.stack[base - 1]
-    if ((tag & ANON_TERM) == 0 ||
-        (tag >= FIRST_REPEAT_TERM && this.pos - start > MAX_BUFFER_LENGTH && count > 0))
+    if ((tag & TERM_TAGGED) > 0 ||
+        ((tag >> 1) < this.parser.repeats.length && this.pos - start > MAX_BUFFER_LENGTH && count > 0))
       this.buffer.push(tag, start, this.pos, count + 4)
-    let baseState = this.parser.states[this.stack[base - 3]]
-    this.state = this.parser.states[baseState.getGoto(tag)]
+    let baseStateID = this.stack[base - 3]
+    this.state = this.parser.states[this.parser.getGoto(baseStateID, tag)]
     if (depth > 1) this.stack.length = base
   }
 
@@ -104,7 +104,7 @@ export class Stack {
       this.shiftSkipped(skipped)
       this.pushState(this.parser.states[-action], nextStart)
       this.pos = nextEnd
-      if ((next & ANON_TERM) == 0) this.shiftValue(next, nextStart, nextEnd)
+      if (next & TERM_TAGGED) this.shiftValue(next, nextStart, nextEnd)
       this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
     }
   }
@@ -136,8 +136,8 @@ export class Stack {
 
   recoverByDelete(next: number, nextStart: number, nextEnd: number, skipped: number[]) {
     this.shiftSkipped(skipped)
-    if ((next & ANON_TERM) == 0) this.shiftValue(next, nextStart, nextEnd)
-    this.shiftValue(TERM_ERR, nextStart, nextEnd, (next & ANON_TERM) ? 4 : 8)
+    if (next & TERM_TAGGED) this.shiftValue(next, nextStart, nextEnd)
+    this.shiftValue(TERM_ERR, nextStart, nextEnd, (next & TERM_TAGGED) ? 8 : 4)
     this.pos = nextEnd
     this.badness += BADNESS_DELETE
   }
@@ -151,7 +151,7 @@ export class Stack {
       // Find a way to reduce from here
       let reduce = top.anyReduce()
       if (reduce == 0 && (reduce = top.forcedReduce) < 0) return false
-      let term = reduce >> REDUCE_DEPTH_SIZE, depth = reduce & REDUCE_DEPTH_MASK
+      let term = reduce >> REDUCE_DEPTH_SIZE, depth = (reduce & REDUCE_DEPTH_MASK) - 1
       if (depth == 0) {
         if (rest == this.stack) rest = rest.slice()
         rest.push(top.id, 0, 0)
@@ -159,8 +159,7 @@ export class Stack {
       } else {
         offset -= (depth - 1) * 3
       }
-      let goto = this.parser.states[rest[offset - 3]].getGoto(term)
-      if (goto < 0) return false
+      let goto = this.parser.getGoto(rest[offset - 3], term)
       top = this.parser.states[goto]
       if (i > 10) {
         // Guard against getting stuck in a cycle
@@ -300,10 +299,10 @@ class BufferCursor {
       let localChildren: (Node | TreeBuffer)[] = [], localPositions: number[] = []
       while (this.taken < endCount) this.takeNode(start, localChildren, localPositions)
       localChildren.reverse(); localPositions.reverse()
-      if (tag >= FIRST_REPEAT_TERM)
-        children.push(this.balanceRange(this.stack.parser.getRepeat(tag), localChildren, localPositions, 0, localChildren.length))
-      else
+      if (tag & TERM_TAGGED)
         children.push(new Node(tag, end - start, localChildren, localPositions))
+      else
+        children.push(this.balanceRange(this.stack.parser.getRepeat(tag), localChildren, localPositions, 0, localChildren.length))
       positions.push(start - parentStart)
     } else {
       let {bufferSize, bufferStart} = this.findBufferStart(size, start, end)

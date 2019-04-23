@@ -1,7 +1,7 @@
 import {Stack, BADNESS_WILD, DEFAULT_BUFFER_LENGTH, setBufferLength} from "./stack"
 import {ParseState} from "./state"
 import {Tokenizer, InputStream} from "./token"
-import {TERM_EOF, TERM_ERR, ANON_TERM, FIRST_REPEAT_TERM} from "./term"
+import {TERM_EOF, TERM_ERR, TERM_TAGGED} from "./term"
 import {Node, Tree, TreeBuffer, SyntaxTree} from "./tree"
 
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
@@ -129,7 +129,7 @@ class TokenCache {
     for (;;) {
       let start = input.pos, result = skip(input)
       if (result < 0 || input.pos == start) return this.skipTo = start
-      if ((result & ANON_TERM) == 0) this.skipContent.push(start, input.pos, result)
+      if (result & TERM_TAGGED) this.skipContent.push(start, input.pos, result)
     }
   }
 
@@ -157,7 +157,7 @@ export function parse(input: InputStream, parser: Parser, {
 
     if (cacheCursor) {//  && !stack.state.ambiguous) { // FIXME implement fragility check
       for (let cached = cacheCursor.nodeAt(start); cached;) {
-        let match = stack.state.getGoto(cached.tag)
+        let match = parser.getGoto(stack.state.id, cached.tag)
         if (match) {
           stack.useCached(cached, start, parser.states[match])
           if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.tag)})`)
@@ -193,7 +193,7 @@ export function parse(input: InputStream, parser: Parser, {
 
     let token = tokens.some()
     let  term = token.specialized > -1 ? token.specialized : token.term
-    if (start == input.length) {
+    if (start == input.length && (stack.stack.length == 3 || parses.length == 0)) {
       stack.shiftSkipped(tokens.skipContent)
       return stack.toTree()
     }
@@ -222,6 +222,8 @@ export class Parser {
   constructor(readonly states: ReadonlyArray<ParseState>,
               readonly tags: ReadonlyArray<string>,
               readonly repeats: ReadonlyArray<number>,
+              readonly taggedGoto: readonly (readonly number[])[],
+              readonly untaggedGoto: readonly (readonly number[])[],
               readonly specialized: ReadonlyArray<number>,
               specializations: ReadonlyArray<{[value: string]: number}>,
               readonly termNames: null | {[id: number]: string} = null) {
@@ -229,7 +231,7 @@ export class Parser {
   }
 
   getTag(term: number): string | null {
-    return (term & ANON_TERM) ? null : this.tags[term >> 1]
+    return (term & TERM_TAGGED) ? this.tags[term >> 1] : null
   }
 
   getName(term: number): string {
@@ -238,11 +240,19 @@ export class Parser {
 
   // Term should be a repeat term
   getRepeat(term: number): number {
-    return this.repeats[(term - FIRST_REPEAT_TERM) >> 1]
+    return this.repeats[term >> 1]
   }
 
   parse(input: InputStream, options?: ParseOptions) {
     return parse(input, this, options)
+  }
+
+  getGoto(state: number, term: number) {
+    let table = (term & TERM_TAGGED ? this.taggedGoto : this.untaggedGoto)[term >> 1]
+    for (let i = 0; i < table.length; i += 2) {
+      if (table[i] < 0 || table[i] == state) return table[i + 1]
+    }
+    throw new Error(`Missing goto table entry for ${this.getName(term)} and state ${state}`)
   }
 }
 

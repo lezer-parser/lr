@@ -8,7 +8,6 @@ export const REDUCE_DEPTH_SIZE = 6, REDUCE_DEPTH_MASK = 2**REDUCE_DEPTH_SIZE - 1
 export class ParseState {
   constructor(readonly id: number,
               readonly actions: ReadonlyArray<number>,
-              readonly goto: ReadonlyArray<number>,
               readonly recover: ReadonlyArray<number>,
               readonly defaultReduce: number,
               readonly forcedReduce: number,
@@ -27,21 +26,17 @@ export class ParseState {
     }
     return 0
   }
-  // Zero means no entry found, otherwise it'll be a state id (never
-  // zero because no goto edges to the start state exist)
-  getGoto(term: number) { return lookup(this.goto, term) }
   getRecover(terminal: number) { return lookup(this.recover, terminal) }
 }
 
 const none: ReadonlyArray<any> = []
 
 export function s(actions: number | number[],
-                  goto: readonly number[],
                   forcedReduce: number,
                   skip: Tokenizer,
                   tokenizers: readonly Tokenizer[],
                   recover: readonly number[] = none): ParseState {
-  return new ParseState(s.id++, typeof actions == "number" ? none : actions, goto, recover,
+  return new ParseState(s.id++, typeof actions == "number" ? none : actions, recover,
                         typeof actions == "number" ? actions : 0, forcedReduce, skip, tokenizers)
 }
 

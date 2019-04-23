@@ -1,4 +1,4 @@
-import {ANON_TERM} from "./term"
+import {TERM_TAGGED} from "./term"
 import {Parser} from "./parse"
 
 export interface ChangedRange {
@@ -62,7 +62,7 @@ export class Node extends Tree {
   get length() { return this._length } // Because super class already has a getter
 
   toString(parser?: Parser) {
-    let name = (this.tag & ANON_TERM) ? null : parser ? parser.getTag(this.tag) : this.tag
+    let name = (this.tag & TERM_TAGGED) == 0 ? null : parser ? parser.getTag(this.tag) : this.tag
     let children: string = this.children.map(c => c.toString(parser)).join()
     return !name ? children : name + (children.length ? "(" + children + ")" : "")
   }
@@ -170,7 +170,7 @@ export class NodeCursor {
         this.trees.push(next)
         this.offset.push(start)
         this.index.push(0)
-        if ((next.tag & ANON_TERM) == 0) {
+        if (next.tag & TERM_TAGGED) {
           this.tag = this.parser.getTag(next.tag)!
           this.start = start
           this.end = start + next.length
