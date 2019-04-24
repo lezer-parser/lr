@@ -30,7 +30,7 @@ export class Tree {
     }
   }
 
-  unchanged(changes: ReadonlyArray<ChangedRange>) {
+  unchanged(changes: readonly ChangedRange[]) {
     if (changes.length == 0) return this
     let children: (Node | TreeBuffer)[] = [], positions: number[] = []
     for (let i = 0, pos = 0, off = 0;; i++) {
@@ -109,7 +109,7 @@ export class TreeBuffer {
     }    
   }
 
-  unchanged(changes: ReadonlyArray<ChangedRange>) {
+  unchanged(changes: readonly ChangedRange[]) {
     return changes.length ? Tree.empty : this
   }
 

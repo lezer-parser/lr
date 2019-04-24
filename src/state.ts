@@ -7,12 +7,12 @@ export const REDUCE_DEPTH_SIZE = 6, REDUCE_DEPTH_MASK = 2**REDUCE_DEPTH_SIZE - 1
 
 export class ParseState {
   constructor(readonly id: number,
-              readonly actions: ReadonlyArray<number>,
-              readonly recover: ReadonlyArray<number>,
+              readonly actions: readonly number[],
+              readonly recover: readonly number[],
               readonly defaultReduce: number,
               readonly forcedReduce: number,
               readonly skip: Tokenizer,
-              readonly tokenizers: ReadonlyArray<Tokenizer>) {}
+              readonly tokenizers: readonly Tokenizer[]) {}
 
   hasAction(terminal: number) {
     return lookup(this.actions, terminal) != 0
@@ -29,7 +29,7 @@ export class ParseState {
   getRecover(terminal: number) { return lookup(this.recover, terminal) }
 }
 
-const none: ReadonlyArray<any> = []
+const none: readonly any[] = []
 
 export function s(actions: number | number[],
                   forcedReduce: number,
@@ -42,7 +42,7 @@ export function s(actions: number | number[],
 
 s.id = 0
 
-function lookup(actions: ReadonlyArray<number>, term: number) {
+function lookup(actions: readonly number[], term: number) {
   for (let i = 0; i < actions.length; i+= 2) if (actions[i] == term) return actions[i + 1]
   return 0
 }

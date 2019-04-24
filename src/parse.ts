@@ -193,6 +193,7 @@ export function parse(input: InputStream, parser: Parser, {
 
     let token = tokens.some()
     let  term = token.specialized > -1 ? token.specialized : token.term
+    // FIXME proper end condition check
     if (start == input.length && (stack.stack.length == 3 || parses.length == 0)) {
       stack.shiftSkipped(tokens.skipContent)
       return stack.toTree()
@@ -217,15 +218,15 @@ export function parse(input: InputStream, parser: Parser, {
 }
 
 export class Parser {
-  readonly specializations: ReadonlyArray<{[value: string]: number}>
+  readonly specializations: readonly {[value: string]: number}[]
 
-  constructor(readonly states: ReadonlyArray<ParseState>,
-              readonly tags: ReadonlyArray<string>,
-              readonly repeats: ReadonlyArray<number>,
+  constructor(readonly states: readonly ParseState[],
+              readonly tags: readonly string[],
+              readonly repeats: readonly number[],
               readonly taggedGoto: readonly (readonly number[])[],
               readonly untaggedGoto: readonly (readonly number[])[],
-              readonly specialized: ReadonlyArray<number>,
-              specializations: ReadonlyArray<{[value: string]: number}>,
+              readonly specialized: readonly number[],
+              specializations: readonly {[value: string]: number}[],
               readonly termNames: null | {[id: number]: string} = null) {
     this.specializations = specializations.map(withoutPrototype)
   }
