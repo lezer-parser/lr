@@ -73,7 +73,9 @@ class TokenCache {
   actionsFor(parser: Parser, state: ParseState, input: InputStream, pos: number) {
     if (pos > this.pos) { this.index = 0; this.pos = pos }
     let actionIndex = 0
-    for (let tokenizer of state.tokenizers) {
+    if (pos == input.length) {
+      actionIndex = this.addActions(state, TERM_EOF, pos, actionIndex)
+    } else for (let tokenizer of state.tokenizers) {
       let token
       for (let i = 0; i < this.index; i++) if (this.tokenizers[i] == tokenizer) token = this.tokens[i]
       if (!token) {
@@ -81,16 +83,16 @@ class TokenCache {
         else token = this.tokens[this.index]
         this.tokenizers[this.index++] = tokenizer
 
-        let result = tokenizer(input.goto(pos))
+        tokenizer(input.goto(pos))
         token.start = pos
         token.specialized = -1
-        if (result < 0) {
+        if (input.token < 0) {
           token.term = TERM_ERR
           token.end = pos + 1
         } else {
-          token.term = result
-          token.end = input.pos
-          let specIndex = parser.specialized.indexOf(result)
+          token.term = input.token
+          token.end = input.tokenEnd
+          let specIndex = parser.specialized.indexOf(token.term)
           if (specIndex >= 0) {
             let found = parser.specializations[specIndex][input.read(pos, token.end)]
             if (found != null) token.specialized = found
@@ -105,8 +107,6 @@ class TokenCache {
       if (token.term != TERM_ERR)
         actionIndex = this.addActions(state, token.term, token.end, actionIndex)
     }
-    if (pos == input.length)
-      actionIndex = this.addActions(state, TERM_EOF, pos, actionIndex)
     if (this.actions.length > actionIndex) this.actions.length = actionIndex
     return this.actions
   }
@@ -125,11 +125,14 @@ class TokenCache {
     this.skipType = skip
     this.skipPos = pos
     this.skipContent.length = 0
-    input.goto(pos)
     for (;;) {
-      let start = input.pos, result = skip(input)
-      if (result < 0 || input.pos == start) return this.skipTo = start
-      if (result & TERM_TAGGED) this.skipContent.push(start, input.pos, result)
+      // FIXME it's awkward that the tokenizer gets called again until
+      // it doesn't advance—that'll usually duplicate work. Reconsider
+      // skip grammars.
+      skip(input.goto(pos))
+      if (input.token < 0 || input.tokenEnd <= pos) return this.skipTo = pos
+      if (input.token & TERM_TAGGED) this.skipContent.push(pos, input.tokenEnd, input.token)
+      pos = input.tokenEnd
     }
   }
 
@@ -192,7 +195,7 @@ export function parse(input: InputStream, parser: Parser, {
     // If we're here, the stack failed to advance normally
 
     let token = tokens.some()
-    let  term = token.specialized > -1 ? token.specialized : token.term
+    let term = token.specialized > -1 ? token.specialized : token.term
     // FIXME proper end condition check
     if (start == input.length && (stack.stack.length == 3 || parses.length == 0)) {
       stack.shiftSkipped(tokens.skipContent)
