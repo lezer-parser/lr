@@ -1,4 +1,4 @@
-export {Parser, ParseOptions} from "./parse"
+export {Parser, ParseOptions, SPECIALIZE, REPLACE, EXTEND} from "./parse"
 export {ParseState, s, REDUCE_DEPTH_SIZE, REDUCE_DEPTH_MASK} from "./state"
 export {Tokenizer, noToken, InputStream, StringStream} from "./token"
 export {TERM_TAGGED, TERM_ERR, TERM_EOF} from "./term"
