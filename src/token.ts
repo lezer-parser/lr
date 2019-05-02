@@ -41,8 +41,13 @@ export class StringStream implements InputStream {
 
 export class Tokenizer {
   contextual: boolean
-  constructor(readonly token: (input: InputStream, stack: Stack) => number, options?: {contextual?: boolean}) {
+  prec = 2
+  constructor(readonly token: (input: InputStream, stack: Stack) => void, options?: {contextual?: boolean}) {
     this.contextual = !!(options && options.contextual)
+  }
+  withPrec(prec: number) {
+    this.prec = prec
+    return this
   }
 }
 

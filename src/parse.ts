@@ -84,7 +84,9 @@ class TokenCache {
     } else {
       this.curToken = TERM_ERR
       this.curEnd = pos + 1
-      for (let tokenizer of state.tokenizers) {
+      for (let i = 0; i < state.tokenizers.length; i++) {
+        let tokenizer = state.tokenizers[i]
+        if (actionIndex > 0 && i > 0 && state.tokenizers[i - 1].prec > tokenizer.prec) break
         let token = this.getToken(tokenizer, pos, stack)
         if (token.specialized > -1) {
           let initialIndex = actionIndex
