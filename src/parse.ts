@@ -72,20 +72,20 @@ class TokenCache {
   skipPos = 0
   skipTo = 0
   skipContent: number[] = []
-  skipType: ((input: InputStream) => number) | null = null
+  skipType: Tokenizer | null = null
 
   constructor(readonly parser: Parser, readonly input: InputStream) {}
 
-  actionsFor(state: ParseState, pos: number) {
+  actionsFor(stack: Stack, pos: number) {
     if (pos > this.pos) { this.index = 0; this.pos = pos }
-    let actionIndex = 0
+    let actionIndex = 0, state = stack.state
     if (pos == this.input.length) {
       actionIndex = this.addActions(state, this.curToken = TERM_EOF, this.curEnd = pos, actionIndex)
     } else {
       this.curToken = TERM_ERR
       this.curEnd = pos + 1
       for (let tokenizer of state.tokenizers) {
-        let token = this.getToken(tokenizer, pos)
+        let token = this.getToken(tokenizer, pos, stack)
         if (token.specialized > -1) {
           let initialIndex = actionIndex
           actionIndex = this.addActions(state, token.specialized >> 2, token.end, actionIndex)
@@ -105,15 +105,16 @@ class TokenCache {
     return this.actions
   }
 
-  getToken(tokenizer: Tokenizer, pos: number) {
+  getToken(tokenizer: Tokenizer, pos: number, stack: Stack) {
     for (let i = 0; i < this.index; i++) if (this.tokens[i].tokenizer == tokenizer)
       return this.tokens[i]
 
     let token
     if (this.tokens.length <= this.index) this.tokens.push(token = new CachedToken)
     else token = this.tokens[this.index]
+    if (!tokenizer.contextual) this.index++
 
-    tokenizer(this.input.goto(pos))
+    tokenizer.token(this.input.goto(pos), stack)
     token.tokenizer = tokenizer
     if (this.input.token < 0) {
       token.term = TERM_ERR
@@ -141,7 +142,8 @@ class TokenCache {
     return index
   }
 
-  updateSkip(skip: Tokenizer, pos: number): number {
+  updateSkip(stack: Stack): number {
+    let pos = stack.pos, skip = stack.state.skip
     if (pos == this.skipPos && skip == this.skipType) return this.skipTo
     this.skipType = skip
     this.skipPos = pos
@@ -150,7 +152,7 @@ class TokenCache {
       // FIXME it's awkward that the tokenizer gets called again until
       // it doesn't advance—that'll usually duplicate work. Reconsider
       // skip grammars.
-      skip(this.input.goto(pos))
+      skip.token(this.input.goto(pos), stack)
       if (this.input.token < 0 || this.input.tokenEnd <= pos) return this.skipTo = pos
       if (this.input.token & TERM_TAGGED) this.skipContent.push(pos, this.input.tokenEnd, this.input.token)
       pos = this.input.tokenEnd
@@ -172,7 +174,7 @@ export function parse(input: InputStream, parser: Parser, {
 
   parse: for (;;) {
     let stack = Stack.take(parses)
-    let start = tokens.updateSkip(stack.state.skip, stack.pos)
+    let start = tokens.updateSkip(stack)
 
     if (cacheCursor) {//  && !stack.state.ambiguous) { // FIXME implement fragility check
       for (let cached = cacheCursor.nodeAt(start); cached;) {
@@ -197,7 +199,7 @@ export function parse(input: InputStream, parser: Parser, {
       continue
     }
 
-    let actions = tokens.actionsFor(stack.state, start)
+    let actions = tokens.actionsFor(stack, start)
     for (let i = 0; i < actions.length;) {
       let action = actions[i++], term = actions[i++], end = actions[i++]
       let localStack = i == actions.length ? stack : stack.split()

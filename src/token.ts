@@ -1,3 +1,5 @@
+import {Stack} from "./stack"
+
 export interface InputStream {
   pos: number
   length: number
@@ -37,6 +39,11 @@ export class StringStream implements InputStream {
   read(from: number, to: number): string { return this.string.slice(from, to) }
 }
 
-export type Tokenizer = (input: InputStream) => number
+export class Tokenizer {
+  contextual: boolean
+  constructor(readonly token: (input: InputStream, stack: Stack) => number, options?: {contextual?: boolean}) {
+    this.contextual = !!(options && options.contextual)
+  }
+}
 
-export function noToken(input: InputStream) { return -1 }
+export const noToken = new Tokenizer(() => -1)
