@@ -79,32 +79,36 @@ class TokenCache {
   actionsFor(stack: Stack, pos: number) {
     if (pos > this.pos) { this.index = 0; this.pos = pos }
     let actionIndex = 0, state = stack.state
-    if (pos == this.input.length) {
-      actionIndex = this.addActions(state, this.curToken = TERM_EOF, this.curEnd = pos, actionIndex)
-    } else {
-      this.curToken = TERM_ERR
-      this.curEnd = pos + 1
-      for (let i = 0; i < state.tokenizers.length; i++) {
-        let tokenizer = state.tokenizers[i]
-        if (actionIndex > 0 && i > 0 && state.tokenizers[i - 1].prec > tokenizer.prec) break
-        let token = this.getToken(tokenizer, pos, stack)
-        if (token.specialized > -1) {
-          let initialIndex = actionIndex
-          actionIndex = this.addActions(state, token.specialized >> 2, token.end, actionIndex)
-          let type = token.specialized & 3
-          if (type == REPLACE || (type == SPECIALIZE && actionIndex > initialIndex)) {
-            if (this.curToken == TERM_ERR) { this.curToken = token.specialized >> 2; this.curEnd = token.end }
-            continue
-          }
-        }
-        if (token.term != TERM_ERR) {
-          if (this.curToken == TERM_ERR) { this.curToken = token.term; this.curEnd = token.end }
-          actionIndex = this.addActions(state, token.term, token.end, actionIndex)
+    this.curToken = TERM_ERR
+    this.curEnd = pos + 1
+    for (let i = 0; i < state.tokenizers.length; i++) {
+      let tokenizer = state.tokenizers[i]
+      if (actionIndex > 0 && i > 0 && state.tokenizers[i - 1].prec > tokenizer.prec) break
+      let token = this.getToken(tokenizer, pos, stack)
+      if (token.specialized > -1) {
+        let initialIndex = actionIndex
+        actionIndex = this.addActions(state, token.specialized >> 2, token.end, actionIndex)
+        let type = token.specialized & 3
+        if (type == REPLACE || (type == SPECIALIZE && actionIndex > initialIndex)) {
+          this.markToken(token.specialized >> 2, token.end)
+          continue
         }
       }
+      if (token.term != TERM_ERR) {
+        this.markToken(token.term, token.end)
+        actionIndex = this.addActions(state, token.term, token.end, actionIndex)
+      }
+    }
+    if (pos == this.input.length) {
+      this.markToken(TERM_EOF, pos)
+      actionIndex = this.addActions(state, TERM_EOF, pos, actionIndex)
     }
     if (this.actions.length > actionIndex) this.actions.length = actionIndex
     return this.actions
+  }
+
+  markToken(term: number, end: number) {
+    if (this.curToken == TERM_ERR) { this.curToken = term; this.curEnd = end }
   }
 
   getToken(tokenizer: Tokenizer, pos: number, stack: Stack) {
@@ -208,7 +212,7 @@ export function parse(input: InputStream, parser: Parser, {
       localStack.apply(action, term, start, end, tokens.skipContent)
       if (verbose) console.log(localStack + ` (via ${action < 0 ? "shift" : "reduce"} for ${
         parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
-      localStack.put(parses, action < 0)
+      localStack.put(parses, action >= 0)
     }
     if (actions.length > 0) continue
 
