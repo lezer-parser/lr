@@ -42,13 +42,29 @@ export class StringStream implements InputStream {
 export class Tokenizer {
   contextual: boolean
   prec = 2
-  constructor(readonly token: (input: InputStream, stack: Stack) => void, options?: {contextual?: boolean}) {
+
+  constructor(readonly data: readonly (readonly number[])[], options?: {contextual?: boolean}) {
     this.contextual = !!(options && options.contextual)
   }
+
   withPrec(prec: number) {
     this.prec = prec
     return this
   }
+
+  token(input: InputStream, stack: Stack) {
+    let state = 0
+    scan: for (;;) {
+      let array = this.data[state], acc = array[0]
+      if (acc > 0) input.accept(array[1]) // FIXME precedence
+      let next = input.next()
+      for (let i = 1 + acc; i < array.length; i += 3) { // FIXME binary search, multiple table forms
+        let from = array[i], to = array[i + 1]
+        if (next >= from && next < to) { state = array[i + 2]; continue scan }
+      }
+      break
+    }
+  }
 }
 
-export const noToken = new Tokenizer(() => -1)
+export const noToken = new Tokenizer([[0]])
