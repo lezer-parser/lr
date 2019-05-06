@@ -53,12 +53,14 @@ export class Tokenizer {
   }
 
   token(input: InputStream, stack: Stack) {
-    let state = 0
+    let state = 0, group = 1 << stack.state.tokenGroup
     scan: for (;;) {
-      let array = this.data[state], acc = array[0]
-      if (acc > 0) input.accept(array[1]) // FIXME precedence
+      let array = this.data[state], accEnd = array[1] << 1 + 2
+      if ((group & array[0]) == 0) break
+      for (let i = 2; i < accEnd; i += 2)
+        if ((array[i + 1] & group) > 0) input.accept(array[i])
       let next = input.next()
-      for (let i = 1 + acc; i < array.length; i += 3) { // FIXME binary search, multiple table forms
+      for (let i = accEnd; i < array.length; i += 3) { // FIXME binary search, multiple table forms
         let from = array[i], to = array[i + 1]
         if (next >= from && next < to) { state = array[i + 2]; continue scan }
       }

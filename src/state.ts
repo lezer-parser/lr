@@ -12,7 +12,7 @@ export class ParseState {
               readonly defaultReduce: number,
               readonly forcedReduce: number,
               readonly skip: Tokenizer,
-              readonly tokenizers: readonly Tokenizer[]) {}
+              readonly tokenGroup: number) {}
 
   hasAction(terminal: number) {
     return lookup(this.actions, terminal) != 0
@@ -34,10 +34,10 @@ const none: readonly any[] = []
 export function s(actions: number | number[],
                   forcedReduce: number,
                   skip: Tokenizer,
-                  tokenizers: readonly Tokenizer[],
+                  tokenGroup: number,
                   recover: readonly number[] = none): ParseState {
   return new ParseState(s.id++, typeof actions == "number" ? none : actions, recover,
-                        typeof actions == "number" ? actions : 0, forcedReduce, skip, tokenizers)
+                        typeof actions == "number" ? actions : 0, forcedReduce, skip, tokenGroup)
 }
 
 s.id = 0
