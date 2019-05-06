@@ -1,5 +1,5 @@
 export {Parser, ParseOptions, SPECIALIZE, REPLACE, EXTEND} from "./parse"
-export {ParseState, s, REDUCE_DEPTH_SIZE, REDUCE_DEPTH_MASK} from "./state"
-export {Tokenizer, noToken, InputStream, StringStream} from "./token"
+export {ParseState, REDUCE_DEPTH_SIZE, REDUCE_DEPTH_MASK} from "./state"
+export {InputStream, StringStream, TokenGroup} from "./token"
 export {TERM_TAGGED, TERM_ERR, TERM_EOF} from "./term"
 export {Tree, TreeBuffer, Node, SyntaxTree, NodeCursor} from "./tree"

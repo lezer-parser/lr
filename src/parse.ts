@@ -1,6 +1,6 @@
 import {Stack, BADNESS_WILD, DEFAULT_BUFFER_LENGTH, setBufferLength} from "./stack"
 import {ParseState} from "./state"
-import {Tokenizer, InputStream} from "./token"
+import {TokenGroup, InputStream, token} from "./token"
 import {TERM_EOF, TERM_ERR, TERM_TAGGED} from "./term"
 import {Node, Tree, TreeBuffer, SyntaxTree} from "./tree"
 
@@ -52,117 +52,82 @@ class CacheCursor {
   }
 }
 
-class CachedToken {
-  public tokenizer: null | Tokenizer = null
-  public end = 0
-  public term = -1
-  // Holds a specializer value—two bits of type
-  // (EXTEND/REPLACE/SPECIALIZE) and after that the term id
-  public specialized = -1
-}
-
 class TokenCache {
-  tokens: CachedToken[] = [new CachedToken, new CachedToken, new CachedToken, new CachedToken]
-  actions: number[] = []
+  cachedGroup = -1
   pos = 0
-  index = 0
-  curToken = 0
-  curEnd = 0
-
-  skipPos = 0
-  skipTo = 0
+  start = 0
+  end = 0
+  term = 0
+  specialized = 0
   skipContent: number[] = []
-  skipType: Tokenizer | null = null
+
+  actions: number[] = []
 
   constructor(readonly parser: Parser, readonly input: InputStream) {}
 
-  actionsFor(stack: Stack, pos: number) {
-    if (pos > this.pos) { this.index = 0; this.pos = pos }
-    let actionIndex = 0, state = stack.state
-    this.curToken = TERM_ERR
-    this.curEnd = pos + 1
-    for (let i = 0; i < state.tokenizers.length; i++) {
-      let tokenizer = state.tokenizers[i]
-      if (actionIndex > 0 && i > 0 && state.tokenizers[i - 1].prec > tokenizer.prec) break
-      let token = this.getToken(tokenizer, pos, stack)
-      if (token.specialized > -1) {
-        let initialIndex = actionIndex
-        actionIndex = this.addActions(state, token.specialized >> 2, token.end, actionIndex)
-        let type = token.specialized & 3
-        if (type == REPLACE || (type == SPECIALIZE && actionIndex > initialIndex)) {
-          this.markToken(token.specialized >> 2, token.end)
+  updateToken(stack: Stack) {
+    let group = stack.state.tokenGroup, pos = stack.pos
+    if (this.pos == pos && this.cachedGroup == group) return
+
+    this.pos = pos
+    this.cachedGroup = group
+    this.specialized = -1
+    if (this.skipContent.length) this.skipContent.length = 0
+
+    for (;;) {
+      if (pos == this.input.length) { // FIXME do call external tokenizers
+        this.term = TERM_EOF
+        this.start = this.end = pos
+      } else {
+        token(this.parser.tokenizer, this.input.goto(pos), stack)
+        if (this.input.token < 0) {
+          this.term = TERM_ERR
+          this.start = pos
+          this.end = pos + 1
+        } else if (this.parser.tokenGroups[group].skip.includes(this.input.token)) {
+          if (this.input.token & TERM_TAGGED)
+            this.skipContent.push(pos, this.input.tokenEnd, this.input.token)
+          pos = this.input.tokenEnd
           continue
+        } else {
+          this.term = this.input.token
+          this.start = pos
+          this.end = this.input.tokenEnd
+          let specIndex = this.parser.specialized.indexOf(this.term)
+          if (specIndex >= 0) {
+            // FIXME use .term differently or define a new prop so that recovery uses the specialized token?
+            let found = this.parser.specializations[specIndex][this.input.read(pos, this.end)]
+            if (found != null) this.specialized = found
+          }
         }
       }
-      if (token.term != TERM_ERR) {
-        this.markToken(token.term, token.end)
-        actionIndex = this.addActions(state, token.term, token.end, actionIndex)
-      }
+      break
     }
-    if (pos == this.input.length) {
-      this.markToken(TERM_EOF, pos)
-      actionIndex = this.addActions(state, TERM_EOF, pos, actionIndex)
+  }
+
+  actionsFor(stack: Stack) {
+    let actionIndex = 0, state = stack.state
+    maybeSpec: {
+      if (this.specialized > -1) {
+        let initialIndex = actionIndex
+        actionIndex = this.addActions(state, this.specialized >> 2, this.end, actionIndex)
+        let type = this.specialized & 3
+        if (type == REPLACE || (type == SPECIALIZE && actionIndex > initialIndex)) break maybeSpec
+      }
+      if (this.term != TERM_ERR)
+        actionIndex = this.addActions(state, this.term, this.end, actionIndex)
     }
     if (this.actions.length > actionIndex) this.actions.length = actionIndex
     return this.actions
-  }
-
-  markToken(term: number, end: number) {
-    if (this.curToken == TERM_ERR) { this.curToken = term; this.curEnd = end }
-  }
-
-  getToken(tokenizer: Tokenizer, pos: number, stack: Stack) {
-    for (let i = 0; i < this.index; i++) if (this.tokens[i].tokenizer == tokenizer)
-      return this.tokens[i]
-
-    let token
-    if (this.tokens.length <= this.index) this.tokens.push(token = new CachedToken)
-    else token = this.tokens[this.index]
-    if (!tokenizer.contextual) this.index++
-
-    tokenizer.token(this.input.goto(pos), stack)
-    token.tokenizer = tokenizer
-    if (this.input.token < 0) {
-      token.term = TERM_ERR
-      token.end = pos + 1
-      token.specialized = -1
-    } else {
-      token.term = this.input.token
-      token.end = this.input.tokenEnd
-      let specIndex = this.parser.specialized.indexOf(token.term), spec = -1
-      if (specIndex >= 0) {
-        let found = this.parser.specializations[specIndex][this.input.read(pos, token.end)]
-        if (found != null) spec = found
-      }
-      token.specialized = spec
-    }
-    return token
   }
 
   addActions(state: ParseState, token: number, end: number, index: number) {
     for (let i = 0; i < state.actions.length; i += 2) if (state.actions[i] == token) {
       this.actions[index++] = state.actions[i + 1]
       this.actions[index++] = token
-      this.actions[index++] = end
+      this.actions[index++] = end // FIXME always the same as this.end?
     }
     return index
-  }
-
-  updateSkip(stack: Stack): number {
-    let pos = stack.pos, skip = stack.state.skip
-    if (pos == this.skipPos && skip == this.skipType) return this.skipTo
-    this.skipType = skip
-    this.skipPos = pos
-    this.skipContent.length = 0
-    for (;;) {
-      // FIXME it's awkward that the tokenizer gets called again until
-      // it doesn't advance—that'll usually duplicate work. Reconsider
-      // skip grammars.
-      skip.token(this.input.goto(pos), stack)
-      if (this.input.token < 0 || this.input.tokenEnd <= pos) return this.skipTo = pos
-      if (this.input.token & TERM_TAGGED) this.skipContent.push(pos, this.input.tokenEnd, this.input.token)
-      pos = this.input.tokenEnd
-    }
   }
 }
 
@@ -180,11 +145,12 @@ export function parse(input: InputStream, parser: Parser, {
 
   parse: for (;;) {
     let stack = Stack.take(parses)
-    let start = tokens.updateSkip(stack)
+    tokens.updateToken(stack)
+    let start = tokens.start
 
     if (cacheCursor) {//  && !stack.state.ambiguous) { // FIXME implement fragility check
       for (let cached = cacheCursor.nodeAt(start); cached;) {
-        let match = parser.getGoto(stack.state.id, cached.tag)
+       let match = parser.getGoto(stack.state.id, cached.tag)
         if (match) {
           stack.useCached(cached, start, parser.states[match])
           if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.tag)})`)
@@ -205,7 +171,7 @@ export function parse(input: InputStream, parser: Parser, {
       continue
     }
 
-    let actions = tokens.actionsFor(stack, start)
+    let actions = tokens.actionsFor(stack)
     for (let i = 0; i < actions.length;) {
       let action = actions[i++], term = actions[i++], end = actions[i++]
       let localStack = i == actions.length ? stack : stack.split()
@@ -226,18 +192,18 @@ export function parse(input: InputStream, parser: Parser, {
 
     if (!strict &&
         !(stack.badness > BADNESS_WILD && parses.some(s => s.pos >= stack.pos && s.badness <= stack.badness))) {
-      let inserted = stack.recoverByInsert(tokens.curToken, start, tokens.curEnd)
+      let inserted = stack.recoverByInsert(tokens.term, start, tokens.end)
       if (inserted) {
         if (verbose) console.log(inserted + " (via recover-insert)")
         inserted.put(parses)
       }
 
-      stack.recoverByDelete(tokens.curToken, start, tokens.curEnd, tokens.skipContent)
+      stack.recoverByDelete(tokens.term, start, tokens.end, tokens.skipContent)
       if (verbose) console.log(stack + " (via recover-delete)")
       stack.put(parses)
     } else if (!parses.length) {
       // Only happens in strict mode
-      throw new SyntaxError("No parse at " + start + " with " + parser.getName(tokens.curToken) + " (stack is " + stack + ")")
+      throw new SyntaxError("No parse at " + start + " with " + parser.getName(tokens.term) + " (stack is " + stack + ")")
     }
   }
 }
@@ -252,6 +218,8 @@ export class Parser {
               readonly untaggedGoto: readonly (readonly number[])[],
               readonly specialized: readonly number[],
               specializations: readonly {[value: string]: number}[],
+              readonly tokenizer: readonly (readonly number[])[],
+              readonly tokenGroups: readonly TokenGroup[],
               readonly termNames: null | {[id: number]: string} = null) {
     this.specializations = specializations.map(withoutPrototype)
   }

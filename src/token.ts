@@ -39,34 +39,25 @@ export class StringStream implements InputStream {
   read(from: number, to: number): string { return this.string.slice(from, to) }
 }
 
-export class Tokenizer {
-  contextual: boolean
-  prec = 2
-
-  constructor(readonly data: readonly (readonly number[])[], options?: {contextual?: boolean}) {
-    this.contextual = !!(options && options.contextual)
-  }
-
-  withPrec(prec: number) {
-    this.prec = prec
-    return this
-  }
-
-  token(input: InputStream, stack: Stack) {
-    let state = 0, group = 1 << stack.state.tokenGroup
-    scan: for (;;) {
-      let array = this.data[state], accEnd = array[1] << 1 + 2
-      if ((group & array[0]) == 0) break
-      for (let i = 2; i < accEnd; i += 2)
-        if ((array[i + 1] & group) > 0) input.accept(array[i])
-      let next = input.next()
-      for (let i = accEnd; i < array.length; i += 3) { // FIXME binary search, multiple table forms
-        let from = array[i], to = array[i + 1]
-        if (next >= from && next < to) { state = array[i + 2]; continue scan }
-      }
-      break
-    }
-  }
+export class TokenGroup {
+  constructor(readonly skip: readonly number[]) {}
 }
 
-export const noToken = new Tokenizer([[0]])
+export function token(data: readonly (readonly number[])[],
+                      input: InputStream,
+                      stack: Stack) {
+  let state = 0, group = 1 << stack.state.tokenGroup
+  scan: for (;;) {
+    let array = data[state], accEnd = (array[1] << 1) + 2
+    // Check whether this state can lead to a token in the current group
+    if ((group & array[0]) == 0) break
+    for (let i = 2; i < accEnd; i += 2)
+      if ((array[i + 1] & group) > 0) input.accept(array[i])
+    let next = input.next()
+    for (let i = accEnd; i < array.length; i += 3) { // FIXME binary search, multiple table forms
+      let from = array[i], to = array[i + 1]
+      if (next >= from && next < to) { state = array[i + 2]; continue scan }
+    }
+    break
+  }
+}
