@@ -70,37 +70,55 @@ class TokenCache {
   constructor(readonly parser: Parser, readonly input: InputStream) {}
 
   updateToken(stack: Stack) {
-    let group = stack.state.tokenGroup, pos = stack.pos
-    if (this.pos == pos && this.cachedGroup == group) return
+    let groupID = stack.state.tokenGroup, pos = stack.pos
+    if (this.pos == pos && this.cachedGroup == groupID) return
 
     this.pos = pos
-    this.cachedGroup = group
+    this.cachedGroup = groupID
     this.specialized = -1
     if (this.skipContent.length) this.skipContent.length = 0
 
+    let group = stack.parser.tokenGroups[groupID], input = this.input
+
     for (;;) {
-      if (pos == this.input.length) { // FIXME do call external tokenizers
+      if (pos == input.length) { // FIXME do call external tokenizers
         this.term = this.token = TERM_EOF
         this.start = this.end = pos
       } else {
-        token(this.parser.tokenizer, this.input.goto(pos), stack)
-        if (this.input.token < 0) {
+        // Try the external tokenizers for this group + the main tokenizer, in order
+        findToken: {
+          // FIXME contextual external tokenizers
+          // FIXME maybe move these all into a single array
+          for (let ext of group.externalBefore) {
+            ext.token(input.goto(pos), stack)
+            console.log("external yields", input.token)
+            if (input.token >= 0) break findToken
+          }
+          token(this.parser.tokenizer, input.goto(pos), stack)
+          if (input.token >= 0) break findToken
+          for (let ext of group.externalAfter) {
+            ext.token(input.goto(pos), stack)
+            if (input.token >= 0) break findToken
+          }
+        }
+          
+        if (input.token < 0) {
           this.term = this.token = TERM_ERR
           this.start = pos
           this.end = pos + 1
-        } else if (this.parser.tokenGroups[group].skip.includes(this.input.token)) {
-          if (this.input.token & TERM_TAGGED)
-            this.skipContent.push(pos, this.input.tokenEnd, this.input.token)
-          pos = this.input.tokenEnd
+        } else if (group.skip.includes(input.token)) {
+          if (input.token & TERM_TAGGED)
+            this.skipContent.push(pos, input.tokenEnd, input.token)
+          pos = input.tokenEnd
           continue
         } else {
-          this.term = this.token = this.input.token
+          this.term = this.token = input.token
           this.start = pos
-          this.end = this.input.tokenEnd
+          this.end = input.tokenEnd
           let specIndex = this.parser.specialized.indexOf(this.term)
           if (specIndex >= 0) {
             // FIXME use .term differently or define a new prop so that recovery uses the specialized token?
-            let found = this.parser.specializations[specIndex][this.input.read(pos, this.end)]
+            let found = this.parser.specializations[specIndex][input.read(pos, this.end)]
             if (found != null) this.specialized = found
           }
         }

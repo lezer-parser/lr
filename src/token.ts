@@ -40,7 +40,18 @@ export class StringStream implements InputStream {
 }
 
 export class TokenGroup {
-  constructor(readonly skip: readonly number[]) {}
+  constructor(readonly skip: readonly number[],
+              readonly externalBefore: readonly ExternalTokenizer[],
+              readonly externalAfter: readonly ExternalTokenizer[]) {}
+}
+
+export class ExternalTokenizer {
+  contextual: boolean
+
+  constructor(readonly token: (input: InputStream, stack: Stack) => void,
+              options: {contextual?: boolean} = {}) {
+    this.contextual = options && options.contextual || false
+  }
 }
 
 export function token(data: readonly (readonly number[])[],
