@@ -51,8 +51,15 @@ export function token(data: readonly (readonly number[])[],
     let array = data[state], accEnd = (array[1] << 1) + 2
     // Check whether this state can lead to a token in the current group
     if ((group & array[0]) == 0) break
-    for (let i = 2; i < accEnd; i += 2)
-      if ((array[i + 1] & group) > 0) input.accept(array[i])
+    // Accept tokens in this state, possibly overwriting
+    // lower-precedence / shorter tokens
+    for (let i = 2; i < accEnd; i += 2) if ((array[i + 1] & group) > 0) {
+      let term = array[i]
+      if (input.token == -1 || input.token == term || mayOverride(stack.parser.tokenPrec, term, input.token)) {
+        input.accept(term)
+        break
+      }
+    }
     let next = input.next()
     for (let i = accEnd; i < array.length; i += 3) { // FIXME binary search, multiple table forms
       let from = array[i], to = array[i + 1]
@@ -60,4 +67,9 @@ export function token(data: readonly (readonly number[])[],
     }
     break
   }
+}
+
+function mayOverride(precedences: number[], token: number, prev: number) {
+  let iPrev = precedences.indexOf(prev)
+  return iPrev < 0 || precedences.indexOf(token) < iPrev
 }

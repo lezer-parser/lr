@@ -57,8 +57,12 @@ class TokenCache {
   pos = 0
   start = 0
   end = 0
+  // Latest read base token
   term = 0
+  // Potential specialization for .term
   specialized = 0
+  // Latest token, with specialization applied, used for recovery
+  token = 0
   skipContent: number[] = []
 
   actions: number[] = []
@@ -76,12 +80,12 @@ class TokenCache {
 
     for (;;) {
       if (pos == this.input.length) { // FIXME do call external tokenizers
-        this.term = TERM_EOF
+        this.term = this.token = TERM_EOF
         this.start = this.end = pos
       } else {
         token(this.parser.tokenizer, this.input.goto(pos), stack)
         if (this.input.token < 0) {
-          this.term = TERM_ERR
+          this.term = this.token = TERM_ERR
           this.start = pos
           this.end = pos + 1
         } else if (this.parser.tokenGroups[group].skip.includes(this.input.token)) {
@@ -90,7 +94,7 @@ class TokenCache {
           pos = this.input.tokenEnd
           continue
         } else {
-          this.term = this.input.token
+          this.term = this.token = this.input.token
           this.start = pos
           this.end = this.input.tokenEnd
           let specIndex = this.parser.specialized.indexOf(this.term)
@@ -112,7 +116,10 @@ class TokenCache {
         let initialIndex = actionIndex
         actionIndex = this.addActions(state, this.specialized >> 2, this.end, actionIndex)
         let type = this.specialized & 3
-        if (type == REPLACE || (type == SPECIALIZE && actionIndex > initialIndex)) break maybeSpec
+        if (type == REPLACE || (type == SPECIALIZE && actionIndex > initialIndex)) {
+          this.token = this.specialized >> 2
+          break maybeSpec
+        }
       }
       if (this.term != TERM_ERR)
         actionIndex = this.addActions(state, this.term, this.end, actionIndex)
@@ -192,18 +199,18 @@ export function parse(input: InputStream, parser: Parser, {
 
     if (!strict &&
         !(stack.badness > BADNESS_WILD && parses.some(s => s.pos >= stack.pos && s.badness <= stack.badness))) {
-      let inserted = stack.recoverByInsert(tokens.term, start, tokens.end)
+      let inserted = stack.recoverByInsert(tokens.token, start, tokens.end)
       if (inserted) {
         if (verbose) console.log(inserted + " (via recover-insert)")
         inserted.put(parses)
       }
 
-      stack.recoverByDelete(tokens.term, start, tokens.end, tokens.skipContent)
+      stack.recoverByDelete(tokens.token, start, tokens.end, tokens.skipContent)
       if (verbose) console.log(stack + " (via recover-delete)")
       stack.put(parses)
     } else if (!parses.length) {
       // Only happens in strict mode
-      throw new SyntaxError("No parse at " + start + " with " + parser.getName(tokens.term) + " (stack is " + stack + ")")
+      throw new SyntaxError("No parse at " + start + " with " + parser.getName(tokens.token) + " (stack is " + stack + ")")
     }
   }
 }
@@ -219,6 +226,7 @@ export class Parser {
               readonly specialized: readonly number[],
               specializations: readonly {[value: string]: number}[],
               readonly tokenizer: readonly (readonly number[])[],
+              readonly tokenPrec: number[],
               readonly tokenGroups: readonly TokenGroup[],
               readonly termNames: null | {[id: number]: string} = null) {
     this.specializations = specializations.map(withoutPrototype)
