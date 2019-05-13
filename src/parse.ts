@@ -1,6 +1,6 @@
 import {Stack, BADNESS_WILD, DEFAULT_BUFFER_LENGTH, setBufferLength} from "./stack"
 import {ParseState} from "./state"
-import {TokenGroup, InputStream, token} from "./token"
+import {InputStream, Tokenizer} from "./token"
 import {TERM_EOF, TERM_ERR, TERM_TAGGED} from "./term"
 import {Node, Tree, TreeBuffer, SyntaxTree} from "./tree"
 
@@ -53,7 +53,7 @@ class CacheCursor {
 }
 
 class TokenCache {
-  cachedGroup = -1
+  cachedFor: null | readonly Tokenizer[] = null
   pos = 0
   start = 0
   end = 0
@@ -70,15 +70,15 @@ class TokenCache {
   constructor(readonly parser: Parser, readonly input: InputStream) {}
 
   updateToken(stack: Stack) {
-    let groupID = stack.state.tokenGroup, pos = stack.pos
-    if (this.pos == pos && this.cachedGroup == groupID) return
+    let tokenizers = stack.state.tokenizers, pos = stack.pos
+    if (this.pos == pos && this.cachedFor == tokenizers) return
 
     this.pos = pos
-    this.cachedGroup = groupID
+    this.cachedFor = tokenizers
     this.specialized = -1
     if (this.skipContent.length) this.skipContent.length = 0
 
-    let group = stack.parser.tokenGroups[groupID], input = this.input
+    let input = this.input
 
     for (;;) {
       if (pos == input.length) { // FIXME do call external tokenizers
@@ -86,27 +86,17 @@ class TokenCache {
         this.start = this.end = pos
       } else {
         // Try the external tokenizers for this group + the main tokenizer, in order
-        findToken: {
-          // FIXME contextual external tokenizers
-          // FIXME maybe move these all into a single array
-          for (let ext of group.externalBefore) {
-            ext.token(input.goto(pos), stack)
-            console.log("external yields", input.token)
-            if (input.token >= 0) break findToken
-          }
-          token(this.parser.tokenizer, input.goto(pos), stack)
-          if (input.token >= 0) break findToken
-          for (let ext of group.externalAfter) {
-            ext.token(input.goto(pos), stack)
-            if (input.token >= 0) break findToken
-          }
+        for (let group of tokenizers) {
+          group.token(input.goto(pos), stack)
+          if (group.contextual) this.pos = -1 // FIXME
+          if (input.token >= 0) break
         }
           
         if (input.token < 0) {
           this.term = this.token = TERM_ERR
           this.start = pos
           this.end = pos + 1
-        } else if (group.skip.includes(input.token)) {
+        } else if (this.parser.skip.includes(input.token)) {
           if (input.token & TERM_TAGGED)
             this.skipContent.push(pos, input.tokenEnd, input.token)
           pos = input.tokenEnd
@@ -204,6 +194,7 @@ export function parse(input: InputStream, parser: Parser, {
       if (verbose) console.log(localStack + ` (via ${action < 0 ? "shift" : "reduce"} for ${
         parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
       localStack.put(parses, action >= 0)
+      if (action < 0) tokens.pos = -1
     }
     if (actions.length > 0) continue
 
@@ -243,9 +234,8 @@ export class Parser {
               readonly untaggedGoto: readonly (readonly number[])[],
               readonly specialized: readonly number[],
               specializations: readonly {[value: string]: number}[],
-              readonly tokenizer: readonly (readonly number[])[],
               readonly tokenPrec: number[],
-              readonly tokenGroups: readonly TokenGroup[],
+              readonly skip: readonly number[],
               readonly termNames: null | {[id: number]: string} = null) {
     this.specializations = specializations.map(withoutPrototype)
   }

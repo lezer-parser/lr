@@ -39,11 +39,20 @@ export class StringStream implements InputStream {
   read(from: number, to: number): string { return this.string.slice(from, to) }
 }
 
-export class TokenGroup {
-  constructor(readonly skip: readonly number[],
-              readonly externalBefore: readonly ExternalTokenizer[],
-              readonly externalAfter: readonly ExternalTokenizer[]) {}
+export interface Tokenizer {
+  token(input: InputStream, stack: Stack): void
+  contextual: boolean
 }
+
+export class TokenGroup implements Tokenizer {
+  contextual!: boolean
+
+  constructor(readonly data: readonly (readonly number[])[], readonly id: number) {}
+
+  token(input: InputStream, stack: Stack) { token(this.data, input, stack, this.id) }
+}
+
+TokenGroup.prototype.contextual = false
 
 export class ExternalTokenizer {
   contextual: boolean
@@ -54,17 +63,18 @@ export class ExternalTokenizer {
   }
 }
 
-export function token(data: readonly (readonly number[])[],
-                      input: InputStream,
-                      stack: Stack) {
-  let state = 0, group = 1 << stack.state.tokenGroup
+function token(data: readonly (readonly number[])[],
+               input: InputStream,
+               stack: Stack,
+               group: number) {
+  let state = 0, groupMask = 1 << group
   scan: for (;;) {
     let array = data[state], accEnd = (array[1] << 1) + 2
     // Check whether this state can lead to a token in the current group
-    if ((group & array[0]) == 0) break
+    if ((groupMask & array[0]) == 0) break
     // Accept tokens in this state, possibly overwriting
     // lower-precedence / shorter tokens
-    for (let i = 2; i < accEnd; i += 2) if ((array[i + 1] & group) > 0) {
+    for (let i = 2; i < accEnd; i += 2) if ((array[i + 1] & groupMask) > 0) {
       let term = array[i]
       if (input.token == -1 || input.token == term || mayOverride(stack.parser.tokenPrec, term, input.token)) {
         input.accept(term)

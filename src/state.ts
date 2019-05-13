@@ -1,3 +1,5 @@
+import {Tokenizer} from "./token"
+
 // Shifts are encoded as negative state IDs, reduces as bitmasks with
 // the first 6 bits holding the depth of the reduce, and the bits
 // after that the term that's being reduced.
@@ -9,7 +11,7 @@ export class ParseState {
               readonly recover: readonly number[],
               readonly defaultReduce: number,
               readonly forcedReduce: number,
-              readonly tokenGroup: number) {}
+              readonly tokenizers: readonly Tokenizer[]) {}
 
   hasAction(terminal: number) {
     return lookup(this.actions, terminal) != 0
