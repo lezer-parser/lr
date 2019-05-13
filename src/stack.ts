@@ -142,30 +142,36 @@ export class Stack {
     this.badness += BADNESS_DELETE
   }
 
+  canShift(term: number) {
+    for (let sim = new SimulatedStack(this);;) {
+      let action = sim.top.defaultReduce
+      for (let i = 0; action == 0 && i < sim.top.actions.length; i += 2) {
+        if (sim.top.actions[i] == term) {
+          action = sim.top.actions[i + 1]
+          break
+        }
+      }
+      if (action < 0) return true
+      if (action == 0) return false
+      sim.reduce(action)
+    }
+  }
+
   canRecover(next: number) {
     // Scan for a state that has either a direct action or a recovery
     // action for next, without actually building up a new stack
     let visited: number[] | null = null
-    for (let top = this.state, rest = this.stack, offset = rest.length, i = 0;; i++) {
-      if (top.hasAction(next) || top.getRecover(next) != 0) return true
+    for (let sim = new SimulatedStack(this), i = 0;; i++) {
+      if (sim.top.hasAction(next) || sim.top.getRecover(next) != 0) return true
       // Find a way to reduce from here
-      let reduce = top.anyReduce()
-      if (reduce == 0 && (reduce = top.forcedReduce) < 0) return false
-      let term = reduce >> REDUCE_DEPTH_SIZE, depth = (reduce & REDUCE_DEPTH_MASK) - 1
-      if (depth == 0) {
-        if (rest == this.stack) rest = rest.slice()
-        rest.push(top.id, 0, 0)
-        offset += 3
-      } else {
-        offset -= (depth - 1) * 3
-      }
-      let goto = this.parser.getGoto(rest[offset - 3], term)
-      top = this.parser.states[goto]
+      let reduce = sim.top.anyReduce()
+      if (reduce == 0 && (reduce = sim.top.forcedReduce) < 0) return false
+      sim.reduce(reduce)
       if (i > 10) {
         // Guard against getting stuck in a cycle
         if (!visited) visited = []
-        else if (i == 100 || visited.includes(top.id)) return false
-        visited.push(top.id)
+        else if (i == 100 || visited.includes(sim.top.id)) return false
+        visited.push(sim.top.id)
       }
     }
   }
@@ -249,6 +255,30 @@ export class Stack {
     let cursor = new BufferCursor(this)
     while (!cursor.done) cursor.takeNode(0, children, positions)
     return new Tree(children.reverse(), positions.reverse())
+  }
+}
+
+class SimulatedStack {
+  top: ParseState
+  rest: number[]
+  offset: number
+  constructor(readonly stack: Stack) {
+    this.top = stack.state
+    this.rest = stack.stack
+    this.offset = this.rest.length
+  }
+
+  reduce(action: number) {
+    let term = action >> REDUCE_DEPTH_SIZE, depth = (action & REDUCE_DEPTH_MASK) - 1
+    if (depth == 0) {
+      if (this.rest == this.stack.stack) this.rest = this.rest.slice()
+      this.rest.push(this.top.id, 0, 0)
+      this.offset += 3
+    } else {
+      this.offset -= (depth - 1) * 3
+    }
+    let goto = this.stack.parser.getGoto(this.rest[this.offset - 3], term)
+    this.top = this.stack.parser.states[goto]
   }
 }
 
