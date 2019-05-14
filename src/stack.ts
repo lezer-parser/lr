@@ -1,4 +1,4 @@
-import {ParseState, REDUCE_DEPTH_MASK, REDUCE_DEPTH_SIZE} from "./state"
+import {ParseState, REDUCE_DEPTH_MASK, REDUCE_DEPTH_SIZE, GOTO_STAY} from "./state"
 import {TERM_TAGGED, TERM_ERR} from "./term"
 import {Parser} from "./parse"
 import {Node, Tree, TreeBuffer, SyntaxTree} from "./tree"
@@ -97,12 +97,12 @@ export class Stack {
     this.buffer.push(term, start, end, childCount)
   }
 
-  apply(action: number, next: number, nextStart: number, nextEnd: number, skipped: number[]) {
+  apply(action: number, next: number, nextStart: number, nextEnd: number) {
     if (action >= 0) {
       this.reduce(action)
     } else { // Shift
-      this.shiftSkipped(skipped)
-      this.pushState(this.parser.states[-action], nextStart)
+      if (action != GOTO_STAY)
+        this.pushState(this.parser.states[-action], nextStart)
       this.pos = nextEnd
       if (next & TERM_TAGGED) this.shiftValue(next, nextStart, nextEnd)
       this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
@@ -129,13 +129,7 @@ export class Stack {
                      this.badness, [], parent ? parent.bufferBase + parent.buffer.length : 0, parent)
   }
 
-  shiftSkipped(skipped: number[]) {
-    for (let i = 0; i < skipped.length; i += 3)
-      this.buffer.push(skipped[i + 2], skipped[i], skipped[i + 1], 4)
-  }
-
-  recoverByDelete(next: number, nextStart: number, nextEnd: number, skipped: number[]) {
-    this.shiftSkipped(skipped)
+  recoverByDelete(next: number, nextStart: number, nextEnd: number) {
     if (next & TERM_TAGGED) this.shiftValue(next, nextStart, nextEnd)
     this.shiftValue(TERM_ERR, nextStart, nextEnd, (next & TERM_TAGGED) ? 8 : 4)
     this.pos = nextEnd

@@ -5,16 +5,20 @@ import {Tokenizer} from "./token"
 // after that the term that's being reduced.
 export const REDUCE_DEPTH_SIZE = 6, REDUCE_DEPTH_MASK = 2**REDUCE_DEPTH_SIZE - 1
 
+export const GOTO_STAY = -0xffff
+
 export class ParseState {
   constructor(readonly id: number,
               readonly actions: readonly number[],
               readonly recover: readonly number[],
               readonly defaultReduce: number,
               readonly forcedReduce: number,
-              readonly tokenizers: readonly Tokenizer[]) {}
+              readonly tokenizers: readonly Tokenizer[],
+              readonly skip: readonly number[]) {}
 
   hasAction(terminal: number) {
-    return lookup(this.actions, terminal) != 0
+    return lookup(this.actions, terminal) != 0 ||
+      lookup(this.skip, terminal) != 0
   }
 
   anyReduce() {
@@ -25,6 +29,7 @@ export class ParseState {
     }
     return 0
   }
+
   getRecover(terminal: number) { return lookup(this.recover, terminal) }
 }
 
