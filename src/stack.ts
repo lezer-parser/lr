@@ -159,7 +159,7 @@ export class Stack {
       if (sim.top.hasAction(next) || sim.top.getRecover(next) != 0) return true
       // Find a way to reduce from here
       let reduce = sim.top.anyReduce()
-      if (reduce == 0 && (reduce = sim.top.forcedReduce) < 0) return false
+      if (reduce == 0 && (reduce = sim.top.forcedReduce) == 0) return false
       sim.reduce(reduce)
       if (i > 10) {
         // Guard against getting stuck in a cycle
