@@ -6,7 +6,7 @@ import {Node, Tree, TreeBuffer, SyntaxTree} from "./tree"
 
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
 
-export const SPECIALIZE = 0, REPLACE = 1, EXTEND = 2
+export const SPECIALIZE = 0, EXTEND = 1
 
 class CacheCursor {
   trees: Tree[]
@@ -111,11 +111,10 @@ class TokenCache {
     let actionIndex = 0, state = stack.state
     maybeSpec: {
       if (this.specialized > -1) {
-        let initialIndex = actionIndex
-        actionIndex = this.addActions(state, this.specialized >> 2, this.end, actionIndex)
-        let type = this.specialized & 3
-        if (type == REPLACE || (type == SPECIALIZE && actionIndex > initialIndex)) {
-          this.token = this.specialized >> 2
+        actionIndex = this.addActions(state, this.specialized >> 1, this.end, actionIndex)
+        let type = this.specialized & 1
+        if (type == SPECIALIZE) {
+          this.token = this.specialized >> 1
           break maybeSpec
         }
       }
