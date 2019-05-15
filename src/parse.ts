@@ -121,17 +121,20 @@ class TokenCache {
     }
   }
 
+  putAction(action: number, token: number, end: number, index: number) {
+    // Don't add duplicate actions
+    for (let i = 0; i < index; i += 3) if (this.actions[i] == action) return index
+    this.actions[index++] = action
+    this.actions[index++] = token
+    this.actions[index++] = end
+    return index
+  }
+
   addActions(state: ParseState, token: number, end: number, index: number) {
-    for (let i = 0; i < state.actions.length; i += 2) if (state.actions[i] == token) {
-      this.actions[index++] = state.actions[i + 1]
-      this.actions[index++] = token
-      this.actions[index++] = end
-    }
-    for (let i = 0; i < state.skip.length; i += 2) if (state.skip[i] == token) {
-      this.actions[index++] = state.skip[i + 1]
-      this.actions[index++] = token
-      this.actions[index++] = end
-    }
+    for (let i = 0; i < state.actions.length; i += 2) if (state.actions[i] == token)
+      index = this.putAction(state.actions[i + 1], token, end, index)
+    for (let i = 0; i < state.skip.length; i += 2) if (state.skip[i] == token)
+      index = this.putAction(state.skip[i + 1], token, end, index)
     return index
   }
 }
