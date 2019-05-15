@@ -4,6 +4,7 @@ export interface InputStream {
   pos: number
   length: number
   next(): number
+  peek(pos?: number): number
   accept(term: number, pos?: number): void
   token: number
   tokenEnd: number
@@ -23,6 +24,10 @@ export class StringStream implements InputStream {
   next(): number {
     if (this.pos == this.string.length) return -1
     return this.string.charCodeAt(this.pos++)
+  }
+
+  peek(pos = this.pos) {
+    return this.string.charCodeAt(pos)
   }
   
   accept(term: number, pos = this.pos) {
