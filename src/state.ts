@@ -30,6 +30,8 @@ export class ParseState {
     return 0
   }
 
+  get accepting() { return this.forcedReduce == -1 }
+
   getRecover(terminal: number) { return lookup(this.recover, terminal) }
 }
 
