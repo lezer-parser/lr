@@ -47,19 +47,19 @@ export class Stack {
               readonly stack: number[],
               public state: ParseState,
               public pos: number,
+              public inputPos: number,
               public badness: number,
               // Holds tag,start,end,nodeCount quads
               readonly buffer: number[],
               readonly bufferBase: number,
-              readonly parent: Stack | null,
-              readonly skipped: number[]) {}
+              readonly parent: Stack | null) {}
 
   toString() {
     return "[" + this.stack.filter((_, i) => i % 3 == 0).concat(this.state.id).join(",") + "]"
   }
 
   static start(parser: Parser) {
-    return new Stack(parser, [], [], parser.states[0], 0, 0, [], 0, null, [])
+    return new Stack(parser, [], [], parser.states[0], 0, 0, 0, [], 0, null)
   }
 
   pushState(state: ParseState, start: number) {
@@ -79,19 +79,30 @@ export class Stack {
     let count = this.bufferBase + this.buffer.length - this.stack[base - 1]
     if ((tag & TERM_TAGGED) > 0 ||
         ((tag >> 1) < this.parser.repeats.length && this.pos - start > MAX_BUFFER_LENGTH && count > 0)) {
-      let end = this.skipped.length ? this.skipped[1] : this.pos
-      this.buffer.push(tag, start, end, count + 4)
+      if (this.inputPos == this.pos) { // Simple case, just append
+        this.buffer.push(tag, start, this.pos, count + 4)
+      } else { // There may be skipped nodes that have to be moved forward
+        let index = this.buffer.length
+        while (index > 0 && this.buffer[index - 2] > this.pos) {
+          // Move this record forward
+          this.buffer[index] = this.buffer[index - 4]
+          this.buffer[index + 1] = this.buffer[index - 3]
+          this.buffer[index + 2] = this.buffer[index - 2]
+          this.buffer[index + 3] = this.buffer[index - 1]
+          index -= 4
+          count -= 4
+        }
+        if (count > 0 || (tag & TERM_TAGGED) > 0) {
+          this.buffer[index] = tag
+          this.buffer[index + 1] = start
+          this.buffer[index + 2] = this.pos
+          this.buffer[index + 3] = count + 4
+        }
+      }
     }
     let baseStateID = this.stack[base - 3]
     this.state = this.parser.states[this.parser.getGoto(baseStateID, tag)]
     if (depth > 1) this.stack.length = base
-  }
-
-  popSkipped() {
-    if (this.skipped.length) {
-      for (let i = 0; i < this.skipped.length; i++) this.buffer.push(this.skipped[i])
-      this.skipped.length = 0
-    }
   }
 
   shiftValue(term: number, start: number, end: number, childCount = 4) {
@@ -107,30 +118,29 @@ export class Stack {
     this.buffer.push(term, start, end, childCount)
   }
 
-  apply(action: number, next: number, nextStart: number, nextEnd: number) {
+  apply(action: number, next: number, nextEnd: number) {
     if (action >= 0) {
       this.reduce(action)
-    } else { // Shift
-      if (action == GOTO_STAY) {
-        if (next & TERM_TAGGED) this.skipped.push(next, nextStart, nextEnd, 4)
-      } else {
-        this.popSkipped()
-        this.pushState(this.parser.states[-action], nextStart)
-        if (next & TERM_TAGGED) this.shiftValue(next, nextStart, nextEnd)
-        this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
-      }
-      this.pos = nextEnd
+    } else if (action != GOTO_STAY) { // Shift, not skipped
+      let start = this.inputPos
+      this.pos = this.inputPos = nextEnd
+      this.pushState(this.parser.states[-action], start)
+      if (next & TERM_TAGGED) this.buffer.push(next, start, nextEnd, 4)
+      this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
+    } else { // Skipped
+      if (next & TERM_TAGGED) this.buffer.push(next, this.inputPos, nextEnd, 4)
+      this.inputPos = nextEnd
     }
   }
 
-  useCached(value: Node, start: number, next: ParseState) {
-    this.popSkipped()
+  useCached(value: Node, next: ParseState) {
     let index = this.reused.length - 1
     if (index < 0 || this.reused[index] != value) {
       this.reused.push(value)
       index++
     }
-    this.pos = start + value.length
+    let start = this.inputPos
+    this.pos = this.inputPos = start + value.length
     this.pushState(next, start)
     this.badness >> 1 // FIXME
     this.buffer.push(index, start, this.pos, REUSED_VALUE)
@@ -138,18 +148,23 @@ export class Stack {
 
   split() {
     let parent: Stack | null = this
+    let off = parent.buffer.length
+    // Because the top of the buffer (after this.pos) may be mutated
+    // to reorder reductions and skipped tokens, and shared buffers
+    // should be immutable, this copies any outstanding skipped tokens
+    // to the new buffer, and puts the base pointer before them.
+    while (off > 0 && parent.buffer[off - 2] > parent.pos) off -= 4
+    let buffer = parent.buffer.slice(off), base = parent.bufferBase + off
     // Make sure parent points to an actual parent with content, if there is such a parent.
-    while (parent && parent.buffer.length == 0) parent = parent.parent
-    return new Stack(this.parser, this.reused, this.stack.slice(), this.state, this.pos,
-                     this.badness, [], parent ? parent.bufferBase + parent.buffer.length : 0, parent,
-                     this.skipped.slice())
+    while (parent && base == parent.bufferBase) parent = parent.parent
+    return new Stack(this.parser, this.reused, this.stack.slice(), this.state, this.pos, this.inputPos,
+                     this.badness, buffer, base, parent)
   }
 
-  recoverByDelete(next: number, nextStart: number, nextEnd: number) {
-    this.popSkipped()
-    if (next & TERM_TAGGED) this.shiftValue(next, nextStart, nextEnd)
-    this.shiftValue(TERM_ERR, nextStart, nextEnd, (next & TERM_TAGGED) ? 8 : 4)
-    this.pos = nextEnd
+  recoverByDelete(next: number, nextEnd: number) {
+    if (next & TERM_TAGGED) this.shiftValue(next, this.inputPos, nextEnd)
+    this.shiftValue(TERM_ERR, this.inputPos, nextEnd, (next & TERM_TAGGED) ? 8 : 4)
+    this.pos = this.inputPos = nextEnd
     this.badness += BADNESS_DELETE
   }
 
@@ -187,13 +202,13 @@ export class Stack {
     }
   }
 
-  recoverByInsert(next: number, nextStart: number, nextEnd: number): Stack | null {
+  recoverByInsert(next: number, nextEnd: number): Stack | null {
     if (!this.canRecover(next)) return null
 
     // Now that we know there's a recovery to be found, run the
     // reduces again, the expensive way, updating the stack
     let result = this.split()
-    result.popSkipped()
+    result.pos = result.inputPos
     result.badness += BADNESS_RECOVER
     for (;;) {
       for (;;) {
@@ -216,13 +231,13 @@ export class Stack {
   }
 
   compare(other: Stack) {
-    return this.pos - other.pos || this.badness - other.badness
+    return this.inputPos - other.inputPos || this.badness - other.badness
   }
 
   put(parses: Stack[], strict = this.badness < BADNESS_STABILIZING || this.badness > BADNESS_WILD): boolean {
     for (let i = 0; i < parses.length; i++) {
       let other = parses[i]
-      if ((strict || other.state == this.state) && other.pos == this.pos) {
+      if ((strict || other.state == this.state) && other.inputPos == this.inputPos) {
         let diff = this.badness - other.badness || (this.badness < BADNESS_STABILIZING ? 0 : this.stack.length - other.stack.length)
         if (diff < 0) { parses[i] = this; return true }
         else if (diff > 0) return false
@@ -263,7 +278,6 @@ export class Stack {
   }
 
   toTree(): SyntaxTree {
-    this.popSkipped()
     let children: (Node | TreeBuffer)[] = [], positions: number[] = []
     let cursor = new BufferCursor(this)
     while (!cursor.done) cursor.takeNode(0, children, positions)

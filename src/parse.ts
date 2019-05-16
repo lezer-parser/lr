@@ -78,7 +78,7 @@ class TokenCache {
     for (let tokenizer of stack.state.tokenizers) {
       let token = this.tokens.find(c => c.tokenizer == tokenizer)
       if (!token) this.tokens.push(token = new CachedToken(tokenizer))
-      if (tokenizer.contextual || token.start != stack.pos) this.updateCachedToken(token, stack)
+      if (tokenizer.contextual || token.start != stack.inputPos) this.updateCachedToken(token, stack)
 
       let startIndex = actionIndex
       if (token.extended > -1) actionIndex = this.addActions(stack.state, token.extended, token.end, actionIndex)
@@ -98,9 +98,9 @@ class TokenCache {
   updateCachedToken(token: CachedToken, stack: Stack) {
     let input = this.input
 
-    token.start = stack.pos
+    token.start = stack.inputPos
     token.extended = -1
-    token.tokenizer.token(input.goto(stack.pos), stack)
+    token.tokenizer.token(input.goto(stack.inputPos), stack)
     if (input.token > -1) {
       token.end = input.tokenEnd
       token.term = input.token
@@ -112,7 +112,7 @@ class TokenCache {
           else token.extended = found >> 1
         }
       }
-    } else if (stack.pos == input.length) {
+    } else if (stack.inputPos == input.length) {
       token.term = TERM_EOF
       token.end = token.start
     } else {
@@ -152,13 +152,13 @@ export function parse(input: InputStream, parser: Parser, {
   let tokens = new TokenCache(parser, input)
 
   parse: for (;;) {
-    let stack = Stack.take(parses), start = stack.pos
+    let stack = Stack.take(parses), start = stack.inputPos
 
     if (cacheCursor) {//  && !stack.state.ambiguous) { // FIXME implement fragility check
       for (let cached = cacheCursor.nodeAt(start); cached;) {
        let match = parser.getGoto(stack.state.id, cached.tag)
         if (match) {
-          stack.useCached(cached, start, parser.states[match])
+          stack.useCached(cached, parser.states[match])
           if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.tag)})`)
           stack.put(parses)
           continue parse
@@ -181,7 +181,7 @@ export function parse(input: InputStream, parser: Parser, {
     for (let i = 0; i < actions.length;) {
       let action = actions[i++], term = actions[i++], end = actions[i++]
       let localStack = i == actions.length ? stack : stack.split()
-      localStack.apply(action, term, start, end)
+      localStack.apply(action, term, end)
       if (verbose) console.log(localStack + ` (via ${action < 0 ? "shift" : "reduce"} for ${
         parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
       localStack.put(parses, action >= 0)
@@ -191,18 +191,18 @@ export function parse(input: InputStream, parser: Parser, {
     // If we're here, the stack failed to advance normally
 
     // FIXME proper end condition check?
-    if (stack.pos == input.length && (stack.state.accepting || parses.length == 0)) return stack.toTree()
+    if (start == input.length && (stack.state.accepting || parses.length == 0)) return stack.toTree()
 
     let {end, term} = tokens.mainToken
     if (!strict &&
-        !(stack.badness > BADNESS_WILD && parses.some(s => s.pos >= stack.pos && s.badness <= stack.badness))) {
-      let inserted = stack.recoverByInsert(term, start, end)
+        !(stack.badness > BADNESS_WILD && parses.some(s => s.pos >= stack.inputPos && s.badness <= stack.badness))) {
+      let inserted = stack.recoverByInsert(term, end)
       if (inserted) {
         if (verbose) console.log(inserted + " (via recover-insert)")
         inserted.put(parses)
       }
 
-      stack.recoverByDelete(term, start, end)
+      stack.recoverByDelete(term, end)
       if (verbose) console.log(stack + " (via recover-delete)")
       stack.put(parses)
     } else if (!parses.length) {
