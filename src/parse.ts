@@ -1,5 +1,5 @@
 import {Stack, BADNESS_WILD, DEFAULT_BUFFER_LENGTH, setBufferLength} from "./stack"
-import {ParseState} from "./state"
+import {ParseState, REDUCE_DEPTH_SIZE} from "./state"
 import {InputStream, Tokenizer} from "./token"
 import {TERM_EOF, TERM_ERR, TERM_TAGGED} from "./term"
 import {Node, Tree, TreeBuffer, SyntaxTree} from "./tree"
@@ -182,7 +182,7 @@ export function parse(input: InputStream, parser: Parser, {
       let action = actions[i++], term = actions[i++], end = actions[i++]
       let localStack = i == actions.length ? stack : stack.split()
       localStack.apply(action, term, end)
-      if (verbose) console.log(localStack + ` (via ${action < 0 ? "shift" : "reduce"} for ${
+      if (verbose) console.log(localStack + ` (via ${action < 0 ? "shift" : `reduce of ${parser.getName(action >> REDUCE_DEPTH_SIZE)}`} for ${
         parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
       localStack.put(parses, action >= 0)
     }
@@ -218,8 +218,7 @@ export class Parser {
   constructor(readonly states: readonly ParseState[],
               readonly tags: readonly string[],
               readonly repeats: readonly number[],
-              readonly taggedGoto: readonly (readonly number[])[],
-              readonly untaggedGoto: readonly (readonly number[])[],
+              readonly goto: Readonly<Uint16Array>,
               readonly specialized: readonly number[],
               specializations: readonly {[value: string]: number}[],
               readonly tokenPrec: number[],
@@ -245,11 +244,11 @@ export class Parser {
   }
 
   getGoto(state: number, term: number) {
-    let table = (term & TERM_TAGGED ? this.taggedGoto : this.untaggedGoto)[term >> 1]
-    for (let i = 0; i < table.length; i += 2) {
-      if (table[i] < 0 || table[i] == state) return table[i + 1]
+    let table = this.goto
+    for (let pos = table[term];; pos += 2) {
+      let next = table[pos]
+      if (next == state || next == 0xffff) return table[pos + 1]
     }
-    throw new Error(`Missing goto table entry for ${this.getName(term)} and state ${state}`)
   }
 }
 

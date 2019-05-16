@@ -27,7 +27,7 @@ export class StringStream implements InputStream {
   }
 
   peek(pos = this.pos) {
-    return this.string.charCodeAt(pos)
+    return pos < 0 || pos >= this.string.length ? -1 : this.string.charCodeAt(pos)
   }
   
   accept(term: number, pos = this.pos) {
