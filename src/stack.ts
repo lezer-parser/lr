@@ -51,14 +51,15 @@ export class Stack {
               // Holds tag,start,end,nodeCount quads
               readonly buffer: number[],
               readonly bufferBase: number,
-              readonly parent: Stack | null) {}
+              readonly parent: Stack | null,
+              readonly skipped: number[]) {}
 
   toString() {
     return "[" + this.stack.filter((_, i) => i % 3 == 0).concat(this.state.id).join(",") + "]"
   }
 
   static start(parser: Parser) {
-    return new Stack(parser, [], [], parser.states[0], 0, 0, [], 0, null)
+    return new Stack(parser, [], [], parser.states[0], 0, 0, [], 0, null, [])
   }
 
   pushState(state: ParseState, start: number) {
@@ -77,11 +78,20 @@ export class Stack {
     let start = this.stack[base - 2]
     let count = this.bufferBase + this.buffer.length - this.stack[base - 1]
     if ((tag & TERM_TAGGED) > 0 ||
-        ((tag >> 1) < this.parser.repeats.length && this.pos - start > MAX_BUFFER_LENGTH && count > 0))
-      this.buffer.push(tag, start, this.pos, count + 4)
+        ((tag >> 1) < this.parser.repeats.length && this.pos - start > MAX_BUFFER_LENGTH && count > 0)) {
+      let end = this.skipped.length ? this.skipped[1] : this.pos
+      this.buffer.push(tag, start, end, count + 4)
+    }
     let baseStateID = this.stack[base - 3]
     this.state = this.parser.states[this.parser.getGoto(baseStateID, tag)]
     if (depth > 1) this.stack.length = base
+  }
+
+  popSkipped() {
+    if (this.skipped.length) {
+      for (let i = 0; i < this.skipped.length; i++) this.buffer.push(this.skipped[i])
+      this.skipped.length = 0
+    }
   }
 
   shiftValue(term: number, start: number, end: number, childCount = 4) {
@@ -101,15 +111,20 @@ export class Stack {
     if (action >= 0) {
       this.reduce(action)
     } else { // Shift
-      if (action != GOTO_STAY)
+      if (action == GOTO_STAY) {
+        if (next & TERM_TAGGED) this.skipped.push(next, nextStart, nextEnd, 4)
+      } else {
+        this.popSkipped()
         this.pushState(this.parser.states[-action], nextStart)
+        if (next & TERM_TAGGED) this.shiftValue(next, nextStart, nextEnd)
+        this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
+      }
       this.pos = nextEnd
-      if (next & TERM_TAGGED) this.shiftValue(next, nextStart, nextEnd)
-      this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
     }
   }
 
   useCached(value: Node, start: number, next: ParseState) {
+    this.popSkipped()
     let index = this.reused.length - 1
     if (index < 0 || this.reused[index] != value) {
       this.reused.push(value)
@@ -126,10 +141,12 @@ export class Stack {
     // Make sure parent points to an actual parent with content, if there is such a parent.
     while (parent && parent.buffer.length == 0) parent = parent.parent
     return new Stack(this.parser, this.reused, this.stack.slice(), this.state, this.pos,
-                     this.badness, [], parent ? parent.bufferBase + parent.buffer.length : 0, parent)
+                     this.badness, [], parent ? parent.bufferBase + parent.buffer.length : 0, parent,
+                     this.skipped.slice())
   }
 
   recoverByDelete(next: number, nextStart: number, nextEnd: number) {
+    this.popSkipped()
     if (next & TERM_TAGGED) this.shiftValue(next, nextStart, nextEnd)
     this.shiftValue(TERM_ERR, nextStart, nextEnd, (next & TERM_TAGGED) ? 8 : 4)
     this.pos = nextEnd
@@ -176,6 +193,7 @@ export class Stack {
     // Now that we know there's a recovery to be found, run the
     // reduces again, the expensive way, updating the stack
     let result = this.split()
+    result.popSkipped()
     result.badness += BADNESS_RECOVER
     for (;;) {
       for (;;) {
@@ -245,6 +263,7 @@ export class Stack {
   }
 
   toTree(): SyntaxTree {
+    this.popSkipped()
     let children: (Node | TreeBuffer)[] = [], positions: number[] = []
     let cursor = new BufferCursor(this)
     while (!cursor.done) cursor.takeNode(0, children, positions)
