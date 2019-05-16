@@ -52,7 +52,7 @@ export interface Tokenizer {
 export class TokenGroup implements Tokenizer {
   contextual!: boolean
 
-  constructor(readonly data: readonly (readonly number[])[], readonly id: number) {}
+  constructor(readonly data: Readonly<Uint16Array>, readonly id: number) {}
 
   token(input: InputStream, stack: Stack) { token(this.data, input, stack, this.id) }
 }
@@ -68,28 +68,28 @@ export class ExternalTokenizer {
   }
 }
 
-function token(data: readonly (readonly number[])[],
+function token(data: Readonly<Uint16Array>,
                input: InputStream,
                stack: Stack,
                group: number) {
   let state = 0, groupMask = 1 << group
   scan: for (;;) {
-    let array = data[state], accEnd = (array[1] << 1) + 2
+    if ((groupMask & data[state]) == 0) break
+    let accEnd = data[state + 1]
     // Check whether this state can lead to a token in the current group
-    if ((groupMask & array[0]) == 0) break
     // Accept tokens in this state, possibly overwriting
     // lower-precedence / shorter tokens
-    for (let i = 2; i < accEnd; i += 2) if ((array[i + 1] & groupMask) > 0) {
-      let term = array[i]
+    for (let i = state + 3; i < accEnd; i += 2) if ((data[i + 1] & groupMask) > 0) {
+      let term = data[i]
       if (input.token == -1 || input.token == term || mayOverride(stack.parser.tokenPrec, term, input.token)) {
         input.accept(term)
         break
       }
     }
-    let next = input.next()
-    for (let i = accEnd; i < array.length; i += 3) { // FIXME binary search, multiple table forms
-      let from = array[i], to = array[i + 1]
-      if (next >= from && next < to) { state = array[i + 2]; continue scan }
+    let next = input.next(), end = data[state + 2]
+    for (let i = accEnd; i < end; i += 3) { // FIXME binary search, multiple table forms
+      let from = data[i], to = data[i + 1]
+      if (next >= from && next < to) { state = data[i + 2]; continue scan }
     }
     break
   }
