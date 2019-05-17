@@ -1,5 +1,5 @@
 import {Stack, BADNESS_WILD, DEFAULT_BUFFER_LENGTH, setBufferLength} from "./stack"
-import {ParseState, REDUCE_DEPTH_SIZE} from "./state"
+import {ParseState, REDUCE_DEPTH_SIZE, ACTION_SKIP} from "./state"
 import {InputStream, Tokenizer} from "./token"
 import {TERM_EOF, TERM_ERR, TERM_TAGGED} from "./term"
 import {Node, Tree, TreeBuffer, SyntaxTree} from "./tree"
@@ -75,7 +75,9 @@ class TokenCache {
     let actionIndex = 0
     let main: CachedToken | null = null
 
-    for (let tokenizer of stack.state.tokenizers) {
+    for (let i = 0; i < this.parser.tokenizers.length; i++) {
+      if (((1 << i) & stack.state.tokenizerMask) == 0) continue
+      let tokenizer = this.parser.tokenizers[i]
       let token = this.tokens.find(c => c.tokenizer == tokenizer)
       if (!token) this.tokens.push(token = new CachedToken(tokenizer))
       if (tokenizer.contextual || token.start != stack.inputPos) this.updateCachedToken(token, stack)
@@ -104,7 +106,7 @@ class TokenCache {
     if (input.token > -1) {
       token.end = input.tokenEnd
       token.term = input.token
-      let specIndex = this.parser.specialized.indexOf(token.term)
+      let specIndex = findOffset(this.parser.data, this.parser.specializeTable, token.term)
       if (specIndex >= 0) {
         let found = this.parser.specializations[specIndex][input.read(token.start, token.end)]
         if (found != null) {
@@ -131,10 +133,11 @@ class TokenCache {
   }
 
   addActions(state: ParseState, token: number, end: number, index: number) {
-    for (let i = 0; i < state.actions.length; i += 2) if (state.actions[i] == token)
-      index = this.putAction(state.actions[i + 1], token, end, index)
-    for (let i = 0; i < state.skip.length; i += 2) if (state.skip[i] == token)
-      index = this.putAction(state.skip[i + 1], token, end, index)
+    let data = this.parser.data
+    for (let i = state.actions, next; (next = data[i]) != TERM_ERR; i += 3) {
+      if (next == token) index = this.putAction(encode(data[i + 1], data[i + 2]), token, end, index)
+    }
+    if (findOffset(data, state.skip, token) > -1) index = this.putAction(ACTION_SKIP, token, end, index)
     return index
   }
 }
@@ -170,10 +173,11 @@ export function parse(input: InputStream, parser: Parser, {
       }
     }
 
-    if (stack.state.defaultReduce > 0) {
-      stack.reduce(stack.state.defaultReduce)
+    let defaultReduce = stack.state.defaultReduce
+    if (defaultReduce > 0) {
+      stack.reduce(defaultReduce)
       stack.put(parses)
-      if (verbose) console.log(stack + " (via always-reduce)")
+      if (verbose) console.log(stack + ` (via always-reduce ${parser.getName(defaultReduce >> REDUCE_DEPTH_SIZE)})`)
       continue
     }
 
@@ -216,12 +220,15 @@ export class Parser {
   readonly specializations: readonly {[value: string]: number}[]
 
   constructor(readonly states: readonly ParseState[],
-              readonly tags: readonly string[],
-              readonly repeats: readonly number[],
+              readonly data: Readonly<Uint16Array>,
               readonly goto: Readonly<Uint16Array>,
-              readonly specialized: readonly number[],
+              readonly tags: readonly string[],
+              readonly tokenizers: readonly Tokenizer[],
+              readonly repeatTable: number,
+              readonly repeatCount: number,
+              readonly specializeTable: number,
               specializations: readonly {[value: string]: number}[],
-              readonly tokenPrec: number[],
+              readonly tokenPrecTable: number,
               readonly termNames: null | {[id: number]: string} = null) {
     this.specializations = specializations.map(withoutPrototype)
   }
@@ -236,7 +243,7 @@ export class Parser {
 
   // Term should be a repeat term
   getRepeat(term: number): number {
-    return this.repeats[term >> 1]
+    return this.data[this.repeatTable + (term >> 1)]
   }
 
   parse(input: InputStream, options?: ParseOptions) {
@@ -250,6 +257,49 @@ export class Parser {
       if (next == state || next == 0xffff) return table[pos + 1]
     }
   }
+
+  hasAction(state: ParseState, terminal: number) {
+    let data = this.data
+    for (let i = state.actions, next; (next = data[i]) != TERM_ERR; i += 3) {
+      if (next == terminal) return encode(data[i + 1], data[i + 2])
+    }
+    if (findOffset(this.data, state.skip, terminal) > -1) return ACTION_SKIP
+    return 0
+  }
+
+  getRecover(state: ParseState, terminal: number) {
+    for (let i = state.recover, next; (next = this.data[i]) != TERM_ERR; i += 2)
+      if (next == terminal) return this.data[i + 1]
+    return 0
+  }
+
+  anyReduce(state: ParseState) {
+    if (state.defaultReduce > 0) return state.defaultReduce
+    for (let i = state.actions;; i += 3) {
+      if (this.data[i] == TERM_ERR) return 0
+      let reduce = this.data[i + 1]
+      if (reduce > 0) return reduce | (this.data[i + 2] << REDUCE_DEPTH_SIZE)
+    }
+  }
+
+  repeats(term: number) {
+    return (term >> 1) < this.repeatCount
+  }
+
+  overrides(token: number, prev: number) {
+    let iPrev = findOffset(this.data, this.tokenPrecTable, prev)
+    return iPrev < 0 || findOffset(this.data, this.tokenPrecTable, token) < iPrev
+  }
+}
+
+function encode(reduce: number, value: number) {
+  return reduce ? reduce | (value << REDUCE_DEPTH_SIZE) : -value
+}
+
+function findOffset(data: Readonly<Uint16Array>, start: number, term: number) {
+  for (let i = start, next; (next = data[i]) != TERM_ERR; i++)
+    if (next == term) return i - start
+  return -1
 }
 
 function withoutPrototype(obj: {}) {

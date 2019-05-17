@@ -1,4 +1,4 @@
-import {ParseState, REDUCE_DEPTH_MASK, REDUCE_DEPTH_SIZE, GOTO_STAY} from "./state"
+import {ParseState, REDUCE_DEPTH_MASK, REDUCE_DEPTH_SIZE, ACTION_SKIP} from "./state"
 import {TERM_TAGGED, TERM_ERR} from "./term"
 import {Parser} from "./parse"
 import {Node, Tree, TreeBuffer, SyntaxTree} from "./tree"
@@ -78,7 +78,7 @@ export class Stack {
     let start = this.stack[base - 2]
     let count = this.bufferBase + this.buffer.length - this.stack[base - 1]
     if ((tag & TERM_TAGGED) > 0 ||
-        ((tag >> 1) < this.parser.repeats.length && this.pos - start > MAX_BUFFER_LENGTH && count > 0)) {
+        this.parser.repeats(tag) && this.pos - start > MAX_BUFFER_LENGTH && count > 0) {
       if (this.inputPos == this.pos) { // Simple case, just append
         this.buffer.push(tag, start, this.pos, count + 4)
       } else { // There may be skipped nodes that have to be moved forward
@@ -121,7 +121,7 @@ export class Stack {
   apply(action: number, next: number, nextEnd: number) {
     if (action >= 0) {
       this.reduce(action)
-    } else if (action != GOTO_STAY) { // Shift, not skipped
+    } else if (action != ACTION_SKIP) { // Shift, not skipped
       let start = this.inputPos
       this.pos = this.inputPos = nextEnd
       this.pushState(this.parser.states[-action], start)
@@ -170,13 +170,7 @@ export class Stack {
 
   canShift(term: number) {
     for (let sim = new SimulatedStack(this);;) {
-      let action = sim.top.defaultReduce
-      for (let i = 0; action == 0 && i < sim.top.actions.length; i += 2) {
-        if (sim.top.actions[i] == term) {
-          action = sim.top.actions[i + 1]
-          break
-        }
-      }
+      let action = sim.top.defaultReduce || this.parser.hasAction(sim.top, term)
       if (action < 0) return true
       if (action == 0) return false
       sim.reduce(action)
@@ -186,11 +180,11 @@ export class Stack {
   canRecover(next: number) {
     // Scan for a state that has either a direct action or a recovery
     // action for next, without actually building up a new stack
-    let visited: number[] | null = null
+    let visited: number[] | null = null, parser = this.parser
     for (let sim = new SimulatedStack(this), i = 0;; i++) {
-      if (sim.top.hasAction(next) || sim.top.getRecover(next) != 0) return true
+      if (parser.hasAction(sim.top, next) || parser.getRecover(sim.top, next) != 0) return true
       // Find a way to reduce from here
-      let reduce = sim.top.anyReduce()
+      let reduce = parser.anyReduce(sim.top)
       if (reduce == 0 && (reduce = sim.top.forcedReduce) <= 0) return false
       sim.reduce(reduce)
       if (i > 10) {
@@ -207,20 +201,20 @@ export class Stack {
 
     // Now that we know there's a recovery to be found, run the
     // reduces again, the expensive way, updating the stack
-    let result = this.split()
+    let result = this.split(), parser = this.parser
     result.pos = result.inputPos
     result.badness += BADNESS_RECOVER
     for (;;) {
       for (;;) {
-        if (result.state.hasAction(next)) return result
-        let recover = result.state.getRecover(next)
+        if (parser.hasAction(result.state, next)) return result
+        let recover = parser.getRecover(result.state, next)
         if (!recover) break
         let pos = result.pos
         result.pushState(this.parser.states[recover], pos)
         result.shiftValue(TERM_ERR, pos, pos)
       }
       
-      let reduce = result.state.anyReduce()
+      let reduce = parser.anyReduce(result.state)
       if (reduce == 0) {
         // Force a reduce using this state's default reduce
         result.shiftValue(TERM_ERR, result.pos, result.pos)

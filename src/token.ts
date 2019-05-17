@@ -81,7 +81,7 @@ function token(data: Readonly<Uint16Array>,
     // lower-precedence / shorter tokens
     for (let i = state + 3; i < accEnd; i += 2) if ((data[i + 1] & groupMask) > 0) {
       let term = data[i]
-      if (input.token == -1 || input.token == term || mayOverride(stack.parser.tokenPrec, term, input.token)) {
+      if (input.token == -1 || input.token == term || stack.parser.overrides(term, input.token)) {
         input.accept(term)
         break
       }
@@ -93,9 +93,4 @@ function token(data: Readonly<Uint16Array>,
     }
     break
   }
-}
-
-function mayOverride(precedences: number[], token: number, prev: number) {
-  let iPrev = precedences.indexOf(prev)
-  return iPrev < 0 || precedences.indexOf(token) < iPrev
 }
