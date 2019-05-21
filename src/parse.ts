@@ -1,8 +1,9 @@
 import {Stack, BADNESS_WILD, DEFAULT_BUFFER_LENGTH, setBufferLength} from "./stack"
 import {ParseState, REDUCE_DEPTH_SIZE, ACTION_SKIP} from "./state"
-import {InputStream, Tokenizer} from "./token"
+import {InputStream, Tokenizer, TokenGroup} from "./token"
 import {TERM_EOF, TERM_ERR, TERM_TAGGED} from "./term"
 import {Node, Tree, TreeBuffer, SyntaxTree} from "./tree"
+import {decodeArray} from "./decode"
 
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
 
@@ -194,7 +195,6 @@ export function parse(input: InputStream, parser: Parser, {
 
     // If we're here, the stack failed to advance normally
 
-    // FIXME proper end condition check?
     if (start == input.length && (stack.state.accepting || parses.length == 0)) return stack.toTree()
 
     let {end, term} = tokens.mainToken
@@ -217,8 +217,6 @@ export function parse(input: InputStream, parser: Parser, {
 }
 
 export class Parser {
-  readonly specializations: readonly {[value: string]: number}[]
-
   constructor(readonly states: readonly ParseState[],
               readonly data: Readonly<Uint16Array>,
               readonly goto: Readonly<Uint16Array>,
@@ -227,11 +225,9 @@ export class Parser {
               readonly repeatTable: number,
               readonly repeatCount: number,
               readonly specializeTable: number,
-              specializations: readonly {[value: string]: number}[],
+              readonly specializations: readonly {[value: string]: number}[],
               readonly tokenPrecTable: number,
-              readonly termNames: null | {[id: number]: string} = null) {
-    this.specializations = specializations.map(withoutPrototype)
-  }
+              readonly termNames: null | {[id: number]: string} = null) {}
 
   getTag(term: number): string | null {
     return (term & TERM_TAGGED) ? this.tags[term >> 1] : null
@@ -289,6 +285,20 @@ export class Parser {
   overrides(token: number, prev: number) {
     let iPrev = findOffset(this.data, this.tokenPrecTable, prev)
     return iPrev < 0 || findOffset(this.data, this.tokenPrecTable, token) < iPrev
+  }
+
+  static deserialize(states: string, stateData: string, goto: string, tags: readonly string[],
+                     tokenData: string, tokenizers: (Tokenizer | number)[],
+                     repeatTable: number, repeatCount: number,
+                     specializeTable: number, specializations: readonly {[term: string]: number}[],
+                     tokenPrec: number) {
+    let arr = decodeArray(states, Uint32Array), stateObjs: ParseState[] = []
+    for (let i = 0, id = 0; i < arr.length;)
+      stateObjs.push(new ParseState(id++, arr[i++], arr[i++], arr[i++], arr[i++], arr[i++], arr[i++]))
+    let tokenArray = decodeArray(tokenData)
+    return new Parser(stateObjs, decodeArray(stateData), decodeArray(goto), tags,
+                      tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
+                      repeatTable, repeatCount, specializeTable, specializations.map(withoutPrototype), tokenPrec)
   }
 }
 

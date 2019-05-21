@@ -185,7 +185,7 @@ export class Stack {
       if (parser.hasAction(sim.top, next) || parser.getRecover(sim.top, next) != 0) return true
       // Find a way to reduce from here
       let reduce = parser.anyReduce(sim.top)
-      if (reduce == 0 && (reduce = sim.top.forcedReduce) <= 0) return false
+      if (reduce == 0 && ((reduce = sim.top.forcedReduce) & REDUCE_DEPTH_MASK) == 0) return false
       sim.reduce(reduce)
       if (i > 10) {
         // Guard against getting stuck in a cycle
