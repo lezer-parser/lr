@@ -116,6 +116,7 @@ export class TreeBuffer {
   cursor(parser: Parser) { return new NodeCursor(this, parser) }
 }
 
+// FIXME do we need an external iterator?
 export class NodeCursor {
   trees: Tree[] = []
   offset = [0]
@@ -179,4 +180,17 @@ export class NodeCursor {
       }
     }
   }
+}
+
+export class TagMap<T> {
+  private content: (T | null)[] = []
+
+  constructor(parser: Parser, values: {[name: string]: T}) {
+    for (let i = 0; i < parser.tags.length; i++)
+      this.content.push(Object.prototype.hasOwnProperty.call(values, parser.tags[i]) ? values[parser.tags[i]] : null)
+  }
+
+  get(tag: number): T | null { return tag & 1 ? this.content[tag >> 1] : null }
+
+  static empty = new TagMap<any>({tags: []} as any, {})
 }
