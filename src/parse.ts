@@ -291,14 +291,15 @@ export class Parser {
                      tokenData: string, tokenizers: (Tokenizer | number)[],
                      repeatTable: number, repeatCount: number,
                      specializeTable: number, specializations: readonly {[term: string]: number}[],
-                     tokenPrec: number) {
+                     tokenPrec: number,
+                     termNames?: {[id: number]: string}) {
     let arr = decodeArray(states, Uint32Array), stateObjs: ParseState[] = []
     for (let i = 0, id = 0; i < arr.length;)
       stateObjs.push(new ParseState(id++, arr[i++], arr[i++], arr[i++], arr[i++], arr[i++], arr[i++]))
     let tokenArray = decodeArray(tokenData)
     return new Parser(stateObjs, decodeArray(stateData), decodeArray(goto), tags,
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
-                      repeatTable, repeatCount, specializeTable, specializations.map(withoutPrototype), tokenPrec)
+                      repeatTable, repeatCount, specializeTable, specializations.map(withoutPrototype), tokenPrec, termNames)
   }
 }
 

@@ -46,6 +46,17 @@ export class Tree {
 
   static empty = new Tree([], [])
 
+  iterate(from: number, to: number, offset: number,
+          enter: (tag: number, start: number, end: number) => boolean,
+          leave?: (tag: number, start: number, end: number) => void) {
+    for (let i = 0; i < this.children.length; i++) {
+      let child = this.children[i], start = this.positions[i] + offset, end = start + child.length
+      if (start > to) break
+      if (end < from) continue
+      child.iterate(from, to, start, enter, leave)
+    }
+  }
+
   cursor(parser: Parser) { return new NodeCursor(this, parser) }
 }
 
@@ -73,6 +84,15 @@ export class Node extends Tree {
       positions.push(offset)
     } else {
       super.partial(start, end, offset, children, positions)
+    }
+  }
+
+  iterate(from: number, to: number, offset: number,
+          enter: (tag: number, start: number, end: number) => boolean,
+          leave?: (tag: number, start: number, end: number) => void) {
+    if (enter(this.tag, offset, offset + this.length)) {
+      super.iterate(from, to, offset, enter, leave)
+      if (leave) leave(this.tag, offset, offset + this.length)
     }
   }
 }
@@ -111,6 +131,29 @@ export class TreeBuffer {
 
   unchanged(changes: readonly ChangedRange[]) {
     return changes.length ? Tree.empty : this
+  }
+
+  iterate(from: number, to: number, offset: number,
+          enter: (tag: number, start: number, end: number) => boolean,
+          leave?: (tag: number, start: number, end: number) => void) {
+    let pos = 0, buf = this.buffer
+    let scan = () => {
+      let tag = buf[pos++], start = buf[pos++], end = buf[pos++], count = buf[pos++]
+      let endPos = pos + (count << 2)
+      if (end < from) {
+        pos += count << 2
+      } else if (start <= to) {
+        if (enter(tag, start, end)) {
+          while (pos < endPos) scan()
+          if (leave) leave(tag, start, end)
+        } else {
+          pos = endPos
+        }
+      } else {
+        pos = buf.length
+      }
+    }
+    while (pos < buf.length) scan()
   }
 
   cursor(parser: Parser) { return new NodeCursor(this, parser) }

@@ -10,7 +10,7 @@
     "rollup": "^1.6.0",
     "rollup-plugin-typescript2": "^0.20.1",
     "rollup-plugin-node-resolve": "^4.2.3",
-    "typescript": "^3.3.3333"
+    "typescript": "^3.4.3"
   },
   "scripts": {
     "watch": "rollup -w -c rollup.config.js",
