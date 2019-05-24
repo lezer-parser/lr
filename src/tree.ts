@@ -229,8 +229,13 @@ export class TagMap<T> {
   private content: (T | null)[] = []
 
   constructor(parser: Parser, values: {[name: string]: T}) {
-    for (let i = 0; i < parser.tags.length; i++)
-      this.content.push(Object.prototype.hasOwnProperty.call(values, parser.tags[i]) ? values[parser.tags[i]] : null)
+    for (let i = 0; i < parser.tags.length; i++) {
+      let tag = parser.tags[i]
+      let found =
+        Object.prototype.hasOwnProperty.call(values, tag) ? values[tag] :
+        tag[0] == '"' && Object.prototype.hasOwnProperty.call(values, JSON.parse(tag)) ? values[JSON.parse(tag)] : null
+      this.content.push(found)
+    }
   }
 
   get(tag: number): T | null { return tag & 1 ? this.content[tag >> 1] : null }
