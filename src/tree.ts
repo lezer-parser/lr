@@ -57,8 +57,6 @@ export class Tree {
     }
   }
 
-  cursor(parser: Parser) { return new NodeCursor(this, parser) }
-
   resolve(pos: number): Context {
     return new TreeContext(this, 0, null).resolve(pos)
   }
@@ -158,74 +156,6 @@ export class TreeBuffer {
       }
     }
     while (pos < buf.length) scan()
-  }
-
-  cursor(parser: Parser) { return new NodeCursor(this, parser) }
-}
-
-// FIXME do we need an external iterator?
-export class NodeCursor {
-  trees: Tree[] = []
-  offset = [0]
-  index = [0]
-  leaf: TreeBuffer | null = null
-  leafOffset = 0
-  leafIndex = 0
-
-  // Output properties
-  start!: number
-  end!: number
-  tag!: string
-
-  constructor(tree: SyntaxTree, readonly parser: Parser) {
-    if (tree instanceof Tree) this.trees.push(tree)
-    else this.leaf = tree
-  }
-
-  next(): boolean {
-    for (;;) {
-      if (this.leaf) {
-        let index = this.leafIndex, buf = this.leaf.buffer
-        if (index == buf.length) {
-          this.leaf = null
-          continue
-        } else {
-          this.tag = this.parser.getTag(buf[index++])!
-          this.start = this.leafOffset + buf[index++]
-          this.end = this.leafOffset + buf[index++]
-          this.leafIndex += 4
-          return true
-        }
-      }
-      let last = this.trees.length - 1
-      if (last < 0) return false
-      let top = this.trees[last], index = this.index[last]
-      if (index == top.children.length) {
-        this.trees.pop()
-        this.offset.pop()
-        this.index.pop()
-        continue
-      }
-      let next = top.children[index]
-      let start = this.offset[last] + top.positions[index]
-      if (next instanceof TreeBuffer) {
-        this.leaf = next
-        this.leafIndex = 0
-        this.leafOffset = start
-        this.index[last]++
-      } else {
-        this.index[last]++
-        this.trees.push(next)
-        this.offset.push(start)
-        this.index.push(0)
-        if (next.tag & TERM_TAGGED) {
-          this.tag = this.parser.getTag(next.tag)!
-          this.start = start
-          this.end = start + next.length
-          return true
-        }
-      }
-    }
   }
 }
 
