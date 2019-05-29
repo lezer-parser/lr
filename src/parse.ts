@@ -149,7 +149,7 @@ export function parse(input: InputStream, parser: Parser, {
   cache = null,
   strict = false,
   bufferLength = DEFAULT_BUFFER_LENGTH
-}: ParseOptions = {}): SyntaxTree {
+}: ParseOptions = {}): Tree {
   setBufferLength(bufferLength)
   let parses = [Stack.start(parser)]
   let cacheCursor = cache && new CacheCursor(cache)

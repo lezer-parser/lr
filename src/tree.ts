@@ -58,6 +58,10 @@ export class Tree {
   }
 
   cursor(parser: Parser) { return new NodeCursor(this, parser) }
+
+  resolve(pos: number): Context {
+    return new TreeContext(this, 0, null).resolve(pos)
+  }
 }
 
 export type SyntaxTree = TreeBuffer | Tree
@@ -225,6 +229,120 @@ export class NodeCursor {
   }
 }
 
+export abstract class Context {
+  _children: readonly Context[] | null = null
+
+  constructor(readonly parent: Context | null) {}
+
+  abstract type: number
+  abstract start: number
+  abstract end: number
+
+  abstract resolve(pos: number): Context
+
+  // @internal
+  abstract collectChildren(): Context[]
+
+  get children() {
+    return this._children || (this._children = this.collectChildren())
+  }
+}
+
+class TreeContext extends Context {
+  constructor(readonly tree: Tree, // Might be a node, when not at the top
+              readonly start: number,
+              parent: Context | null) {
+    super(parent)
+  }
+
+  get type() { return this.tree instanceof Node ? this.tree.tag : -1 }
+
+  get end() { return this.start + this.tree.length }
+
+  resolve(pos: number): Context {
+    if (pos <= this.start || pos >= this.end)
+      return this.parent ? this.parent.resolve(pos) : this
+    for (let i = 0; i < this.tree.children.length; i++) {
+      let start = this.tree.positions[i] + this.start
+      if (start >= pos) break
+      let child = this.tree.children[i], end = start + child.length
+      if (end > pos) {
+        if (child instanceof Node) return new TreeContext(child, start, this).resolve(pos)
+        let found = BufferContext.resolveIndex(pos, child, start, 0, child.buffer.length)
+        if (found > -1) return new BufferContext(child, start, found, this)
+      }
+    }
+    return this
+  }
+
+  collectChildren(): Context[] {
+    return TreeContext.collect(this.tree, [], this.start, this)
+  }
+
+  // @internal
+  static collect(tree: Tree, result: Context[], treeStart: number, parent: Context | null) {
+    for (let i = 0; i < tree.children.length; i++) {
+      let child = tree.children[i], start = tree.positions[i] + treeStart
+      if (child instanceof TreeBuffer)
+        BufferContext.collect(child, 0, child.buffer.length, result, start, parent)
+      else if ((child.tag & TERM_TAGGED) > 0)
+        result.push(new TreeContext(child, start, parent))
+      else // Repeat node
+        TreeContext.collect(child, result, start, parent)
+    }
+    return result
+  }
+}
+
+class BufferContext extends Context {
+  constructor(readonly buffer: TreeBuffer,
+              readonly bufferStart: number,
+              readonly index: number,
+              parent: Context | null) {
+    super(parent)
+  }
+
+  get type() { return this.buffer.buffer[this.index] }
+  get start() { return this.buffer.buffer[this.index + 1] }
+  get end() { return this.buffer.buffer[this.index + 2] }
+
+  private get endIndex() { return this.index + 4 + (this.buffer.buffer[this.index + 3] << 2) }
+
+  resolve(pos: number): Context {
+    if (pos <= this.start || pos >= this.end)
+      return this.parent ? this.parent.resolve(pos) : this
+    let found = BufferContext.resolveIndex(pos, this.buffer, this.bufferStart, this.index + 4, this.endIndex)
+    return found < 0 ? this : new BufferContext(this.buffer, this.bufferStart, found, this)
+  }
+
+  collectChildren(): Context[] {
+    return BufferContext.collect(this.buffer, this.index + 4, this.endIndex,
+                                 [], this.bufferStart, this)
+  }
+
+  // @internal
+  static resolveIndex(pos: number, buffer: TreeBuffer, start: number, from: number, to: number) {
+    for (let i = from, buf = buffer.buffer; i < to; i++) {
+      let start1 = buf[i + 1] + start
+      if (start1 >= pos) break
+      let end1 = buf[i + 2] + start
+      if (end1 > pos) return i
+      i += 4 + (buf[i + 3] << 2)
+    }
+    return -1
+  }
+
+  // @internal
+  static collect(buffer: TreeBuffer, from: number, to: number, result: Context[], bufferStart: number, parent: Context | null) {
+    for (let i = from; i < to;) {
+      let count = buffer.buffer[i + 3]
+      result.push(new BufferContext(buffer, bufferStart, i, parent))
+      i += 4 + (count << 2)
+    }
+    return result
+  }
+}
+  
 export class TagMap<T> {
   private content: (T | null)[] = []
 

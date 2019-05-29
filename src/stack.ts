@@ -1,7 +1,7 @@
 import {ParseState, REDUCE_DEPTH_MASK, REDUCE_DEPTH_SIZE, ACTION_SKIP} from "./state"
 import {TERM_TAGGED, TERM_ERR} from "./term"
 import {Parser} from "./parse"
-import {Node, Tree, TreeBuffer, SyntaxTree} from "./tree"
+import {Node, Tree, TreeBuffer} from "./tree"
 
 const BADNESS_DELETE = 100, BADNESS_RECOVER = 100
 export const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between which stacks are less agressively pruned
@@ -271,7 +271,7 @@ export class Stack {
     return elt
   }
 
-  toTree(): SyntaxTree {
+  toTree(): Tree {
     let children: (Node | TreeBuffer)[] = [], positions: number[] = []
     let cursor = new BufferCursor(this)
     while (!cursor.done) cursor.takeNode(0, children, positions)
