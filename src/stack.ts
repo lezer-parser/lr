@@ -49,7 +49,7 @@ export class Stack {
               public pos: number,
               public inputPos: number,
               public badness: number,
-              // Holds tag,start,end,nodeCount quads
+              // Holds type,start,end,nodeCount quads
               readonly buffer: number[],
               readonly bufferBase: number,
               readonly parent: Stack | null) {}
@@ -68,19 +68,19 @@ export class Stack {
   }
 
   reduce(action: number) { // Encoded reduction action
-    let depth = (action & REDUCE_DEPTH_MASK) - 1, tag = action >> REDUCE_DEPTH_SIZE
+    let depth = (action & REDUCE_DEPTH_MASK) - 1, type = action >> REDUCE_DEPTH_SIZE
     if (depth == 0) {
-      this.pushState(this.parser.states[this.parser.getGoto(this.state.id, tag)], this.pos)
+      this.pushState(this.parser.states[this.parser.getGoto(this.state.id, type)], this.pos)
       return
     }
 
     let base = this.stack.length - ((depth - 1) * 3)
     let start = this.stack[base - 2]
     let count = this.bufferBase + this.buffer.length - this.stack[base - 1]
-    if ((tag & TERM_TAGGED) > 0 ||
-        this.parser.repeats(tag) && this.pos - start > MAX_BUFFER_LENGTH && count > 0) {
+    if ((type & TERM_TAGGED) > 0 ||
+        this.parser.repeats(type) && this.pos - start > MAX_BUFFER_LENGTH && count > 0) {
       if (this.inputPos == this.pos) { // Simple case, just append
-        this.buffer.push(tag, start, this.pos, count + 4)
+        this.buffer.push(type, start, this.pos, count + 4)
       } else { // There may be skipped nodes that have to be moved forward
         let index = this.buffer.length
         while (index > 0 && this.buffer[index - 2] > this.pos) {
@@ -92,8 +92,8 @@ export class Stack {
           index -= 4
           count -= 4
         }
-        if (count > 0 || (tag & TERM_TAGGED) > 0) {
-          this.buffer[index] = tag
+        if (count > 0 || (type & TERM_TAGGED) > 0) {
+          this.buffer[index] = type
           this.buffer[index + 1] = start
           this.buffer[index + 2] = this.pos
           this.buffer[index + 3] = count + 4
@@ -101,7 +101,7 @@ export class Stack {
       }
     }
     let baseStateID = this.stack[base - 3]
-    this.state = this.parser.states[this.parser.getGoto(baseStateID, tag)]
+    this.state = this.parser.states[this.parser.getGoto(baseStateID, type)]
     if (depth > 1) this.stack.length = base
   }
 
@@ -325,7 +325,7 @@ class BufferCursor {
     }
   }
 
-  get tag() { return this.buffer[this.index - 4] }
+  get type() { return this.buffer[this.index - 4] }
   get start() { return this.buffer[this.index - 3] }
   get end() { return this.buffer[this.index - 2] }
   get size() { return this.buffer[this.index - 1] }
@@ -339,10 +339,10 @@ class BufferCursor {
   }
 
   takeNode(parentStart: number, children: (Node | TreeBuffer)[], positions: number[]) {
-    let {tag, start, end, size} = this
+    let {type, start, end, size} = this
     if (size == REUSED_VALUE) {
       this.forward()
-      children.push(this.stack.reused[tag])
+      children.push(this.stack.reused[type])
       positions.push(start - parentStart)
     } else if (end - start > MAX_BUFFER_LENGTH) { // Too big for a buffer, make it a node
       let endCount = this.taken + size
@@ -350,10 +350,10 @@ class BufferCursor {
       let localChildren: (Node | TreeBuffer)[] = [], localPositions: number[] = []
       while (this.taken < endCount) this.takeNode(start, localChildren, localPositions)
       localChildren.reverse(); localPositions.reverse()
-      if (tag & TERM_TAGGED)
-        children.push(new Node(tag, end - start, localChildren, localPositions))
+      if (type & TERM_TAGGED)
+        children.push(new Node(type, end - start, localChildren, localPositions))
       else
-        children.push(this.balanceRange(this.stack.parser.getRepeat(tag), localChildren, localPositions, 0, localChildren.length))
+        children.push(this.balanceRange(this.stack.parser.getRepeat(type), localChildren, localPositions, 0, localChildren.length))
       positions.push(start - parentStart)
     } else {
       let {bufferSize, bufferStart} = this.findBufferStart(size, start, end)
@@ -366,7 +366,7 @@ class BufferCursor {
     }
   }
 
-  balanceRange(tag: number,
+  balanceRange(type: number,
                children: readonly (Node | TreeBuffer)[], positions: readonly number[],
                from: number, to: number): Node {
     let start = positions[from], length = (positions[to - 1] + children[to - 1].length) - start
@@ -378,8 +378,8 @@ class BufferCursor {
     if (length <= MAX_BUFFER_LENGTH) {
       for (let i = from; i < to; i++) {
         let child = children[i]
-        if (child instanceof Node && child.tag == tag) {
-          // Unwrap child with same tag
+        if (child instanceof Node && child.type == type) {
+          // Unwrap child with same type
           for (let j = 0; j < child.children.length; j++) {
             localChildren.push(child.children[j])
             localPositions.push(positions[i] + child.positions[j] - start)
@@ -400,8 +400,8 @@ class BufferCursor {
         }
         if (i == groupFrom + 1) {
           let only = children[groupFrom]
-          if (only instanceof Node && only.tag == tag) {
-            // Already tagged
+          if (only instanceof Node && only.type == type) {
+            // Already wrapped
             if (only.length > maxChild << 1) { // Too big, collapse
               for (let j = 0; j < only.children.length; j++) {
                 localChildren.push(only.children[j])
@@ -410,17 +410,17 @@ class BufferCursor {
               continue
             }
           } else {
-            // Wrap with our tag to make reuse possible
-            only = new Node(tag, only.length, [only], [0])
+            // Wrap with our type to make reuse possible
+            only = new Node(type, only.length, [only], [0])
           }
           localChildren.push(only)
         } else {
-          localChildren.push(this.balanceRange(tag, children, positions, groupFrom, i))
+          localChildren.push(this.balanceRange(type, children, positions, groupFrom, i))
         }
         localPositions.push(groupStart - start)
       }
     }
-    return new Node(tag, length, localChildren, localPositions)
+    return new Node(type, length, localChildren, localPositions)
   }
 
   findBufferStart(size: number, start: number, end: number) {
@@ -444,7 +444,7 @@ class BufferCursor {
   }
 
   copyToBuffer(bufferStart: number, buffer: Uint16Array, index: number): number {
-    let {tag, start, end, size} = this
+    let {type, start, end, size} = this
     this.forward()
     if (size > 4) {
       let firstChildIndex = index - (size - 4)
@@ -454,7 +454,7 @@ class BufferCursor {
     buffer[--index] = (size >> 2) - 1
     buffer[--index] = end - bufferStart
     buffer[--index] = start - bufferStart
-    buffer[--index] = tag
+    buffer[--index] = type
     return index
   }
 }

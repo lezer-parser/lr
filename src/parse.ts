@@ -160,10 +160,10 @@ export function parse(input: InputStream, parser: Parser, {
 
     if (cacheCursor) {//  && !stack.state.ambiguous) { // FIXME implement fragility check
       for (let cached = cacheCursor.nodeAt(start); cached;) {
-       let match = parser.getGoto(stack.state.id, cached.tag)
+       let match = parser.getGoto(stack.state.id, cached.type)
         if (match) {
           stack.useCached(cached, parser.states[match])
-          if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.tag)})`)
+          if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.type)})`)
           stack.put(parses)
           continue parse
         }

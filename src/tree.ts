@@ -47,8 +47,8 @@ export class Tree {
   static empty = new Tree([], [])
 
   iterInner(from: number, to: number, offset: number,
-            enter: (tag: number, start: number, end: number) => any,
-            leave?: (tag: number, start: number, end: number) => void) {
+            enter: (type: number, start: number, end: number) => any,
+            leave?: (type: number, start: number, end: number) => void) {
     for (let i = 0; i < this.children.length; i++) {
       let child = this.children[i], start = this.positions[i] + offset, end = start + child.length
       if (start > to) break
@@ -58,8 +58,8 @@ export class Tree {
   }
 
   iterate(from: number, to: number,
-          enter: (tag: number, start: number, end: number) => any,
-          leave?: (tag: number, start: number, end: number) => void) {
+          enter: (type: number, start: number, end: number) => any,
+          leave?: (type: number, start: number, end: number) => void) {
     this.iterInner(from, to, 0, enter, leave)
   }
 
@@ -71,7 +71,7 @@ export class Tree {
 export type SyntaxTree = TreeBuffer | Tree
 
 export class Node extends Tree {
-  constructor(readonly tag: number,
+  constructor(readonly type: number,
               private _length: number,
               children: (Node | TreeBuffer)[],
               positions: number[]) {
@@ -81,7 +81,7 @@ export class Node extends Tree {
   get length() { return this._length } // Because super class already has a getter
 
   toString(parser?: Parser) {
-    let name = (this.tag & TERM_TAGGED) == 0 ? null : parser ? parser.getTag(this.tag) : this.tag
+    let name = (this.type & TERM_TAGGED) == 0 ? null : parser ? parser.getTag(this.type) : this.type
     let children: string = this.children.map(c => c.toString(parser)).join()
     return !name ? children : name + (children.length ? "(" + children + ")" : "")
   }
@@ -96,12 +96,12 @@ export class Node extends Tree {
   }
 
   iterInner(from: number, to: number, offset: number,
-            enter: (tag: number, start: number, end: number) => any,
-            leave?: (tag: number, start: number, end: number) => void) {
-    if ((this.tag & TERM_TAGGED) == 0 ||
-        enter(this.tag, offset, offset + this.length) !== false) {
+            enter: (type: number, start: number, end: number) => any,
+            leave?: (type: number, start: number, end: number) => void) {
+    if ((this.type & TERM_TAGGED) == 0 ||
+        enter(this.type, offset, offset + this.length) !== false) {
       super.iterInner(from, to, offset, enter, leave)
-      if (leave && (this.tag & TERM_TAGGED)) leave(this.tag, offset, offset + this.length)
+      if (leave && (this.type & TERM_TAGGED)) leave(this.type, offset, offset + this.length)
     }
   }
 }
@@ -120,11 +120,11 @@ export class TreeBuffer {
   toString(parser?: Parser) {
     let pos = 0
     let next = () => {
-      let tag = this.buffer[pos], count = this.buffer[pos + 3]
+      let type = this.buffer[pos], count = this.buffer[pos + 3]
       pos += 4
       let children = "", end = pos + (count << 2)
       while (pos < end) children += (children ? "," : "") + next()
-      return (parser ? parser.getTag(tag) : tag) + (children ? "(" + children + ")" : "")
+      return (parser ? parser.getTag(type) : type) + (children ? "(" + children + ")" : "")
     }
     let result = ""
     while (pos < this.buffer.length) result += (result ? "," : "") + next()
@@ -143,18 +143,18 @@ export class TreeBuffer {
   }
 
   iterInner(from: number, to: number, offset: number,
-            enter: (tag: number, start: number, end: number) => any,
-            leave?: (tag: number, start: number, end: number) => void) {
+            enter: (type: number, start: number, end: number) => any,
+            leave?: (type: number, start: number, end: number) => void) {
     let pos = 0, buf = this.buffer
     let scan = () => {
-      let tag = buf[pos++], start = buf[pos++] + offset, end = buf[pos++] + offset, count = buf[pos++]
+      let type = buf[pos++], start = buf[pos++] + offset, end = buf[pos++] + offset, count = buf[pos++]
       let endPos = pos + (count << 2)
       if (end < from) {
         pos += count << 2
       } else if (start <= to) {
-        if (enter(tag, start, end) !== false) {
+        if (enter(type, start, end) !== false) {
           while (pos < endPos) scan()
-          if (leave) leave(tag, start, end)
+          if (leave) leave(type, start, end)
         } else {
           pos = endPos
         }
@@ -198,7 +198,7 @@ class TreeContext extends Context {
     super(parent)
   }
 
-  get type() { return this.tree instanceof Node ? this.tree.tag : -1 }
+  get type() { return this.tree instanceof Node ? this.tree.type : -1 }
 
   get end() { return this.start + this.tree.length }
 
@@ -219,7 +219,7 @@ class TreeContext extends Context {
       let child = tree.children[i], childEnd = childStart + child.length
       if (childEnd > pos) {
         if (child instanceof Node) {
-          if (child.tag & TERM_TAGGED) return new TreeContext(child, childStart, parent).resolve(pos)
+          if (child.type & TERM_TAGGED) return new TreeContext(child, childStart, parent).resolve(pos)
           return TreeContext.resolve(pos, child, childStart, parent)
         } else {
           let found = BufferContext.resolveIndex(pos, child, childStart, 0, child.buffer.length)
@@ -236,7 +236,7 @@ class TreeContext extends Context {
       let child = tree.children[i], start = tree.positions[i] + treeStart
       if (child instanceof TreeBuffer)
         BufferContext.collect(child, 0, child.buffer.length, result, start, parent)
-      else if ((child.tag & TERM_TAGGED) > 0)
+      else if ((child.type & TERM_TAGGED) > 0)
         result.push(new TreeContext(child, start, parent))
       else // Repeat node
         TreeContext.collect(child, result, start, parent)
