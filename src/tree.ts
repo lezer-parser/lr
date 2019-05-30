@@ -63,8 +63,8 @@ export class Tree {
     this.iterInner(from, to, 0, enter, leave)
   }
 
-  resolve(pos: number): Context {
-    return new TreeContext(this, 0, null).resolve(pos)
+  resolve(pos: number): TreeContext {
+    return new ArrayContext(this, 0, null).resolve(pos)
   }
 }
 
@@ -166,10 +166,10 @@ export class TreeBuffer {
   }
 }
 
-export abstract class Context {
-  _children: readonly Context[] | null = null
+export abstract class TreeContext {
+  _children: readonly TreeContext[] | null = null
 
-  constructor(readonly parent: Context | null) {}
+  constructor(readonly parent: TreeContext | null) {}
 
   abstract type: number
   abstract start: number
@@ -181,20 +181,20 @@ export abstract class Context {
     return d
   }
 
-  abstract resolve(pos: number): Context
+  abstract resolve(pos: number): TreeContext
 
   // @internal
-  abstract collectChildren(): Context[]
+  abstract collectChildren(): TreeContext[]
 
   get children() {
     return this._children || (this._children = this.collectChildren())
   }
 }
 
-class TreeContext extends Context {
+class ArrayContext extends TreeContext {
   constructor(readonly tree: Tree, // Might be a node, when not at the top
               readonly start: number,
-              parent: Context | null) {
+              parent: TreeContext | null) {
     super(parent)
   }
 
@@ -202,25 +202,25 @@ class TreeContext extends Context {
 
   get end() { return this.start + this.tree.length }
 
-  resolve(pos: number): Context {
+  resolve(pos: number): TreeContext {
     if (pos <= this.start || pos >= this.end)
       return this.parent ? this.parent.resolve(pos) : this
-    return TreeContext.resolve(pos, this.tree, this.start, this)
+    return ArrayContext.resolve(pos, this.tree, this.start, this)
   }
 
-  collectChildren(): Context[] {
-    return TreeContext.collect(this.tree, [], this.start, this)
+  collectChildren(): TreeContext[] {
+    return ArrayContext.collect(this.tree, [], this.start, this)
   }
 
-  static resolve(pos: number, tree: Tree, start: number, parent: Context): Context {
+  static resolve(pos: number, tree: Tree, start: number, parent: TreeContext): TreeContext {
     for (let i = 0; i < tree.children.length; i++) {
       let childStart = tree.positions[i] + start
       if (childStart >= pos) break
       let child = tree.children[i], childEnd = childStart + child.length
       if (childEnd > pos) {
         if (child instanceof Node) {
-          if (child.type & TERM_TAGGED) return new TreeContext(child, childStart, parent).resolve(pos)
-          return TreeContext.resolve(pos, child, childStart, parent)
+          if (child.type & TERM_TAGGED) return new ArrayContext(child, childStart, parent).resolve(pos)
+          return ArrayContext.resolve(pos, child, childStart, parent)
         } else {
           let found = BufferContext.resolveIndex(pos, child, childStart, 0, child.buffer.length)
           if (found > -1) return new BufferContext(child, childStart, found, parent).resolve(pos)
@@ -231,25 +231,25 @@ class TreeContext extends Context {
   }
 
   // @internal
-  static collect(tree: Tree, result: Context[], treeStart: number, parent: Context | null) {
+  static collect(tree: Tree, result: TreeContext[], treeStart: number, parent: TreeContext | null) {
     for (let i = 0; i < tree.children.length; i++) {
       let child = tree.children[i], start = tree.positions[i] + treeStart
       if (child instanceof TreeBuffer)
         BufferContext.collect(child, 0, child.buffer.length, result, start, parent)
       else if ((child.type & TERM_TAGGED) > 0)
-        result.push(new TreeContext(child, start, parent))
+        result.push(new ArrayContext(child, start, parent))
       else // Repeat node
-        TreeContext.collect(child, result, start, parent)
+        ArrayContext.collect(child, result, start, parent)
     }
     return result
   }
 }
 
-class BufferContext extends Context {
+class BufferContext extends TreeContext {
   constructor(readonly buffer: TreeBuffer,
               readonly bufferStart: number,
               readonly index: number,
-              parent: Context | null) {
+              parent: TreeContext | null) {
     super(parent)
   }
 
@@ -259,14 +259,14 @@ class BufferContext extends Context {
 
   private get endIndex() { return this.index + 4 + (this.buffer.buffer[this.index + 3] << 2) }
 
-  resolve(pos: number): Context {
+  resolve(pos: number): TreeContext {
     if (pos <= this.start || pos >= this.end)
       return this.parent ? this.parent.resolve(pos) : this
     let found = BufferContext.resolveIndex(pos, this.buffer, this.bufferStart, this.index + 4, this.endIndex)
     return found < 0 ? this : new BufferContext(this.buffer, this.bufferStart, found, this).resolve(pos)
   }
 
-  collectChildren(): Context[] {
+  collectChildren(): TreeContext[] {
     return BufferContext.collect(this.buffer, this.index + 4, this.endIndex,
                                  [], this.bufferStart, this)
   }
@@ -284,7 +284,7 @@ class BufferContext extends Context {
   }
 
   // @internal
-  static collect(buffer: TreeBuffer, from: number, to: number, result: Context[], bufferStart: number, parent: Context | null) {
+  static collect(buffer: TreeBuffer, from: number, to: number, result: TreeContext[], bufferStart: number, parent: TreeContext | null) {
     for (let i = from; i < to;) {
       let count = buffer.buffer[i + 3]
       result.push(new BufferContext(buffer, bufferStart, i, parent))
