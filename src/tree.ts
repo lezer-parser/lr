@@ -181,6 +181,12 @@ export abstract class TreeContext {
     return d
   }
 
+  get root(): Tree {
+    let cx = this as TreeContext
+    while (cx.parent) cx = cx.parent
+    return (cx as ArrayContext).tree
+  }
+
   abstract resolve(pos: number): TreeContext
 
   // @internal
