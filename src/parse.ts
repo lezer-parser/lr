@@ -228,6 +228,7 @@ export class Parser {
               readonly specializeTable: number,
               readonly specializations: readonly {[value: string]: number}[],
               readonly tokenPrecTable: number,
+              readonly skippedNodes: number,
               readonly termNames: null | {[id: number]: string} = null) {}
 
   getTag(term: number): string | null {
@@ -283,6 +284,12 @@ export class Parser {
     return (term >> 1) < this.repeatCount
   }
 
+  isSkipped(term: number) {
+    for (let i = this.skippedNodes, cur; (cur = this.data[i]) != TERM_ERR;)
+      if (cur == term) return true
+    return false
+  }
+
   overrides(token: number, prev: number) {
     let iPrev = findOffset(this.data, this.tokenPrecTable, prev)
     return iPrev < 0 || findOffset(this.data, this.tokenPrecTable, token) < iPrev
@@ -293,6 +300,7 @@ export class Parser {
                      repeatTable: number, repeatCount: number,
                      specializeTable: number, specializations: readonly {[term: string]: number}[],
                      tokenPrec: number,
+                     skippedNodes: number,
                      termNames?: {[id: number]: string}) {
     let arr = decodeArray(states, Uint32Array), stateObjs: ParseState[] = []
     for (let i = 0, id = 0; i < arr.length;)
@@ -300,7 +308,8 @@ export class Parser {
     let tokenArray = decodeArray(tokenData)
     return new Parser(stateObjs, decodeArray(stateData), decodeArray(goto), tags,
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
-                      repeatTable, repeatCount, specializeTable, specializations.map(withoutPrototype), tokenPrec, termNames)
+                      repeatTable, repeatCount, specializeTable, specializations.map(withoutPrototype),
+                      tokenPrec, skippedNodes, termNames)
   }
 }
 
