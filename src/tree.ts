@@ -46,15 +46,21 @@ export class Tree {
 
   static empty = new Tree([], [])
 
-  iterate(from: number, to: number, offset: number,
-          enter: (tag: number, start: number, end: number) => any,
-          leave?: (tag: number, start: number, end: number) => void) {
+  iterInner(from: number, to: number, offset: number,
+            enter: (tag: number, start: number, end: number) => any,
+            leave?: (tag: number, start: number, end: number) => void) {
     for (let i = 0; i < this.children.length; i++) {
       let child = this.children[i], start = this.positions[i] + offset, end = start + child.length
       if (start > to) break
       if (end < from) continue
-      child.iterate(from, to, start, enter, leave)
+      child.iterInner(from, to, start, enter, leave)
     }
+  }
+
+  iterate(from: number, to: number,
+          enter: (tag: number, start: number, end: number) => any,
+          leave?: (tag: number, start: number, end: number) => void) {
+    this.iterInner(from, to, 0, enter, leave)
   }
 
   resolve(pos: number): Context {
@@ -89,12 +95,12 @@ export class Node extends Tree {
     }
   }
 
-  iterate(from: number, to: number, offset: number,
-          enter: (tag: number, start: number, end: number) => any,
-          leave?: (tag: number, start: number, end: number) => void) {
+  iterInner(from: number, to: number, offset: number,
+            enter: (tag: number, start: number, end: number) => any,
+            leave?: (tag: number, start: number, end: number) => void) {
     if ((this.tag & TERM_TAGGED) == 0 ||
         enter(this.tag, offset, offset + this.length) !== false) {
-      super.iterate(from, to, offset, enter, leave)
+      super.iterInner(from, to, offset, enter, leave)
       if (leave && (this.tag & TERM_TAGGED)) leave(this.tag, offset, offset + this.length)
     }
   }
@@ -136,9 +142,9 @@ export class TreeBuffer {
     return changes.length ? Tree.empty : this
   }
 
-  iterate(from: number, to: number, offset: number,
-          enter: (tag: number, start: number, end: number) => any,
-          leave?: (tag: number, start: number, end: number) => void) {
+  iterInner(from: number, to: number, offset: number,
+            enter: (tag: number, start: number, end: number) => any,
+            leave?: (tag: number, start: number, end: number) => void) {
     let pos = 0, buf = this.buffer
     let scan = () => {
       let tag = buf[pos++], start = buf[pos++] + offset, end = buf[pos++] + offset, count = buf[pos++]
