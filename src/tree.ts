@@ -47,7 +47,7 @@ export class Tree {
   static empty = new Tree([], [])
 
   iterate(from: number, to: number, offset: number,
-          enter: (tag: number, start: number, end: number) => boolean,
+          enter: (tag: number, start: number, end: number) => any,
           leave?: (tag: number, start: number, end: number) => void) {
     for (let i = 0; i < this.children.length; i++) {
       let child = this.children[i], start = this.positions[i] + offset, end = start + child.length
@@ -90,11 +90,12 @@ export class Node extends Tree {
   }
 
   iterate(from: number, to: number, offset: number,
-          enter: (tag: number, start: number, end: number) => boolean,
+          enter: (tag: number, start: number, end: number) => any,
           leave?: (tag: number, start: number, end: number) => void) {
-    if (enter(this.tag, offset, offset + this.length)) {
+    if ((this.tag & TERM_TAGGED) == 0 ||
+        enter(this.tag, offset, offset + this.length) !== false) {
       super.iterate(from, to, offset, enter, leave)
-      if (leave) leave(this.tag, offset, offset + this.length)
+      if (leave && (this.tag & TERM_TAGGED)) leave(this.tag, offset, offset + this.length)
     }
   }
 }
@@ -136,16 +137,16 @@ export class TreeBuffer {
   }
 
   iterate(from: number, to: number, offset: number,
-          enter: (tag: number, start: number, end: number) => boolean,
+          enter: (tag: number, start: number, end: number) => any,
           leave?: (tag: number, start: number, end: number) => void) {
     let pos = 0, buf = this.buffer
     let scan = () => {
-      let tag = buf[pos++], start = buf[pos++], end = buf[pos++], count = buf[pos++]
+      let tag = buf[pos++], start = buf[pos++] + offset, end = buf[pos++] + offset, count = buf[pos++]
       let endPos = pos + (count << 2)
       if (end < from) {
         pos += count << 2
       } else if (start <= to) {
-        if (enter(tag, start, end)) {
+        if (enter(tag, start, end) !== false) {
           while (pos < endPos) scan()
           if (leave) leave(tag, start, end)
         } else {
@@ -167,6 +168,12 @@ export abstract class Context {
   abstract type: number
   abstract start: number
   abstract end: number
+
+  get depth() {
+    let d = 0
+    for (let p = this.parent; p; p = p.parent) d++
+    return d
+  }
 
   abstract resolve(pos: number): Context
 
@@ -197,9 +204,13 @@ class TreeContext extends Context {
       if (start >= pos) break
       let child = this.tree.children[i], end = start + child.length
       if (end > pos) {
-        if (child instanceof Node) return new TreeContext(child, start, this).resolve(pos)
-        let found = BufferContext.resolveIndex(pos, child, start, 0, child.buffer.length)
-        if (found > -1) return new BufferContext(child, start, found, this)
+        if (child instanceof Node) {
+          if (child.tag & TERM_TAGGED)
+          return new TreeContext(child, start, this).resolve(pos)
+        } else {
+          let found = BufferContext.resolveIndex(pos, child, start, 0, child.buffer.length)
+          if (found > -1) return new BufferContext(child, start, found, this)
+        }
       }
     }
     return this
