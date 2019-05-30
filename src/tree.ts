@@ -205,25 +205,29 @@ class TreeContext extends Context {
   resolve(pos: number): Context {
     if (pos <= this.start || pos >= this.end)
       return this.parent ? this.parent.resolve(pos) : this
-    for (let i = 0; i < this.tree.children.length; i++) {
-      let start = this.tree.positions[i] + this.start
-      if (start >= pos) break
-      let child = this.tree.children[i], end = start + child.length
-      if (end > pos) {
-        if (child instanceof Node) {
-          if (child.tag & TERM_TAGGED)
-          return new TreeContext(child, start, this).resolve(pos)
-        } else {
-          let found = BufferContext.resolveIndex(pos, child, start, 0, child.buffer.length)
-          if (found > -1) return new BufferContext(child, start, found, this)
-        }
-      }
-    }
-    return this
+    return TreeContext.resolve(pos, this.tree, this.start, this)
   }
 
   collectChildren(): Context[] {
     return TreeContext.collect(this.tree, [], this.start, this)
+  }
+
+  static resolve(pos: number, tree: Tree, start: number, parent: Context): Context {
+    for (let i = 0; i < tree.children.length; i++) {
+      let childStart = tree.positions[i] + start
+      if (childStart >= pos) break
+      let child = tree.children[i], childEnd = childStart + child.length
+      if (childEnd > pos) {
+        if (child instanceof Node) {
+          if (child.tag & TERM_TAGGED) return new TreeContext(child, childStart, parent).resolve(pos)
+          return TreeContext.resolve(pos, child, childStart, parent)
+        } else {
+          let found = BufferContext.resolveIndex(pos, child, childStart, 0, child.buffer.length)
+          if (found > -1) return new BufferContext(child, childStart, found, parent).resolve(pos)
+        }
+      }
+    }
+    return parent
   }
 
   // @internal
@@ -259,7 +263,7 @@ class BufferContext extends Context {
     if (pos <= this.start || pos >= this.end)
       return this.parent ? this.parent.resolve(pos) : this
     let found = BufferContext.resolveIndex(pos, this.buffer, this.bufferStart, this.index + 4, this.endIndex)
-    return found < 0 ? this : new BufferContext(this.buffer, this.bufferStart, found, this)
+    return found < 0 ? this : new BufferContext(this.buffer, this.bufferStart, found, this).resolve(pos)
   }
 
   collectChildren(): Context[] {
@@ -269,7 +273,7 @@ class BufferContext extends Context {
 
   // @internal
   static resolveIndex(pos: number, buffer: TreeBuffer, start: number, from: number, to: number) {
-    for (let i = from, buf = buffer.buffer; i < to; i++) {
+    for (let i = from, buf = buffer.buffer; i < to;) {
       let start1 = buf[i + 1] + start
       if (start1 >= pos) break
       let end1 = buf[i + 2] + start
