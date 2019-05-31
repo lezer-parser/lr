@@ -310,19 +310,19 @@ class BufferContext extends TreeContext {
   }
 
   static findIndex(pos: number, side: number, buffer: TreeBuffer, start: number, from: number, to: number) {
-    for (let i = from, lastI = -1, buf = buffer.buffer; i < to;) {
+    let lastI = -1
+    for (let i = from, buf = buffer.buffer; i < to;) {
       let start1 = buf[i + 1] + start, end1 = buf[i + 2] + start
-      let empty = start1 == end1 && start1 == pos
+      let ignore = start1 == end1 && start1 == pos
       if (start1 >= pos) {
-        if (side > 0 && !empty) return i
-        if (side < 0 && lastI > -1 && !empty) return lastI
+        if (side > 0 && !ignore) return i
         break
       }
-      if (end1 > pos || (side < 0 && i == to - 4 && !empty)) return i
-      lastI = i
+      if (end1 > pos) return i
+      if (!ignore) lastI = i
       i += 4 + (buf[i + 3] << 2)
     }
-    return -1
+    return side < 0 ? lastI : -1
   }
 
   static collect(buffer: TreeBuffer, from: number, to: number, result: TreeContext[], bufferStart: number, parent: TreeContext | null) {
