@@ -195,7 +195,11 @@ export function parse(input: InputStream, parser: Parser, {
 
     // If we're here, the stack failed to advance normally
 
-    if (start == input.length && (stack.state.accepting || parses.length == 0)) return stack.toTree()
+    if (start == input.length && (stack.state.accepting || parses.length == 0)) {
+      while (!stack.state.accepting && stack.state.forcedReduce > 0)
+        stack.reduce(stack.state.forcedReduce)
+      return stack.toTree()
+    }
 
     let {end, term} = tokens.mainToken
     if (!strict &&
