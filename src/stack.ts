@@ -213,15 +213,21 @@ export class Stack {
         result.pushState(this.parser.states[recover], pos)
         result.shiftValue(TERM_ERR, pos, pos)
       }
-      
-      let reduce = parser.anyReduce(result.state)
-      if (reduce == 0) {
-        // Force a reduce using this state's default reduce
-        result.shiftValue(TERM_ERR, result.pos, result.pos)
-        reduce = result.state.forcedReduce
-      }
-      result.reduce(reduce)
+
+      result.forceReduce()
     }
+  }
+
+  forceReduce() {
+    let reduce = this.parser.anyReduce(this.state)
+    if (reduce == 0) {
+      // FIXME somehow mark the resulting node as not suitable for reuse
+      reduce = this.state.forcedReduce
+      if (reduce <= 0) return false
+      this.shiftValue(TERM_ERR, this.pos, this.pos)
+    }
+    this.reduce(reduce)
+    return true
   }
 
   compare(other: Stack) {
