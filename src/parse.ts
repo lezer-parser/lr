@@ -314,6 +314,9 @@ export class Parser {
                       repeatTable, repeatCount, specializeTable, specializations.map(withoutPrototype),
                       tokenPrec, skippedNodes, termNames)
   }
+
+  // FIXME Horrid module interop kludge needed when consuming parser packages through ts-node
+  get default() { return this }
 }
 
 function encode(reduce: number, value: number) {
