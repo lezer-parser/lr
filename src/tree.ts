@@ -237,7 +237,7 @@ class ArrayContext extends TreeContext {
         else if (side > 0) select = i
         else break
       }
-      if (select < 0 && (side < 0 && i == tree.children.length - 1 || childStart + tree.children[i].length > pos))
+      if (select < 0 && (childStart + tree.children[i].length > pos || side < 0 && i == tree.children.length - 1))
         select = i
       if (select >= 0) {
         let child = tree.children[select], childStart = tree.positions[select] + start
@@ -282,8 +282,8 @@ class BufferContext extends TreeContext {
   }
 
   get type() { return this.buffer.buffer[this.index] }
-  get start() { return this.buffer.buffer[this.index + 1] }
-  get end() { return this.buffer.buffer[this.index + 2] }
+  get start() { return this.buffer.buffer[this.index + 1] + this.bufferStart }
+  get end() { return this.buffer.buffer[this.index + 2] + this.bufferStart }
 
   private get endIndex() { return this.index + 4 + (this.buffer.buffer[this.index + 3] << 2) }
 
