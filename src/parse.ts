@@ -160,8 +160,8 @@ export function parse(input: InputStream, parser: Parser, {
 
     if (cacheCursor) {//  && !stack.state.ambiguous) { // FIXME implement fragility check
       for (let cached = cacheCursor.nodeAt(start); cached;) {
-       let match = parser.getGoto(stack.state.id, cached.type)
-        if (match) {
+        let match = parser.getGoto(stack.state.id, cached.type)
+        if (match > -1) {
           stack.useCached(cached, parser.states[match])
           if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.type)})`)
           stack.put(parses)
@@ -251,11 +251,15 @@ export class Parser {
     return parse(input, this, options)
   }
 
-  getGoto(state: number, term: number) {
+  getGoto(state: number, term: number, loose = false) {
     let table = this.goto
-    for (let pos = table[term];; pos += 2) {
-      let next = table[pos]
-      if (next == state || next == 0xffff) return table[pos + 1]
+    for (let pos = table[term];;) {
+      let groupTag = table[pos++], last = groupTag & 1
+      let target = table[pos++]
+      if (loose && last) return target
+      for (let end = pos + (groupTag >> 1); pos < end; pos++)
+        if (table[pos] == state) return target
+      if (last) return -1
     }
   }
 

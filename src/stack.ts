@@ -70,7 +70,7 @@ export class Stack {
   reduce(action: number) { // Encoded reduction action
     let depth = (action & REDUCE_DEPTH_MASK) - 1, type = action >> REDUCE_DEPTH_SIZE
     if (depth == 0) {
-      this.pushState(this.parser.states[this.parser.getGoto(this.state.id, type)], this.pos)
+      this.pushState(this.parser.states[this.parser.getGoto(this.state.id, type, true)], this.pos)
       return
     }
 
@@ -101,7 +101,7 @@ export class Stack {
       }
     }
     let baseStateID = this.stack[base - 3]
-    this.state = this.parser.states[this.parser.getGoto(baseStateID, type)]
+    this.state = this.parser.states[this.parser.getGoto(baseStateID, type, true)]
     if (depth > 1) this.stack.length = base
   }
 
@@ -123,7 +123,8 @@ export class Stack {
       this.reduce(action)
     } else if (action != ACTION_SKIP) { // Shift, not skipped
       let start = this.inputPos
-      this.pos = this.inputPos = nextEnd
+      if (nextEnd > this.inputPos || (next & TERM_TAGGED))
+        this.pos = this.inputPos = nextEnd
       this.pushState(this.parser.states[-action], start)
       if (next & TERM_TAGGED) this.buffer.push(next, start, nextEnd, 4)
       this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
@@ -304,7 +305,7 @@ class SimulatedStack {
     } else {
       this.offset -= (depth - 1) * 3
     }
-    let goto = this.stack.parser.getGoto(this.rest[this.offset - 3], term)
+    let goto = this.stack.parser.getGoto(this.rest[this.offset - 3], term, true)
     this.top = this.stack.parser.states[goto]
   }
 }
