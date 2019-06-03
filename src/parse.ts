@@ -209,7 +209,11 @@ export function parse(input: InputStream, parser: Parser, {
         inserted.put(parses)
       }
 
-      if (end == start) { end++; term = TERM_ERR }
+      if (end == start) {
+        if (start == input.length) continue
+        end++
+        term = TERM_ERR
+      }
       stack.recoverByDelete(term, end)
       if (verbose) console.log(stack + " (via recover-delete)")
       stack.put(parses)
