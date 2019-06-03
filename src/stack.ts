@@ -281,7 +281,7 @@ export class Stack {
   toTree(): Tree {
     let children: (Node | TreeBuffer)[] = [], positions: number[] = []
     let cursor = new BufferCursor(this)
-    while (!cursor.done) cursor.takeNode(0, children, positions)
+    while (!cursor.done) cursor.takeNode(0, 0, children, positions)
     return new Tree(children.reverse(), positions.reverse())
   }
 }
@@ -315,11 +315,12 @@ const BALANCE_BRANCH_FACTOR = 5
 class BufferCursor {
   buffer: number[]
   index: number
-  taken = 0
+  pos: number
 
   constructor(public stack: Stack) {
     this.buffer = stack.buffer
     this.index = this.buffer.length
+    this.pos = this.stack.bufferBase + this.index
     if (this.index == 0) this.maybeNext()
   }
 
@@ -341,21 +342,22 @@ class BufferCursor {
 
   forward() {
     this.index -= 4
-    this.taken += 4
+    this.pos -= 4
     if (this.index == 0) this.maybeNext()
   }
 
-  takeNode(parentStart: number, children: (Node | TreeBuffer)[], positions: number[]) {
+  takeNode(parentStart: number, minPos: number, children: (Node | TreeBuffer)[], positions: number[]) {
     let {type, start, end, size} = this
     if (size == REUSED_VALUE) {
       this.forward()
       children.push(this.stack.reused[type])
       positions.push(start - parentStart)
     } else if (end - start > MAX_BUFFER_LENGTH) { // Too big for a buffer, make it a node
-      let endCount = this.taken + size
+      let endPos = this.pos - size
       this.forward()
       let localChildren: (Node | TreeBuffer)[] = [], localPositions: number[] = []
-      while (this.taken < endCount) this.takeNode(start, localChildren, localPositions)
+      while (this.pos > endPos)
+        this.takeNode(start, endPos, localChildren, localPositions)
       localChildren.reverse(); localPositions.reverse()
       if (type & TERM_TAGGED)
         children.push(new Node(type, end - start, localChildren, localPositions))
@@ -363,10 +365,10 @@ class BufferCursor {
         children.push(this.balanceRange(this.stack.parser.getRepeat(type), localChildren, localPositions, 0, localChildren.length))
       positions.push(start - parentStart)
     } else {
-      let {bufferSize, bufferStart} = this.findBufferStart(size, start, end)
+      let {bufferSize, bufferStart} = this.findBufferStart(size, start, end, minPos - this.pos)
       let buffer = new Uint16Array(bufferSize)
-      let endCount = this.taken + bufferSize, index = bufferSize
-      while (this.taken < endCount)
+      let endPos = this.pos - bufferSize, index = bufferSize
+      while (this.pos > endPos)
         index = this.copyToBuffer(bufferStart, buffer, index)
       children.push(new TreeBuffer(buffer))
       positions.push(bufferStart - parentStart)
@@ -430,9 +432,9 @@ class BufferCursor {
     return new Node(type, length, localChildren, localPositions)
   }
 
-  findBufferStart(size: number, start: number, end: number) {
+  findBufferStart(size: number, start: number, end: number, maxSize: number) {
     let stack = this.stack, index = this.index, skip = size
-    outer: for (;;) {
+    outer: for (; size < maxSize;) {
       for (;;) { // Forward stack/index to provide access to next node
         if (index > skip) { index -= skip; break }
         if (!stack.parent) break outer
