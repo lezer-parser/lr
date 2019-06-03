@@ -288,7 +288,7 @@ export class Parser {
   }
 
   isSkipped(term: number) {
-    for (let i = this.skippedNodes, cur; (cur = this.data[i]) != TERM_ERR;)
+    for (let i = this.skippedNodes, cur; (cur = this.data[i]) != TERM_ERR; i++)
       if (cur == term) return true
     return false
   }
