@@ -164,7 +164,7 @@ export class Stack {
   recoverByDelete(next: number, nextEnd: number) {
     if (next & TERM_TAGGED) this.shiftValue(next, this.inputPos, nextEnd)
     this.shiftValue(TERM_ERR, this.inputPos, nextEnd, (next & TERM_TAGGED) ? 8 : 4)
-    this.pos = this.inputPos = nextEnd
+    this.inputPos = nextEnd
     this.badness += BADNESS_DELETE
   }
 
