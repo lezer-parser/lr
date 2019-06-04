@@ -257,10 +257,11 @@ export class Parser {
 
   getGoto(state: number, term: number, loose = false) {
     let table = this.goto
-    for (let pos = table[term];;) {
+    if (term >= table[0]) return -1
+    for (let pos = table[term + 1];;) {
       let groupTag = table[pos++], last = groupTag & 1
       let target = table[pos++]
-      if (loose && last) return target
+      if (last && loose) return target
       for (let end = pos + (groupTag >> 1); pos < end; pos++)
         if (table[pos] == state) return target
       if (last) return -1
