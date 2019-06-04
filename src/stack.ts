@@ -353,7 +353,7 @@ class BufferCursor {
       children.push(this.stack.reused[type])
       positions.push(start - parentStart)
     } else if (end - start <= MAX_BUFFER_LENGTH &&
-               (buffer = this.findBufferSize(minPos - this.pos))) { // Small enough for a buffer, and no reused nodes inside
+               (buffer = this.findBufferSize(this.pos - minPos))) { // Small enough for a buffer, and no reused nodes inside
       let data = new Uint16Array(buffer.size)
       let endPos = this.pos - buffer.size, index = buffer.size
       while (this.pos > endPos)
@@ -433,28 +433,31 @@ class BufferCursor {
   }
 
   findBufferSize(maxSize: number) {
-    maxSize = Math.min(maxSize, MAX_BUFFER_LENGTH)
-    let size = 0, start = 0, skip = 0, curStart = 0, curSize = 0
-    let stack = this.stack, buf = stack.buffer, index = this.index
-    for (;;) {
-      if (index == 0) {
-        index = stack.bufferBase - stack.parent!.bufferBase
-        stack = stack.parent!
-      }
-      let nextSize = buf[index - 1]
-      if (nextSize == REUSED_VALUE) break
-      if (skip == 0) {
-        if (size + nextSize > maxSize) break
-        skip = nextSize
-        size += curSize
-        start = curStart
-        curStart = buf[index - 3]
-        curSize = nextSize
-      }
-      skip -= 4
-      index -= 4
+    let stack = this.stack, index = this.index
+    let nextStack = () => {
+      index = stack.bufferBase - stack.parent!.bufferBase
+      stack = stack.parent!
     }
-    return size ? {size, start} : null
+
+    // Scan through the buffer to find previous siblings that fit
+    // together in a TreeBuffer, and don't contain any reused nodes
+    // (which can't be stored in a buffer)
+    let size = 0, start = 0
+    scan: for (let pos = this.pos, minPos = pos - Math.min(maxSize, MAX_BUFFER_LENGTH); pos > minPos;) {
+      if (index == 0) nextStack()
+      let nodeSize = stack.buffer[index - 1], startPos = pos - nodeSize
+      if (nodeSize == REUSED_VALUE || startPos < minPos) break
+      let nodeStart = stack.buffer[index - 3]
+      index -= 4; pos -= 4
+      while (pos > startPos) {
+        if (index == 0) nextStack()
+        if (stack.buffer[index - 1] == REUSED_VALUE) break scan
+        index -= 4; pos -= 4
+      }
+      start = nodeStart
+      size += nodeSize
+    }
+    return size > 4 ? {size, start} : null
   }
 
   copyToBuffer(bufferStart: number, buffer: Uint16Array, index: number): number {
