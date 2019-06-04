@@ -27,6 +27,12 @@ export abstract class Subtree {
     return cx as Tree
   }
 
+  abstract toString(parser?: Parser): string
+
+  abstract iterate(from: number, to: number,
+                   enter: (type: number, start: number, end: number) => any,
+                   leave?: (type: number, start: number, end: number) => void): void
+
   abstract resolve(pos: number): Subtree
 
   abstract childBefore(pos: number): Subtree | null
@@ -83,6 +89,13 @@ export class Tree extends Subtree {
 
   static empty = new Tree([], [])
 
+  iterate(from: number, to: number,
+          enter: (type: number, start: number, end: number) => any,
+          leave?: (type: number, start: number, end: number) => void) {
+    this.iterInner(from, to, 0, enter, leave)
+  }
+
+  // @internal
   iterInner(from: number, to: number, offset: number,
             enter: (type: number, start: number, end: number) => any,
             leave?: (type: number, start: number, end: number) => void) {
@@ -92,12 +105,6 @@ export class Tree extends Subtree {
       if (end < from) continue
       child.iterInner(from, to, start, enter, leave)
     }
-  }
-
-  iterate(from: number, to: number,
-          enter: (type: number, start: number, end: number) => any,
-          leave?: (type: number, start: number, end: number) => void) {
-    this.iterInner(from, to, 0, enter, leave)
   }
 
   resolve(pos: number): Subtree {
@@ -112,6 +119,7 @@ export class Tree extends Subtree {
     return this.findChild(pos, 1, 0, this)
   }
 
+  // @internal
   findChild(pos: number, side: number, start: number, parent: Subtree): Subtree | null {
     for (let i = 0; i < this.children.length; i++) {
       let childStart = this.positions[i] + start, select = -1
@@ -137,6 +145,7 @@ export class Tree extends Subtree {
     return null
   }
 
+  // @internal
   resolveInner(pos: number, start: number, parent: Subtree): Subtree {
     let found = this.findChild(pos, 0, start, parent)
     return found ? found.resolve(pos) : parent
@@ -196,17 +205,24 @@ export class TreeBuffer {
   get length() { return this.buffer[this.buffer.length - 2] }
 
   toString(parser?: Parser) {
-    let pos = 0
-    let next = () => {
-      let type = this.buffer[pos], count = this.buffer[pos + 3]
-      pos += 4
-      let children = "", end = pos + (count << 2)
-      while (pos < end) children += (children ? "," : "") + next()
-      return (parser ? parser.getTag(type) : type) + (children ? "(" + children + ")" : "")
+    let parts: string[] = []
+    for (let index = 0; index < this.buffer.length;)
+      index = this.childToString(index, parts, parser)
+    return parts.join(",")
+  }
+
+  childToString(index: number, parts: string[], parser?: Parser): number {
+    let type = this.buffer[index], count = this.buffer[index + 3]
+    let result = parser ? parser.getTag(type)! : String(type)
+    index += 4
+    if (count) {
+      let children: string[] = []
+      for (let end = index + (count << 2); index < end;)
+        index = this.childToString(index, children, parser)
+      result += "(" + children.join(",") + ")"
     }
-    let result = ""
-    while (pos < this.buffer.length) result += (result ? "," : "") + next()
-    return result
+    parts.push(result)
+    return index
   }
 
   partial(start: number, end: number, offset: number, children: (Node | TreeBuffer)[], positions: number[]) {
@@ -223,24 +239,21 @@ export class TreeBuffer {
   iterInner(from: number, to: number, offset: number,
             enter: (type: number, start: number, end: number) => any,
             leave?: (type: number, start: number, end: number) => void) {
-    let pos = 0, buf = this.buffer
-    let scan = () => {
-      let type = buf[pos++], start = buf[pos++] + offset, end = buf[pos++] + offset, count = buf[pos++]
-      let endPos = pos + (count << 2)
-      if (end < from) {
-        pos = endPos
-      } else if (start <= to) {
-        if (enter(type, start, end) !== false) {
-          while (pos < endPos) scan()
-          if (leave) leave(type, start, end)
-        } else {
-          pos = endPos
-        }
-      } else {
-        pos = buf.length
-      }
+    for (let index = 0; index < this.buffer.length;)
+      index = this.iterChild(from, to, offset, index, enter, leave)
+  }
+
+  iterChild(from: number, to: number, offset: number, index: number,
+            enter: (type: number, start: number, end: number) => any,
+            leave?: (type: number, start: number, end: number) => void): number {
+    let type = this.buffer[index++], start = this.buffer[index++] + offset,
+        end = this.buffer[index++] + offset, count = this.buffer[index++]
+    let endIndex = index + (count << 2)
+    if (start > to) return this.buffer.length
+    if (end >= from && enter(type, start, end) !== false) {
+      while (index < endIndex) this.iterChild(from, to, offset, index, enter, leave)
     }
-    while (pos < buf.length) scan()
+    return endIndex
   }
 
   findIndex(pos: number, side: number, start: number, from: number, to: number) {
@@ -284,6 +297,14 @@ class NodeSubtree extends Subtree {
   childAfter(pos: number): Subtree | null {
     return this.node.findChild(pos, 1, this.start, this)
   }
+
+  toString(parser?: Parser) { return this.node.toString(parser) }
+
+  iterate(from: number, to: number,
+          enter: (type: number, start: number, end: number) => any,
+          leave?: (type: number, start: number, end: number) => void) {
+    return this.node.iterInner(from, to, this.start, enter, leave)
+  }
 }
 
 class BufferSubtree extends Subtree {
@@ -310,10 +331,22 @@ class BufferSubtree extends Subtree {
     return index < 0 ? null : new BufferSubtree(this.buffer, this.bufferStart, index, this)
   }
 
+  iterate(from: number, to: number,
+          enter: (type: number, start: number, end: number) => any,
+          leave?: (type: number, start: number, end: number) => void) {
+    this.buffer.iterChild(from, to, this.bufferStart, this.index, enter, leave)
+  }
+
   resolve(pos: number): Subtree {
     if (pos <= this.start || pos >= this.end) return this.parent.resolve(pos)
     let found = this.buffer.findIndex(pos, 0, this.bufferStart, this.index + 4, this.endIndex)
     return found < 0 ? this : new BufferSubtree(this.buffer, this.bufferStart, found, this).resolve(pos)
+  }
+
+  toString(parser?: Parser) {
+    let result: string[] = []
+    this.buffer.childToString(this.index, result, parser)
+    return result.join("")
   }
 }
   
