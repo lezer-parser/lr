@@ -347,12 +347,20 @@ class BufferCursor {
   }
 
   takeNode(parentStart: number, minPos: number, children: (Node | TreeBuffer)[], positions: number[]) {
-    let {type, start, end, size} = this
+    let {type, start, end, size} = this, buffer!: {size: number, start: number} | null
     if (size == REUSED_VALUE) {
       this.forward()
       children.push(this.stack.reused[type])
       positions.push(start - parentStart)
-    } else if (end - start > MAX_BUFFER_LENGTH) { // Too big for a buffer, make it a node
+    } else if (end - start <= MAX_BUFFER_LENGTH &&
+               (buffer = this.findBufferSize(minPos - this.pos))) { // Small enough for a buffer, and no reused nodes inside
+      let data = new Uint16Array(buffer.size)
+      let endPos = this.pos - buffer.size, index = buffer.size
+      while (this.pos > endPos)
+        index = this.copyToBuffer(buffer.start, data, index)
+      children.push(new TreeBuffer(data))
+      positions.push(buffer.start - parentStart)
+    } else { // Make it a node
       let endPos = this.pos - size
       this.forward()
       let localChildren: (Node | TreeBuffer)[] = [], localPositions: number[] = []
@@ -364,14 +372,6 @@ class BufferCursor {
       else
         children.push(this.balanceRange(this.stack.parser.getRepeat(type), localChildren, localPositions, 0, localChildren.length))
       positions.push(start - parentStart)
-    } else {
-      let {bufferSize, bufferStart} = this.findBufferStart(size, start, end, minPos - this.pos)
-      let buffer = new Uint16Array(bufferSize)
-      let endPos = this.pos - bufferSize, index = bufferSize
-      while (this.pos > endPos)
-        index = this.copyToBuffer(bufferStart, buffer, index)
-      children.push(new TreeBuffer(buffer))
-      positions.push(bufferStart - parentStart)
     }
   }
 
@@ -432,24 +432,29 @@ class BufferCursor {
     return new Node(type, length, localChildren, localPositions)
   }
 
-  findBufferStart(size: number, start: number, end: number, maxSize: number) {
-    let stack = this.stack, index = this.index, skip = size
-    outer: for (; size < maxSize;) {
-      for (;;) { // Forward stack/index to provide access to next node
-        if (index > skip) { index -= skip; break }
-        if (!stack.parent) break outer
-        skip -= index
-        index = stack.bufferBase - stack.parent.bufferBase
-        stack = stack.parent
+  findBufferSize(maxSize: number) {
+    maxSize = Math.min(maxSize, MAX_BUFFER_LENGTH)
+    let size = 0, start = 0, skip = 0, curStart = 0, curSize = 0
+    let stack = this.stack, buf = stack.buffer, index = this.index
+    for (;;) {
+      if (index == 0) {
+        index = stack.bufferBase - stack.parent!.bufferBase
+        stack = stack.parent!
       }
-      let nextSize = stack.buffer[index - 1]
-      let nextStart = stack.buffer[index - 3]
-      if (nextSize == REUSED_VALUE || end - nextStart > MAX_BUFFER_LENGTH) break outer
-      start = nextStart
-      size += nextSize
-      skip = nextSize
+      let nextSize = buf[index - 1]
+      if (nextSize == REUSED_VALUE) break
+      if (skip == 0) {
+        if (size + nextSize > maxSize) break
+        skip = nextSize
+        size += curSize
+        start = curStart
+        curStart = buf[index - 3]
+        curSize = nextSize
+      }
+      skip -= 4
+      index -= 4
     }
-    return {bufferSize: size, bufferStart: start}
+    return size ? {size, start} : null
   }
 
   copyToBuffer(bufferStart: number, buffer: Uint16Array, index: number): number {

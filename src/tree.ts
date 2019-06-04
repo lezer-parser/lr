@@ -228,7 +228,7 @@ export class TreeBuffer {
       let type = buf[pos++], start = buf[pos++] + offset, end = buf[pos++] + offset, count = buf[pos++]
       let endPos = pos + (count << 2)
       if (end < from) {
-        pos += count << 2
+        pos = endPos
       } else if (start <= to) {
         if (enter(type, start, end) !== false) {
           while (pos < endPos) scan()
