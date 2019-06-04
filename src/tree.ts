@@ -8,9 +8,44 @@ export interface ChangedRange {
   toB: number
 }
 
-export class Tree {
+export abstract class Subtree {
+  abstract parent: Subtree | null
+
+  abstract type: number
+  abstract start: number
+  abstract end: number
+
+  get depth() {
+    let d = 0
+    for (let p = this.parent; p; p = p.parent) d++
+    return d
+  }
+
+  get root(): Tree {
+    let cx = this as Subtree
+    while (cx.parent) cx = cx.parent
+    return cx as Tree
+  }
+
+  abstract resolve(pos: number): Subtree
+
+  abstract childBefore(pos: number): Subtree | null
+  abstract childAfter(pos: number): Subtree | null
+}
+
+// Only the top-level object of this class is directly exposed to
+// client code. Inspecting subtrees is done by allocating Subtree
+// instances.
+export class Tree extends Subtree {
+  type!: number
+  parent!: null
+
   constructor(readonly children: (Node | TreeBuffer)[],
-              readonly positions: number[]) {}
+              readonly positions: number[]) {
+    super()
+  }
+
+  get start() { return 0 }
 
   toString(parser?: Parser) {
     return this.children.map(c => c.toString(parser)).join()
@@ -20,6 +55,8 @@ export class Tree {
     let last = this.children.length - 1
     return last < 0 ? 0 : this.positions[last] + this.children[last].length
   }
+
+  get end() { return this.length }
 
   partial(start: number, end: number, offset: number, children: (Node | TreeBuffer)[], positions: number[]) {
     for (let i = 0; i < this.children.length; i++) {
@@ -63,10 +100,51 @@ export class Tree {
     this.iterInner(from, to, 0, enter, leave)
   }
 
-  resolve(pos: number): TreeContext {
-    return new ArrayContext(this, 0, null).resolve(pos)
+  resolve(pos: number): Subtree {
+    return this.resolveInner(pos, 0, this)
+  }
+
+  childBefore(pos: number): Subtree | null {
+    return this.findChild(pos, -1, 0, this)
+  }
+
+  childAfter(pos: number): Subtree | null {
+    return this.findChild(pos, 1, 0, this)
+  }
+
+  findChild(pos: number, side: number, start: number, parent: Subtree): Subtree | null {
+    for (let i = 0; i < this.children.length; i++) {
+      let childStart = this.positions[i] + start, select = -1
+      if (childStart >= pos) {
+        if (side < 0 && i > 0) select = i - 1
+        else if (side > 0) select = i
+        else break
+      }
+      if (select < 0 && (childStart + this.children[i].length > pos || side < 0 && i == this.children.length - 1))
+        select = i
+      if (select >= 0) {
+        let child = this.children[select], childStart = this.positions[select] + start
+        if (child.length == 0 && childStart == pos) continue
+        if (child instanceof Node) {
+          if (child.type & TERM_TAGGED) return new NodeSubtree(child, childStart, parent)
+          return child.findChild(pos, side, childStart, parent)
+        } else {
+          let found = child.findIndex(pos, side, childStart, 0, child.buffer.length)
+          if (found > -1) return new BufferSubtree(child, childStart, found, parent)
+        }
+      }
+    }
+    return null
+  }
+
+  resolveInner(pos: number, start: number, parent: Subtree): Subtree {
+    let found = this.findChild(pos, 0, start, parent)
+    return found ? found.resolve(pos) : parent
   }
 }
+
+Tree.prototype.type = -1
+Tree.prototype.parent = null
 
 export type SyntaxTree = TreeBuffer | Tree
 
@@ -164,154 +242,10 @@ export class TreeBuffer {
     }
     while (pos < buf.length) scan()
   }
-}
 
-export abstract class TreeContext {
-  _children: readonly TreeContext[] | null = null
-
-  constructor(readonly parent: TreeContext | null) {}
-
-  abstract type: number
-  abstract start: number
-  abstract end: number
-
-  get depth() {
-    let d = 0
-    for (let p = this.parent; p; p = p.parent) d++
-    return d
-  }
-
-  get root(): Tree {
-    let cx = this as TreeContext
-    while (cx.parent) cx = cx.parent
-    return (cx as ArrayContext).tree
-  }
-
-  abstract resolve(pos: number): TreeContext
-
-  // @internal
-  abstract collectChildren(): TreeContext[]
-
-  get children() {
-    return this._children || (this._children = this.collectChildren())
-  }
-
-  abstract childBefore(pos: number): TreeContext | null
-  abstract childAfter(pos: number): TreeContext | null
-}
-
-class ArrayContext extends TreeContext {
-  constructor(readonly tree: Tree, // Might be a node, when not at the top
-              readonly start: number,
-              parent: TreeContext | null) {
-    super(parent)
-  }
-
-  get type() { return this.tree instanceof Node ? this.tree.type : -1 }
-
-  get end() { return this.start + this.tree.length }
-
-  resolve(pos: number): TreeContext {
-    if (pos <= this.start || pos >= this.end)
-      return this.parent ? this.parent.resolve(pos) : this
-    return ArrayContext.resolve(pos, this.tree, this.start, this)
-  }
-
-  collectChildren(): TreeContext[] {
-    return ArrayContext.collect(this.tree, [], this.start, this)
-  }
-
-  childBefore(pos: number): TreeContext | null {
-    return ArrayContext.findChild(pos, -1, this.tree, this.start, this)
-  }
-
-  childAfter(pos: number): TreeContext | null {
-    return ArrayContext.findChild(pos, 1, this.tree, this.start, this)
-  }
-
-  static findChild(pos: number, side: number, tree: Tree, start: number, parent: TreeContext): TreeContext | null {
-    for (let i = 0; i < tree.children.length; i++) {
-      let childStart = tree.positions[i] + start, select = -1
-      if (childStart >= pos) {
-        if (side < 0 && i > 0) select = i - 1
-        else if (side > 0) select = i
-        else break
-      }
-      if (select < 0 && (childStart + tree.children[i].length > pos || side < 0 && i == tree.children.length - 1))
-        select = i
-      if (select >= 0) {
-        let child = tree.children[select], childStart = tree.positions[select] + start
-        if (child.length == 0 && childStart == pos) continue
-        if (child instanceof Node) {
-          if (child.type & TERM_TAGGED) return new ArrayContext(child, childStart, parent)
-          return ArrayContext.findChild(pos, side, child, childStart, parent)
-        } else {
-          let found = BufferContext.findIndex(pos, side, child, childStart, 0, child.buffer.length)
-          if (found > -1) return new BufferContext(child, childStart, found, parent)
-        }
-      }
-    }
-    return null
-  }
-
-  static resolve(pos: number, tree: Tree, start: number, parent: TreeContext): TreeContext {
-    let found = ArrayContext.findChild(pos, 0, tree, start, parent)
-    return found ? found.resolve(pos) : parent
-  }
-
-  static collect(tree: Tree, result: TreeContext[], treeStart: number, parent: TreeContext | null) {
-    for (let i = 0; i < tree.children.length; i++) {
-      let child = tree.children[i], start = tree.positions[i] + treeStart
-      if (child instanceof TreeBuffer)
-        BufferContext.collect(child, 0, child.buffer.length, result, start, parent)
-      else if ((child.type & TERM_TAGGED) > 0)
-        result.push(new ArrayContext(child, start, parent))
-      else // Repeat node
-        ArrayContext.collect(child, result, start, parent)
-    }
-    return result
-  }
-}
-
-class BufferContext extends TreeContext {
-  constructor(readonly buffer: TreeBuffer,
-              readonly bufferStart: number,
-              readonly index: number,
-              parent: TreeContext | null) {
-    super(parent)
-  }
-
-  get type() { return this.buffer.buffer[this.index] }
-  get start() { return this.buffer.buffer[this.index + 1] + this.bufferStart }
-  get end() { return this.buffer.buffer[this.index + 2] + this.bufferStart }
-
-  private get endIndex() { return this.index + 4 + (this.buffer.buffer[this.index + 3] << 2) }
-
-  childBefore(pos: number): TreeContext | null {
-    let index = BufferContext.findIndex(pos, -1, this.buffer, this.bufferStart, this.index + 4, this.endIndex)
-    return index < 0 ? null : new BufferContext(this.buffer, this.bufferStart, index, this)
-  }
-
-  childAfter(pos: number): TreeContext | null {
-    let index = BufferContext.findIndex(pos, 1, this.buffer, this.bufferStart, this.index + 4, this.endIndex)
-    return index < 0 ? null : new BufferContext(this.buffer, this.bufferStart, index, this)
-  }
-
-  resolve(pos: number): TreeContext {
-    if (pos <= this.start || pos >= this.end)
-      return this.parent ? this.parent.resolve(pos) : this
-    let found = BufferContext.findIndex(pos, 0, this.buffer, this.bufferStart, this.index + 4, this.endIndex)
-    return found < 0 ? this : new BufferContext(this.buffer, this.bufferStart, found, this).resolve(pos)
-  }
-
-  collectChildren(): TreeContext[] {
-    return BufferContext.collect(this.buffer, this.index + 4, this.endIndex,
-                                 [], this.bufferStart, this)
-  }
-
-  static findIndex(pos: number, side: number, buffer: TreeBuffer, start: number, from: number, to: number) {
+  findIndex(pos: number, side: number, start: number, from: number, to: number) {
     let lastI = -1
-    for (let i = from, buf = buffer.buffer; i < to;) {
+    for (let i = from, buf = this.buffer; i < to;) {
       let start1 = buf[i + 1] + start, end1 = buf[i + 2] + start
       let ignore = start1 == end1 && start1 == pos
       if (start1 >= pos) {
@@ -324,14 +258,62 @@ class BufferContext extends TreeContext {
     }
     return side < 0 ? lastI : -1
   }
+}
 
-  static collect(buffer: TreeBuffer, from: number, to: number, result: TreeContext[], bufferStart: number, parent: TreeContext | null) {
-    for (let i = from; i < to;) {
-      let count = buffer.buffer[i + 3]
-      result.push(new BufferContext(buffer, bufferStart, i, parent))
-      i += 4 + (count << 2)
-    }
-    return result
+class NodeSubtree extends Subtree {
+  constructor(readonly node: Node,
+              readonly start: number,
+              readonly parent: Subtree) {
+    super()
+  }
+
+  get type() { return this.node.type }
+
+  get end() { return this.start + this.node.length }
+
+  resolve(pos: number): Subtree {
+    if (pos <= this.start || pos >= this.end)
+      return this.parent.resolve(pos)
+    return this.node.resolveInner(pos, this.start, this)
+  }
+
+  childBefore(pos: number): Subtree | null {
+    return this.node.findChild(pos, -1, this.start, this)
+  }
+
+  childAfter(pos: number): Subtree | null {
+    return this.node.findChild(pos, 1, this.start, this)
+  }
+}
+
+class BufferSubtree extends Subtree {
+  constructor(readonly buffer: TreeBuffer,
+              readonly bufferStart: number,
+              readonly index: number,
+              readonly parent: Subtree) {
+    super()
+  }
+
+  get type() { return this.buffer.buffer[this.index] }
+  get start() { return this.buffer.buffer[this.index + 1] + this.bufferStart }
+  get end() { return this.buffer.buffer[this.index + 2] + this.bufferStart }
+
+  private get endIndex() { return this.index + 4 + (this.buffer.buffer[this.index + 3] << 2) }
+
+  childBefore(pos: number): Subtree | null {
+    let index = this.buffer.findIndex(pos, -1, this.bufferStart, this.index + 4, this.endIndex)
+    return index < 0 ? null : new BufferSubtree(this.buffer, this.bufferStart, index, this)
+  }
+
+  childAfter(pos: number): Subtree | null {
+    let index = this.buffer.findIndex(pos, 1, this.bufferStart, this.index + 4, this.endIndex)
+    return index < 0 ? null : new BufferSubtree(this.buffer, this.bufferStart, index, this)
+  }
+
+  resolve(pos: number): Subtree {
+    if (pos <= this.start || pos >= this.end) return this.parent.resolve(pos)
+    let found = this.buffer.findIndex(pos, 0, this.bufferStart, this.index + 4, this.endIndex)
+    return found < 0 ? this : new BufferSubtree(this.buffer, this.bufferStart, found, this).resolve(pos)
   }
 }
   
