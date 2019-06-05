@@ -2,7 +2,7 @@ import {Stack, BADNESS_WILD} from "./stack"
 import {ParseState, REDUCE_DEPTH_SIZE, ACTION_SKIP} from "./state"
 import {InputStream, Tokenizer, TokenGroup} from "./token"
 import {TERM_EOF, TERM_ERR, TERM_TAGGED} from "./term"
-import {DEFAULT_BUFFER_LENGTH, setBufferLength, Node, Tree, TreeBuffer, SyntaxTree} from "./tree"
+import {DEFAULT_BUFFER_LENGTH, setBufferLength, Node, Tree, TreeBuffer} from "./tree"
 import {decodeArray} from "./decode"
 
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
@@ -15,7 +15,7 @@ class CacheCursor {
   index = [0]
   nextStart: number = 0
 
-  constructor(tree: SyntaxTree) { this.trees = tree instanceof Tree ? [tree] : [] }
+  constructor(tree: Tree) { this.trees = [tree] }
 
   // `pos` must be >= any previously given `pos` for this cursor
   nodeAt(pos: number): Node | null {
@@ -143,7 +143,7 @@ class TokenCache {
   }
 }
 
-export type ParseOptions = {cache?: SyntaxTree | null, strict?: boolean, bufferLength?: number}
+export type ParseOptions = {cache?: Tree | null, strict?: boolean, bufferLength?: number}
 
 export function parse(input: InputStream, parser: Parser, {
   cache = null,

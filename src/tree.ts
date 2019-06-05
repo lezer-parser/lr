@@ -185,8 +185,6 @@ class FlatBufferCursor implements BufferCursor {
 Tree.prototype.type = -1
 Tree.prototype.parent = null
 
-export type SyntaxTree = TreeBuffer | Tree
-
 export class Node extends Tree {
   constructor(readonly type: number,
               private _length: number,
