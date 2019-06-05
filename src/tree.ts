@@ -43,28 +43,26 @@ export abstract class Subtree {
 // client code. Inspecting subtrees is done by allocating Subtree
 // instances.
 export class Tree extends Subtree {
-  type!: number
   parent!: null
 
-  constructor(readonly children: (Node | TreeBuffer)[],
-              readonly positions: number[]) {
+  constructor(readonly children: (Tree | TreeBuffer)[],
+              readonly positions: number[],
+              readonly type = 0,
+              readonly length: number = positions.length ? positions[positions.length - 1] + children[positions.length - 1].length : 0) {
     super()
   }
 
   get start() { return 0 }
 
-  toString(tags?: TagMap<any>) {
-    return this.children.map(c => c.toString(tags)).join()
-  }
-
-  get length() {
-    let last = this.children.length - 1
-    return last < 0 ? 0 : this.positions[last] + this.children[last].length
+  toString(tags?: TagMap<any>): string {
+    let name = (this.type & TERM_TAGGED) == 0 ? null : tags ? tags.get(this.type) : this.type
+    let children = this.children.map(c => c.toString(tags)).join()
+    return !name ? children : name + (children.length ? "(" + children + ")" : "")
   }
 
   get end() { return this.length }
 
-  partial(start: number, end: number, offset: number, children: (Node | TreeBuffer)[], positions: number[]) {
+  partial(start: number, end: number, offset: number, children: (Tree | TreeBuffer)[], positions: number[]) {
     for (let i = 0; i < this.children.length; i++) {
       let from = this.positions[i]
       if (from > end) break
@@ -73,7 +71,7 @@ export class Tree extends Subtree {
       if (start <= from && end >= to) {
         children.push(child)
         positions.push(from + offset)
-      } else if (child instanceof Node) {
+      } else if (child instanceof Tree) {
         child.partial(start - from, end - from, offset + from, children, positions)
       }
     }
@@ -81,7 +79,7 @@ export class Tree extends Subtree {
 
   unchanged(changes: readonly ChangedRange[]) {
     if (changes.length == 0) return this
-    let children: (Node | TreeBuffer)[] = [], positions: number[] = []
+    let children: (Tree | TreeBuffer)[] = [], positions: number[] = []
     for (let i = 0, pos = 0, off = 0;; i++) {
       let next = i == changes.length ? null : changes[i]
       let nextPos = next ? next.fromA : this.length
@@ -105,12 +103,15 @@ export class Tree extends Subtree {
   iterInner(from: number, to: number, offset: number,
             enter: (type: number, start: number, end: number) => any,
             leave?: (type: number, start: number, end: number) => void) {
+    if ((this.type & TERM_TAGGED) != 0 &&
+        enter(this.type, offset, offset + this.length) === false) return
     for (let i = 0; i < this.children.length; i++) {
       let child = this.children[i], start = this.positions[i] + offset, end = start + child.length
       if (start > to) break
       if (end < from) continue
       child.iterInner(from, to, start, enter, leave)
     }
+    if (leave && (this.type & TERM_TAGGED)) leave(this.type, offset, offset + this.length)
   }
 
   resolve(pos: number): Subtree {
@@ -139,7 +140,7 @@ export class Tree extends Subtree {
       if (select >= 0) {
         let child = this.children[select], childStart = this.positions[select] + start
         if (child.length == 0 && childStart == pos) continue
-        if (child instanceof Node) {
+        if (child instanceof Tree) {
           if (child.type & TERM_TAGGED) return new NodeSubtree(child, childStart, parent)
           return child.findChild(pos, side, childStart, parent)
         } else {
@@ -182,35 +183,7 @@ class FlatBufferCursor implements BufferCursor {
   fork() { return new FlatBufferCursor(this.buffer, this.index) }
 }
 
-Tree.prototype.type = -1
 Tree.prototype.parent = null
-
-export class Node extends Tree {
-  constructor(readonly type: number,
-              private _length: number,
-              children: (Node | TreeBuffer)[],
-              positions: number[]) {
-    super(children, positions)
-  }
-
-  get length() { return this._length } // Because super class already has a getter
-
-  toString(tags?: TagMap<any>) {
-    let name = (this.type & TERM_TAGGED) == 0 ? null : tags ? tags.get(this.type) : this.type
-    let children: string = this.children.map(c => c.toString(tags)).join()
-    return !name ? children : name + (children.length ? "(" + children + ")" : "")
-  }
-
-  iterInner(from: number, to: number, offset: number,
-            enter: (type: number, start: number, end: number) => any,
-            leave?: (type: number, start: number, end: number) => void) {
-    if ((this.type & TERM_TAGGED) == 0 ||
-        enter(this.type, offset, offset + this.length) !== false) {
-      super.iterInner(from, to, offset, enter, leave)
-      if (leave && (this.type & TERM_TAGGED)) leave(this.type, offset, offset + this.length)
-    }
-  }
-}
 
 // Tree buffers contain type,start,end,childCount quads for each node.
 // The nodes are built in postfix order (with parent nodes being
@@ -287,7 +260,7 @@ export class TreeBuffer {
 }
 
 class NodeSubtree extends Subtree {
-  constructor(readonly node: Node,
+  constructor(readonly node: Tree,
               readonly start: number,
               readonly parent: Subtree) {
     super()
@@ -382,8 +355,8 @@ export interface BufferCursor {
 
 const BALANCE_BRANCH_FACTOR = 8
 
-export function buildTree(cursor: BufferCursor, distribute: boolean, reused: Node[] = []): Tree {
-  function takeNode(parentStart: number, minPos: number, children: (Node | TreeBuffer)[], positions: number[]) {
+export function buildTree(cursor: BufferCursor, distribute: boolean, reused: Tree[] = []): Tree {
+  function takeNode(parentStart: number, minPos: number, children: (Tree | TreeBuffer)[], positions: number[]) {
     let {type, start, end, size} = cursor, buffer!: {size: number, start: number} | null
     if (size == REUSED_VALUE) {
       cursor.next()
@@ -400,14 +373,14 @@ export function buildTree(cursor: BufferCursor, distribute: boolean, reused: Nod
     } else { // Make it a node
       let endPos = cursor.pos - size
       cursor.next()
-      let localChildren: (Node | TreeBuffer)[] = [], localPositions: number[] = []
+      let localChildren: (Tree | TreeBuffer)[] = [], localPositions: number[] = []
       while (cursor.pos > endPos)
         takeNode(start, endPos, localChildren, localPositions)
       localChildren.reverse(); localPositions.reverse()
       if (type & TERM_TAGGED) {
         if (distribute && localChildren.length > BALANCE_BRANCH_FACTOR)
           ({children: localChildren, positions: localPositions} = balanceRange(0, localChildren, localPositions, 0, localChildren.length))
-        children.push(new Node(type, end - start, localChildren, localPositions))
+        children.push(new Tree(localChildren, localPositions, type, end - start))
       } else {
         children.push(balanceRange(type, localChildren, localPositions, 0, localChildren.length))
       }
@@ -416,18 +389,18 @@ export function buildTree(cursor: BufferCursor, distribute: boolean, reused: Nod
   }
 
   function balanceRange(type: number,
-                        children: readonly (Node | TreeBuffer)[], positions: readonly number[],
-                        from: number, to: number): Node {
+                        children: readonly (Tree | TreeBuffer)[], positions: readonly number[],
+                        from: number, to: number): Tree {
     let start = positions[from], length = (positions[to - 1] + children[to - 1].length) - start
     if (from == to - 1 && start == 0) {
       let first = children[from]
-      if (first instanceof Node) return first
+      if (first instanceof Tree) return first
     }
     let localChildren = [], localPositions = []
     if (length <= MAX_BUFFER_LENGTH) {
       for (let i = from; i < to; i++) {
         let child = children[i]
-        if (child instanceof Node && child.type == type) {
+        if (child instanceof Tree && child.type == type) {
           // Unwrap child with same type
           for (let j = 0; j < child.children.length; j++) {
             localChildren.push(child.children[j])
@@ -449,7 +422,7 @@ export function buildTree(cursor: BufferCursor, distribute: boolean, reused: Nod
         }
         if (i == groupFrom + 1) {
           let only = children[groupFrom]
-          if (only instanceof Node && only.type == type) {
+          if (only instanceof Tree && only.type == type) {
             // Already wrapped
             if (only.length > maxChild << 1) { // Too big, collapse
               for (let j = 0; j < only.children.length; j++) {
@@ -460,7 +433,7 @@ export function buildTree(cursor: BufferCursor, distribute: boolean, reused: Nod
             }
           } else {
             // Wrap with our type to make reuse possible
-            only = new Node(type, only.length, [only], [0])
+            only = new Tree([only], [0], type, only.length)
           }
           localChildren.push(only)
         } else {
@@ -469,7 +442,7 @@ export function buildTree(cursor: BufferCursor, distribute: boolean, reused: Nod
         localPositions.push(groupStart - start)
       }
     }
-    return new Node(type, length, localChildren, localPositions)
+    return new Tree(localChildren, localPositions, type, length)
   }
 
   function findBufferSize(maxSize: number) {
@@ -508,7 +481,7 @@ export function buildTree(cursor: BufferCursor, distribute: boolean, reused: Nod
     return index
   }
 
-  let children: (Node | TreeBuffer)[] = [], positions: number[] = []
+  let children: (Tree | TreeBuffer)[] = [], positions: number[] = []
   while (cursor.pos > 0) takeNode(0, 0, children, positions)
   children.reverse(); positions.reverse()
   if (distribute && children.length > BALANCE_BRANCH_FACTOR)

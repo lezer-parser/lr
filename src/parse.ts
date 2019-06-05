@@ -2,7 +2,7 @@ import {Stack, BADNESS_WILD} from "./stack"
 import {ParseState, REDUCE_DEPTH_SIZE, ACTION_SKIP} from "./state"
 import {InputStream, Tokenizer, TokenGroup} from "./token"
 import {TERM_EOF, TERM_ERR, TERM_TAGGED} from "./term"
-import {DEFAULT_BUFFER_LENGTH, setBufferLength, Node, Tree, TreeBuffer} from "./tree"
+import {DEFAULT_BUFFER_LENGTH, setBufferLength, Tree, TreeBuffer} from "./tree"
 import {decodeArray} from "./decode"
 
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
@@ -18,7 +18,7 @@ class CacheCursor {
   constructor(tree: Tree) { this.trees = [tree] }
 
   // `pos` must be >= any previously given `pos` for this cursor
-  nodeAt(pos: number): Node | null {
+  nodeAt(pos: number): Tree | null {
     if (pos < this.nextStart) return null
 
     for (;;) {
@@ -169,7 +169,7 @@ export function parse(input: InputStream, parser: Parser, {
         }
         if (cached.children.length == 0 || cached.positions[0] > 0) break
         let inner = cached.children[0]
-        if (inner instanceof Node) cached = inner
+        if (inner instanceof Tree) cached = inner
         else break
       }
     }

@@ -1,7 +1,7 @@
 import {ParseState, REDUCE_DEPTH_MASK, REDUCE_DEPTH_SIZE, ACTION_SKIP} from "./state"
 import {TERM_TAGGED, TERM_ERR} from "./term"
 import {Parser} from "./parse"
-import {Node, Tree, REUSED_VALUE, MAX_BUFFER_LENGTH, buildTree, BufferCursor} from "./tree"
+import {Tree, REUSED_VALUE, MAX_BUFFER_LENGTH, buildTree, BufferCursor} from "./tree"
 
 const BADNESS_INCREMENT = 100
 // Limits in between which stacks are less agressively pruned
@@ -34,7 +34,7 @@ export const BADNESS_WILD = 150
 
 export class Stack {
   constructor(readonly parser: Parser, // FIXME put these top two in dynamic variables?
-              readonly reused: Node[],
+              readonly reused: Tree[],
               // Holds state, pos, value stack pos (15 bits array index, 15 bits buffer index) triplets for all but the top state
               readonly stack: number[],
               public state: ParseState,
@@ -125,7 +125,7 @@ export class Stack {
     }
   }
 
-  useCached(value: Node, next: ParseState) {
+  useCached(value: Tree, next: ParseState) {
     let index = this.reused.length - 1
     if (index < 0 || this.reused[index] != value) {
       this.reused.push(value)
