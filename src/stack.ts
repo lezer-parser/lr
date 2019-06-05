@@ -3,22 +3,21 @@ import {TERM_TAGGED, TERM_ERR} from "./term"
 import {Parser} from "./parse"
 import {Node, Tree, REUSED_VALUE, MAX_BUFFER_LENGTH, buildTree, BufferCursor} from "./tree"
 
-const BADNESS_DELETE = 100, BADNESS_RECOVER = 100
-export const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between which stacks are less agressively pruned
+const BADNESS_INCREMENT = 100
+// Limits in between which stacks are less agressively pruned
+const BADNESS_STABILIZING = 50
+export const BADNESS_WILD = 150
 
-// (FIXME: this will go out of date before I know it, revisit at some
-// point)
-//
 // Badness is a measure of how off-the-rails a given parse is. It is
 // bumped when a recovery strategy is applied, and then reduced (by
 // multiplication with a constant < 1) for every successful (real)
 // token shifted.
 //
 // Stacks with a low badness are relatively credible parses that have
-// shift matching the input in their recent history. Stacks with a
-// high badness are deeply in the weeds and likely wrong. For each of
-// these, we prune agressively by dropping stacks when another stack
-// at the same position is looking better.
+// shifts matching the input in their recent history. Stacks with a
+// high badness are deeply in the weeds and likely wrong. In either of
+// these situations, we prune agressively by dropping stacks when
+// another stack at the same position is looking better.
 //
 // For those in the BADNESS_STABILIZING - BADNESS_WILD range, we
 // assume that they are in the process of trying to recover and allow
@@ -159,7 +158,7 @@ export class Stack {
     if (next & TERM_TAGGED) this.shiftValue(next, this.inputPos, nextEnd)
     this.shiftValue(TERM_ERR, this.inputPos, nextEnd, (next & TERM_TAGGED) ? 8 : 4)
     this.inputPos = nextEnd
-    this.badness += BADNESS_DELETE
+    this.badness += BADNESS_INCREMENT
   }
 
   canShift(term: number) {
@@ -197,7 +196,7 @@ export class Stack {
     // reduces again, the expensive way, updating the stack
     let result = this.split(), parser = this.parser
     result.pos = result.inputPos
-    result.badness += BADNESS_RECOVER
+    result.badness += BADNESS_INCREMENT
     for (;;) {
       for (;;) {
         if (parser.hasAction(result.state, next)) return result
