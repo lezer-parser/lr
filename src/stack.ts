@@ -71,8 +71,9 @@ export class Stack {
     let count = this.bufferBase + this.buffer.length - this.stack[base - 1]
     if ((type & TERM_TAGGED) > 0 ||
         this.parser.repeats(type) && this.pos - start > MAX_BUFFER_LENGTH && count > 0) {
+      let storeType = type & TERM_TAGGED ? type : this.parser.getRepeat(type)
       if (this.inputPos == this.pos) { // Simple case, just append
-        this.buffer.push(type, start, this.pos, count + 4)
+        this.buffer.push(storeType, start, this.pos, count + 4)
       } else { // There may be skipped nodes that have to be moved forward
         let index = this.buffer.length
         while (index > 0 && this.buffer[index - 2] > this.pos) {
@@ -84,12 +85,10 @@ export class Stack {
           index -= 4
           count -= 4
         }
-        if (count > 0 || (type & TERM_TAGGED) > 0) {
-          this.buffer[index] = type
-          this.buffer[index + 1] = start
-          this.buffer[index + 2] = this.pos
-          this.buffer[index + 3] = count + 4
-        }
+        this.buffer[index] = storeType
+        this.buffer[index + 1] = start
+        this.buffer[index + 2] = this.pos
+        this.buffer[index + 3] = count + 4
       }
     }
     let baseStateID = this.stack[base - 3]
@@ -271,7 +270,7 @@ export class Stack {
   }
 
   toTree(): Tree {
-    return buildTree(StackBufferCursor.create(this), false, this.parser, this.reused)
+    return buildTree(StackBufferCursor.create(this), false, this.reused)
   }
 }
 

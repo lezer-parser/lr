@@ -1,5 +1,5 @@
 import {TERM_TAGGED} from "./term"
-import {Parser, TagMap} from "./parse"
+import {TagMap} from "./parse"
 
 export interface ChangedRange {
   fromA: number
@@ -394,7 +394,7 @@ export interface BufferCursor {
 
 const BALANCE_BRANCH_FACTOR = 8
 
-export function buildTree(cursor: BufferCursor, distribute: boolean, parser?: Parser, reused: Node[] = []): Tree {
+export function buildTree(cursor: BufferCursor, distribute: boolean, reused: Node[] = []): Tree {
   function takeNode(parentStart: number, minPos: number, children: (Node | TreeBuffer)[], positions: number[]) {
     let {type, start, end, size} = cursor, buffer!: {size: number, start: number} | null
     if (size == REUSED_VALUE) {
@@ -421,7 +421,7 @@ export function buildTree(cursor: BufferCursor, distribute: boolean, parser?: Pa
           ({children: localChildren, positions: localPositions} = balanceRange(0, localChildren, localPositions, 0, localChildren.length))
         children.push(new Node(type, end - start, localChildren, localPositions))
       } else {
-        children.push(balanceRange(parser ? parser.getRepeat(type) : 0, localChildren, localPositions, 0, localChildren.length))
+        children.push(balanceRange(type, localChildren, localPositions, 0, localChildren.length))
       }
       positions.push(start - parentStart)
     }
