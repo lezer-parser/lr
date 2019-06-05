@@ -307,6 +307,17 @@ export class Parser {
     return iPrev < 0 || findOffset(this.data, this.tokenPrecTable, token) < iPrev
   }
 
+  tagMap<T>(values: {[name: string]: T}) {
+    let content: (T | null)[] = []
+    for (let i = 0; i < this.tags.length; i++) {
+      let tag = this.tags[i]
+      content.push(
+        Object.prototype.hasOwnProperty.call(values, tag) ? values[tag] :
+        tag[0] == '"' && Object.prototype.hasOwnProperty.call(values, JSON.parse(tag)) ? values[JSON.parse(tag)] : null)
+    }
+    return new TagMap<T>(content)
+  }
+
   static deserialize(states: string, stateData: string, goto: string, tags: readonly string[],
                      tokenData: string, tokenizers: (Tokenizer | number)[],
                      repeatTable: number, repeatCount: number,
@@ -343,4 +354,12 @@ function withoutPrototype(obj: {}) {
   let result: {[key: string]: any} = Object.create(null)
   for (let prop in obj) if (Object.prototype.hasOwnProperty.call(obj, prop)) result[prop] = (obj as any)[prop]
   return result
+}
+
+export class TagMap<T> {
+  constructor(private content: (T | null)[]) {}
+
+  get(tag: number): T | null { return tag & 1 ? this.content[tag >> 1] : null }
+
+  static empty = new TagMap<any>([])
 }
