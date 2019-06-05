@@ -1,5 +1,5 @@
 import {TERM_TAGGED} from "./term"
-import {Parser} from "./parse"
+import {Parser, TagMap} from "./parse"
 
 export interface ChangedRange {
   fromA: number
@@ -27,7 +27,7 @@ export abstract class Subtree {
     return cx as Tree
   }
 
-  abstract toString(parser?: Parser): string
+  abstract toString(tags?: TagMap<any>): string
 
   abstract iterate(from: number, to: number,
                    enter: (type: number, start: number, end: number) => any,
@@ -53,8 +53,8 @@ export class Tree extends Subtree {
 
   get start() { return 0 }
 
-  toString(parser?: Parser) {
-    return this.children.map(c => c.toString(parser)).join()
+  toString(tags?: TagMap<any>) {
+    return this.children.map(c => c.toString(tags)).join()
   }
 
   get length() {
@@ -191,9 +191,9 @@ export class Node extends Tree {
 
   get length() { return this._length } // Because super class already has a getter
 
-  toString(parser?: Parser) {
-    let name = (this.type & TERM_TAGGED) == 0 ? null : parser ? parser.getTag(this.type) : this.type
-    let children: string = this.children.map(c => c.toString(parser)).join()
+  toString(tags?: TagMap<any>) {
+    let name = (this.type & TERM_TAGGED) == 0 ? null : tags ? tags.get(this.type) : this.type
+    let children: string = this.children.map(c => c.toString(tags)).join()
     return !name ? children : name + (children.length ? "(" + children + ")" : "")
   }
 
@@ -228,21 +228,21 @@ export class TreeBuffer {
 
   get length() { return this.buffer[this.buffer.length - 2] }
 
-  toString(parser?: Parser) {
+  toString(tags?: TagMap<any>) {
     let parts: string[] = []
     for (let index = 0; index < this.buffer.length;)
-      index = this.childToString(index, parts, parser)
+      index = this.childToString(index, parts, tags)
     return parts.join(",")
   }
 
-  childToString(index: number, parts: string[], parser?: Parser): number {
+  childToString(index: number, parts: string[], tags?: TagMap<any>): number {
     let type = this.buffer[index], count = this.buffer[index + 3]
-    let result = parser ? parser.getTag(type)! : String(type)
+    let result = String(tags ? tags.get(type)! : type)
     index += 4
     if (count) {
       let children: string[] = []
       for (let end = index + (count << 2); index < end;)
-        index = this.childToString(index, children, parser)
+        index = this.childToString(index, children, tags)
       result += "(" + children.join(",") + ")"
     }
     parts.push(result)
@@ -323,7 +323,7 @@ class NodeSubtree extends Subtree {
     return this.node.findChild(pos, 1, this.start, this)
   }
 
-  toString(parser?: Parser) { return this.node.toString(parser) }
+  toString(tags?: TagMap<any>) { return this.node.toString(tags) }
 
   iterate(from: number, to: number,
           enter: (type: number, start: number, end: number) => any,
@@ -368,9 +368,9 @@ class BufferSubtree extends Subtree {
     return found < 0 ? this : new BufferSubtree(this.buffer, this.bufferStart, found, this).resolve(pos)
   }
 
-  toString(parser?: Parser) {
+  toString(tags?: TagMap<any>) {
     let result: string[] = []
-    this.buffer.childToString(this.index, result, parser)
+    this.buffer.childToString(this.index, result, tags)
     return result.join("")
   }
 }

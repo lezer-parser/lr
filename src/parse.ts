@@ -228,7 +228,7 @@ export class Parser {
   constructor(readonly states: readonly ParseState[],
               readonly data: Readonly<Uint16Array>,
               readonly goto: Readonly<Uint16Array>,
-              readonly tags: readonly string[],
+              readonly tags: TagMap<string>,
               readonly tokenizers: readonly Tokenizer[],
               readonly repeatTable: number,
               readonly repeatCount: number,
@@ -238,12 +238,8 @@ export class Parser {
               readonly skippedNodes: number,
               readonly termNames: null | {[id: number]: string} = null) {}
 
-  getTag(term: number): string | null {
-    return (term & TERM_TAGGED) ? this.tags[term >> 1] : null
-  }
-
   getName(term: number): string {
-    return this.termNames ? this.termNames[term] : this.getTag(term) || String(term)
+    return this.termNames ? this.termNames[term] : this.tags.get(term) || String(term)
   }
 
   // Term should be a repeat term
@@ -309,8 +305,8 @@ export class Parser {
 
   tagMap<T>(values: {[name: string]: T}) {
     let content: (T | null)[] = []
-    for (let i = 0; i < this.tags.length; i++) {
-      let tag = this.tags[i]
+    for (let i = 0; i < this.tags.content.length; i++) {
+      let tag = this.tags.content[i]!
       content.push(
         Object.prototype.hasOwnProperty.call(values, tag) ? values[tag] :
         tag[0] == '"' && Object.prototype.hasOwnProperty.call(values, JSON.parse(tag)) ? values[JSON.parse(tag)] : null)
@@ -329,7 +325,7 @@ export class Parser {
     for (let i = 0, id = 0; i < arr.length;)
       stateObjs.push(new ParseState(id++, arr[i++], arr[i++], arr[i++], arr[i++], arr[i++], arr[i++]))
     let tokenArray = decodeArray(tokenData)
-    return new Parser(stateObjs, decodeArray(stateData), decodeArray(goto), tags,
+    return new Parser(stateObjs, decodeArray(stateData), decodeArray(goto), new TagMap(tags),
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
                       repeatTable, repeatCount, specializeTable, specializations.map(withoutPrototype),
                       tokenPrec, skippedNodes, termNames)
@@ -357,9 +353,9 @@ function withoutPrototype(obj: {}) {
 }
 
 export class TagMap<T> {
-  constructor(private content: (T | null)[]) {}
+  constructor(readonly content: readonly (T | null)[]) {}
 
-  get(tag: number): T | null { return tag & 1 ? this.content[tag >> 1] : null }
+  get(tag: number): T | null { return tag & TERM_TAGGED ? this.content[tag >> 1] : null }
 
   static empty = new TagMap<any>([])
 }
