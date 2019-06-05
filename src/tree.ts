@@ -67,9 +67,15 @@ export class Tree extends Subtree {
   partial(start: number, end: number, offset: number, children: (Node | TreeBuffer)[], positions: number[]) {
     for (let i = 0; i < this.children.length; i++) {
       let from = this.positions[i]
-      if (from >= end) break
+      if (from > end) break
       let child = this.children[i], to = from + child.length
-      if (to > start) child.partial(start - from, end - from, offset + from, children, positions)
+      if (to < start) continue
+      if (start <= from && end >= to) {
+        children.push(child)
+        positions.push(from + offset)
+      } else if (child instanceof Node) {
+        child.partial(start - from, end - from, offset + from, children, positions)
+      }
     }
   }
 
@@ -79,7 +85,7 @@ export class Tree extends Subtree {
     for (let i = 0, pos = 0, off = 0;; i++) {
       let next = i == changes.length ? null : changes[i]
       let nextPos = next ? next.fromA : this.length
-      if (nextPos > pos) this.partial(pos, nextPos - 1 /* FIXME need a full token here */, off, children, positions)
+      if (nextPos > pos) this.partial(pos, nextPos - 1 /* FIXME need a full (non-skipped) token here */, off, children, positions)
       if (!next) break
       pos = next.toA
       off += (next.toB - next.fromB) - (next.toA - next.fromA)
@@ -197,15 +203,6 @@ export class Node extends Tree {
     return !name ? children : name + (children.length ? "(" + children + ")" : "")
   }
 
-  partial(start: number, end: number, offset: number, children: (Node | TreeBuffer)[], positions: number[]) {
-    if (start <= 0 && end >= this.length) {
-      children.push(this)
-      positions.push(offset)
-    } else {
-      super.partial(start, end, offset, children, positions)
-    }
-  }
-
   iterInner(from: number, to: number, offset: number,
             enter: (type: number, start: number, end: number) => any,
             leave?: (type: number, start: number, end: number) => void) {
@@ -247,13 +244,6 @@ export class TreeBuffer {
     }
     parts.push(result)
     return index
-  }
-
-  partial(start: number, end: number, offset: number, children: (Node | TreeBuffer)[], positions: number[]) {
-    if (start <= 0 && end >= this.length) {
-      children.push(this)
-      positions.push(offset)
-    }    
   }
 
   unchanged(changes: readonly ChangedRange[]) {
