@@ -91,6 +91,19 @@ export class Tree extends Subtree {
     return new Tree(children, positions)
   }
 
+  cut(at: number): Tree {
+    if (at >= this.length) return this
+    let children: (Tree | TreeBuffer)[] = [], positions: number[] = []
+    for (let i = 0; i < this.children.length; i++) {
+      let from = this.positions[i]
+      if (from >= at) break
+      let child = this.children[i], to = from + child.length
+      children.push(to <= at ? child : child.cut(at - from))
+      positions.push(from)
+    }
+    return new Tree(children, positions)
+  }
+
   static empty = new Tree([], [])
 
   iterate(from: number, to: number,
@@ -168,21 +181,6 @@ export class Tree extends Subtree {
   }
 }
 
-class FlatBufferCursor implements BufferCursor {
-  constructor(readonly buffer: readonly number[], public index: number) {}
-
-  get type() { return this.buffer[this.index - 4] }
-  get start() { return this.buffer[this.index - 3] }
-  get end() { return this.buffer[this.index - 2] }
-  get size() { return this.buffer[this.index - 1] }
-
-  get pos() { return this.index }
-
-  next() { this.index -= 4 }
-
-  fork() { return new FlatBufferCursor(this.buffer, this.index) }
-}
-
 Tree.prototype.parent = null
 
 // Tree buffers contain type,start,end,childCount quads for each node.
@@ -217,8 +215,17 @@ export class TreeBuffer {
     return index
   }
 
-  unchanged(changes: readonly ChangedRange[]) {
-    return changes.length ? Tree.empty : this
+  cut(at: number) {
+    let cutPoint = 0
+    while (cutPoint < this.buffer.length && this.buffer[cutPoint + 1] < at) cutPoint += 4
+    let newBuffer = new Uint16Array(cutPoint)
+    for (let i = 0; i < cutPoint; i += 4) {
+      newBuffer[i] = this.buffer[i]
+      newBuffer[i + 1] = this.buffer[i + 1]
+      newBuffer[i + 2] = Math.min(at, this.buffer[i + 2])
+      newBuffer[i + 3] = Math.min(this.buffer[i + 3], ((cutPoint - i) >> 2) - 1)
+    }
+    return new TreeBuffer(newBuffer)
   }
 
   iterInner(from: number, to: number, offset: number,
@@ -351,6 +358,21 @@ export interface BufferCursor {
   size: number
   next(): void
   fork(): BufferCursor
+}
+
+class FlatBufferCursor implements BufferCursor {
+  constructor(readonly buffer: readonly number[], public index: number) {}
+
+  get type() { return this.buffer[this.index - 4] }
+  get start() { return this.buffer[this.index - 3] }
+  get end() { return this.buffer[this.index - 2] }
+  get size() { return this.buffer[this.index - 1] }
+
+  get pos() { return this.index }
+
+  next() { this.index -= 4 }
+
+  fork() { return new FlatBufferCursor(this.buffer, this.index) }
 }
 
 const BALANCE_BRANCH_FACTOR = 8
