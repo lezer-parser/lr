@@ -1,8 +1,8 @@
 import {Stack, BADNESS_WILD} from "./stack"
 import {ParseState, REDUCE_DEPTH_SIZE, ACTION_SKIP} from "./state"
 import {InputStream, Tokenizer, TokenGroup} from "./token"
-import {TERM_EOF, TERM_ERR, TERM_TAGGED} from "./term"
-import {DEFAULT_BUFFER_LENGTH, setBufferLength, Tree, TreeBuffer} from "./tree"
+import {TERM_EOF, TERM_ERR} from "./term"
+import {DEFAULT_BUFFER_LENGTH, Tree, TreeBuffer, TagMap} from "lezer-tree"
 import {decodeArray} from "./decode"
 
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
@@ -150,8 +150,7 @@ export function parse(input: InputStream, parser: Parser, {
   strict = false,
   bufferLength = DEFAULT_BUFFER_LENGTH
 }: ParseOptions = {}): Tree {
-  setBufferLength(bufferLength)
-  let parses = [Stack.start(parser)]
+  let parses = [Stack.start(parser, bufferLength)]
   let cacheCursor = cache && new CacheCursor(cache)
   let tokens = new TokenCache(parser, input)
 
@@ -350,12 +349,4 @@ function withoutPrototype(obj: {}) {
   let result: {[key: string]: any} = Object.create(null)
   for (let prop in obj) if (Object.prototype.hasOwnProperty.call(obj, prop)) result[prop] = (obj as any)[prop]
   return result
-}
-
-export class TagMap<T> {
-  constructor(readonly content: readonly (T | null)[]) {}
-
-  get(tag: number): T | null { return tag & TERM_TAGGED ? this.content[tag >> 1] : null }
-
-  static empty = new TagMap<any>([])
 }

@@ -1,7 +1,7 @@
 import {ParseState, REDUCE_DEPTH_MASK, REDUCE_DEPTH_SIZE, ACTION_SKIP} from "./state"
 import {TERM_TAGGED, TERM_ERR} from "./term"
 import {Parser} from "./parse"
-import {Tree, REUSED_VALUE, MAX_BUFFER_LENGTH, buildTree, BufferCursor} from "./tree"
+import {Tree, REUSED_VALUE, buildTree, BufferCursor} from "lezer-tree"
 
 const BADNESS_INCREMENT = 100
 // Limits in between which stacks are less agressively pruned
@@ -32,9 +32,14 @@ export const BADNESS_WILD = 150
 // applied when its badness is < BADNESS_WILD, or no better parse
 // exists at that point.
 
-export class Stack {
-  constructor(readonly parser: Parser, // FIXME put these top two in dynamic variables?
+class StackContext {
+  constructor(readonly parser: Parser,
               readonly reused: Tree[],
+              readonly maxBufferLength: number) {}
+}
+
+export class Stack {
+  constructor(readonly cx: StackContext,
               // Holds state, pos, value stack pos (15 bits array index, 15 bits buffer index) triplets for all but the top state
               readonly stack: number[],
               public state: ParseState,
@@ -50,8 +55,9 @@ export class Stack {
     return "[" + this.stack.filter((_, i) => i % 3 == 0).concat(this.state.id).join(",") + "]"
   }
 
-  static start(parser: Parser) {
-    return new Stack(parser, [], [], parser.states[0], 0, 0, 0, [], 0, null)
+  static start(parser: Parser, maxBufferLength: number) {
+    return new Stack(new StackContext(parser, [], maxBufferLength),
+                     [], parser.states[0], 0, 0, 0, [], 0, null)
   }
 
   pushState(state: ParseState, start: number) {
@@ -62,7 +68,7 @@ export class Stack {
   reduce(action: number) { // Encoded reduction action
     let depth = (action & REDUCE_DEPTH_MASK) - 1, type = action >> REDUCE_DEPTH_SIZE
     if (depth == 0) {
-      this.pushState(this.parser.states[this.parser.getGoto(this.state.id, type, true)], this.pos)
+      this.pushState(this.cx.parser.states[this.cx.parser.getGoto(this.state.id, type, true)], this.pos)
       return
     }
 
@@ -70,8 +76,8 @@ export class Stack {
     let start = this.stack[base - 2]
     let count = this.bufferBase + this.buffer.length - this.stack[base - 1]
     if ((type & TERM_TAGGED) > 0 ||
-        this.parser.repeats(type) && this.pos - start > MAX_BUFFER_LENGTH && count > 0) {
-      let storeType = type & TERM_TAGGED ? type : this.parser.getRepeat(type)
+        this.cx.parser.repeats(type) && this.pos - start > this.cx.maxBufferLength && count > 0) {
+      let storeType = type & TERM_TAGGED ? type : this.cx.parser.getRepeat(type)
       if (this.inputPos == this.pos) { // Simple case, just append
         this.buffer.push(storeType, start, this.pos, count + 4)
       } else { // There may be skipped nodes that have to be moved forward
@@ -92,7 +98,7 @@ export class Stack {
       }
     }
     let baseStateID = this.stack[base - 3]
-    this.state = this.parser.states[this.parser.getGoto(baseStateID, type, true)]
+    this.state = this.cx.parser.states[this.cx.parser.getGoto(baseStateID, type, true)]
     if (depth > 1) this.stack.length = base
   }
 
@@ -116,7 +122,7 @@ export class Stack {
       let start = this.inputPos
       if (nextEnd > this.inputPos || (next & TERM_TAGGED))
         this.pos = this.inputPos = nextEnd
-      this.pushState(this.parser.states[-action], start)
+      this.pushState(this.cx.parser.states[-action], start)
       if (next & TERM_TAGGED) this.buffer.push(next, start, nextEnd, 4)
       this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
     } else { // Skipped
@@ -126,9 +132,9 @@ export class Stack {
   }
 
   useCached(value: Tree, next: ParseState) {
-    let index = this.reused.length - 1
-    if (index < 0 || this.reused[index] != value) {
-      this.reused.push(value)
+    let index = this.cx.reused.length - 1
+    if (index < 0 || this.cx.reused[index] != value) {
+      this.cx.reused.push(value)
       index++
     }
     let start = this.inputPos
@@ -149,7 +155,7 @@ export class Stack {
     let buffer = parent.buffer.slice(off), base = parent.bufferBase + off
     // Make sure parent points to an actual parent with content, if there is such a parent.
     while (parent && base == parent.bufferBase) parent = parent.parent
-    return new Stack(this.parser, this.reused, this.stack.slice(), this.state, this.pos, this.inputPos,
+    return new Stack(this.cx, this.stack.slice(), this.state, this.pos, this.inputPos,
                      this.badness, buffer, base, parent)
   }
 
@@ -162,7 +168,7 @@ export class Stack {
 
   canShift(term: number) {
     for (let sim = new SimulatedStack(this);;) {
-      let action = sim.top.defaultReduce || this.parser.hasAction(sim.top, term)
+      let action = sim.top.defaultReduce || this.cx.parser.hasAction(sim.top, term)
       if (action < 0) return true
       if (action == 0) return false
       sim.reduce(action)
@@ -172,7 +178,7 @@ export class Stack {
   canRecover(next: number) {
     // Scan for a state that has either a direct action or a recovery
     // action for next, without actually building up a new stack
-    let visited: number[] | null = null, parser = this.parser
+    let visited: number[] | null = null, parser = this.cx.parser
     for (let sim = new SimulatedStack(this), i = 0;; i++) {
       if (parser.hasAction(sim.top, next) || parser.getRecover(sim.top, next) != 0) return true
       // Find a way to reduce from here
@@ -193,7 +199,7 @@ export class Stack {
 
     // Now that we know there's a recovery to be found, run the
     // reduces again, the expensive way, updating the stack
-    let result = this.split(), parser = this.parser
+    let result = this.split(), parser = this.cx.parser
     result.pos = result.inputPos
     result.badness += BADNESS_INCREMENT
     for (;;) {
@@ -202,7 +208,7 @@ export class Stack {
         let recover = parser.getRecover(result.state, next)
         if (!recover) break
         let pos = result.pos
-        result.pushState(this.parser.states[recover], pos)
+        result.pushState(this.cx.parser.states[recover], pos)
         result.shiftValue(TERM_ERR, pos, pos)
       }
 
@@ -211,7 +217,7 @@ export class Stack {
   }
 
   forceReduce() {
-    let reduce = this.parser.anyReduce(this.state)
+    let reduce = this.cx.parser.anyReduce(this.state)
     if (reduce == 0) {
       // FIXME somehow mark the resulting node as not suitable for reuse
       reduce = this.state.forcedReduce
@@ -270,7 +276,7 @@ export class Stack {
   }
 
   toTree(): Tree {
-    return buildTree(StackBufferCursor.create(this), false, this.reused)
+    return buildTree(StackBufferCursor.create(this), this.cx.maxBufferLength, false, this.cx.reused)
   }
 }
 
@@ -293,8 +299,8 @@ class SimulatedStack {
     } else {
       this.offset -= (depth - 1) * 3
     }
-    let goto = this.stack.parser.getGoto(this.rest[this.offset - 3], term, true)
-    this.top = this.stack.parser.states[goto]
+    let goto = this.stack.cx.parser.getGoto(this.rest[this.offset - 3], term, true)
+    this.top = this.stack.cx.parser.states[goto]
   }
 }
 

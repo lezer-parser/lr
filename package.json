@@ -12,6 +12,9 @@
     "rollup-plugin-node-resolve": "^4.2.3",
     "typescript": "^3.4.3"
   },
+  "dependencies": {
+    "lezer-tree": "git://github.com/lezer-parser/lezer-tree.git"
+  },
   "scripts": {
     "watch": "rollup -w -c rollup.config.js",
     "prepare": "rollup -c rollup.config.js"
