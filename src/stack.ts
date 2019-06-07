@@ -5,8 +5,7 @@ import {Tree, REUSED_VALUE, BufferCursor} from "lezer-tree"
 
 const BADNESS_INCREMENT = 100
 // Limits in between which stacks are less agressively pruned
-const BADNESS_STABILIZING = 50
-export const BADNESS_WILD = 150
+export const BADNESS_STABILIZING = 50, BADNESS_WILD = 150
 
 // Badness is a measure of how off-the-rails a given parse is. It is
 // bumped when a recovery strategy is applied, and then reduced (by
@@ -32,10 +31,10 @@ export const BADNESS_WILD = 150
 // applied when its badness is < BADNESS_WILD, or no better parse
 // exists at that point.
 
-class StackContext {
-  constructor(readonly parser: Parser,
-              readonly reused: Tree[],
-              readonly maxBufferLength: number) {}
+type StackContext = {
+  parser: Parser
+  reused: Tree[]
+  maxBufferLength: number
 }
 
 export class Stack {
@@ -55,9 +54,8 @@ export class Stack {
     return "[" + this.stack.filter((_, i) => i % 3 == 0).concat(this.state.id).join(",") + "]"
   }
 
-  static start(parser: Parser, maxBufferLength: number) {
-    return new Stack(new StackContext(parser, [], maxBufferLength),
-                     [], parser.states[0], 0, 0, 0, [], 0, null)
+  static start(cx: StackContext) {
+    return new Stack(cx, [], cx.parser.states[0], 0, 0, 0, [], 0, null)
   }
 
   pushState(state: ParseState, start: number) {
@@ -230,49 +228,6 @@ export class Stack {
 
   compare(other: Stack) {
     return this.inputPos - other.inputPos || this.badness - other.badness
-  }
-
-  put(parses: Stack[], strict = this.badness < BADNESS_STABILIZING || this.badness > BADNESS_WILD): boolean {
-    for (let i = 0; i < parses.length; i++) {
-      let other = parses[i]
-      if ((strict || other.state == this.state) && other.inputPos == this.inputPos) {
-        let diff = this.badness - other.badness || (this.badness < BADNESS_STABILIZING ? 0 : this.stack.length - other.stack.length)
-        if (diff < 0) { parses[i] = this; return true }
-        else if (diff > 0) return false
-      }
-    }
-
-    // Binary heap add
-    let index = parses.push(this) - 1
-    while (index > 0) {
-      let parentIndex = index >> 1, parent = parses[parentIndex]
-      if (this.compare(parent) >= 0) break
-      parses[index] = parent
-      parses[parentIndex] = this
-      index = parentIndex
-    }
-    return true
-  }
-
-  static take(parses: Stack[]) {
-    // Binary heap pop
-    let elt = parses[0], replacement = parses.pop()!
-    if (parses.length == 0) return elt
-    parses[0] = replacement
-    for (let index = 0;;) {
-      let childIndex = (index << 1) + 1
-      if (childIndex >= parses.length) break
-      let child = parses[childIndex]
-      if (childIndex + 1 < parses.length && child.compare(parses[childIndex + 1]) >= 0) {
-        child = parses[childIndex + 1]
-        childIndex++
-      }
-      if (replacement.compare(child) < 0) break
-      parses[childIndex] = replacement
-      parses[index] = child
-      index = childIndex
-    }
-    return elt
   }
 
   toTree(): Tree {

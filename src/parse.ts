@@ -1,4 +1,4 @@
-import {Stack, BADNESS_WILD} from "./stack"
+import {Stack, BADNESS_WILD, BADNESS_STABILIZING} from "./stack"
 import {ParseState, REDUCE_DEPTH_SIZE, ACTION_SKIP} from "./state"
 import {InputStream, Tokenizer, TokenGroup} from "./token"
 import {TERM_EOF, TERM_ERR} from "./term"
@@ -68,11 +68,11 @@ class TokenCache {
 
   actions: number[] = []
 
-  constructor(readonly parser: Parser, readonly input: InputStream) {
+  constructor(readonly parser: Parser) {
     this.mainToken = null as any as CachedToken
   }
 
-  getActions(stack: Stack) {
+  getActions(stack: Stack, input: InputStream) {
     let actionIndex = 0
     let main: CachedToken | null = null
 
@@ -81,7 +81,7 @@ class TokenCache {
       let tokenizer = this.parser.tokenizers[i]
       let token = this.tokens.find(c => c.tokenizer == tokenizer)
       if (!token) this.tokens.push(token = new CachedToken(tokenizer))
-      if (tokenizer.contextual || token.start != stack.inputPos) this.updateCachedToken(token, stack)
+      if (tokenizer.contextual || token.start != stack.inputPos) this.updateCachedToken(token, stack, input)
 
       let startIndex = actionIndex
       if (token.extended > -1) actionIndex = this.addActions(stack.state, token.extended, token.end, actionIndex)
@@ -98,9 +98,7 @@ class TokenCache {
     return this.actions
   }
 
-  updateCachedToken(token: CachedToken, stack: Stack) {
-    let input = this.input
-
+  updateCachedToken(token: CachedToken, stack: Stack, input: InputStream) {
     token.start = stack.inputPos
     token.extended = -1
     token.tokenizer.token(input.goto(stack.inputPos), stack)
@@ -145,26 +143,88 @@ class TokenCache {
 
 export type ParseOptions = {cache?: Tree | null, strict?: boolean, bufferLength?: number}
 
-export function parse(input: InputStream, parser: Parser, {
-  cache = null,
-  strict = false,
-  bufferLength = DEFAULT_BUFFER_LENGTH
-}: ParseOptions = {}): Tree {
-  let parses = [Stack.start(parser, bufferLength)]
-  let cacheCursor = cache && new CacheCursor(cache)
-  let tokens = new TokenCache(parser, input)
+export class ParseContext {
+  reused: Tree[] = []
+  tokens: TokenCache
+  stacks: Stack[]
+  cache: CacheCursor | null
+  maxBufferLength: number
+  strict: boolean
 
-  parse: for (;;) {
-    let stack = Stack.take(parses), start = stack.inputPos
+  // @internal
+  constructor(readonly parser: Parser,
+              readonly input: InputStream,
+              {cache = null, strict = false, bufferLength = DEFAULT_BUFFER_LENGTH}: ParseOptions = {}) {
+    this.tokens = new TokenCache(parser)
+    this.stacks = [Stack.start(this)]
+    this.maxBufferLength = bufferLength
+    this.strict = strict
+    this.cache = cache ? new CacheCursor(cache) : null
+  }
 
-    if (cacheCursor) {//  && !stack.state.ambiguous) { // FIXME implement fragility check
-      for (let cached = cacheCursor.nodeAt(start); cached;) {
-        let match = parser.getGoto(stack.state.id, cached.type)
+  takeStack() {
+    // Binary heap pop
+    let {stacks} = this, elt = stacks[0], replacement = stacks.pop()!
+    if (stacks.length == 0) return elt
+    stacks[0] = replacement
+    for (let index = 0;;) {
+      let childIndex = (index << 1) + 1
+      if (childIndex >= stacks.length) break
+      let child = stacks[childIndex]
+      if (childIndex + 1 < stacks.length && child.compare(stacks[childIndex + 1]) >= 0) {
+        child = stacks[childIndex + 1]
+        childIndex++
+      }
+      if (replacement.compare(child) < 0) break
+      stacks[childIndex] = replacement
+      stacks[index] = child
+      index = childIndex
+    }
+    return elt
+  }
+
+  putStack(stack: Stack, strict = stack.badness < BADNESS_STABILIZING || stack.badness > BADNESS_WILD): boolean {
+    let stacks = this.stacks
+    for (let i = 0; i < stacks.length; i++) {
+      let other = stacks[i]
+      if ((strict || other.state == stack.state) && other.inputPos == stack.inputPos) {
+        let diff = stack.badness - other.badness || (stack.badness < BADNESS_STABILIZING ? 0 : stack.stack.length - other.stack.length)
+        if (diff < 0) { stacks[i] = stack; return true }
+        else if (diff > 0) return false
+      }
+    }
+
+    // Binary heap add
+    let index = stacks.push(stack) - 1
+    while (index > 0) {
+      let parentIndex = index >> 1, parent = stacks[parentIndex]
+      if (stack.compare(parent) >= 0) break
+      stacks[index] = parent
+      stacks[parentIndex] = stack
+      index = parentIndex
+    }
+    return true
+  }
+
+  get pos() { return this.stacks[0].inputPos }
+
+  forceFinish() {
+    let stack = this.stacks[0]
+    while (!stack.state.accepting && stack.forceReduce()) {}
+    return stack.toTree()
+  }
+
+  advance() {
+    let stack = this.takeStack(), start = stack.inputPos
+
+    if (this.cache) {//  && !stack.state.ambiguous) { // FIXME implement fragility check
+      for (let cached = this.cache.nodeAt(start); cached;) {
+        let match = this.parser.getGoto(stack.state.id, cached.type)
         if (match > -1) {
-          stack.useCached(cached, parser.states[match])
-          if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.type)})`)
-          stack.put(parses)
-          continue parse
+          stack.useCached(cached, this.parser.states[match])
+          if (verbose) console.log(stack + ` (via reuse of ${this.parser.getName(cached.type)})`)
+          this.putStack(stack)
+          return null
         }
         if (cached.children.length == 0 || cached.positions[0] > 0) break
         let inner = cached.children[0]
@@ -176,50 +236,51 @@ export function parse(input: InputStream, parser: Parser, {
     let defaultReduce = stack.state.defaultReduce
     if (defaultReduce > 0) {
       stack.reduce(defaultReduce)
-      stack.put(parses)
-      if (verbose) console.log(stack + ` (via always-reduce ${parser.getName(defaultReduce >> REDUCE_DEPTH_SIZE)})`)
-      continue
+      this.putStack(stack)
+      if (verbose) console.log(stack + ` (via always-reduce ${this.parser.getName(defaultReduce >> REDUCE_DEPTH_SIZE)})`)
+      return null
     }
 
-    let actions = tokens.getActions(stack)
+    let actions = this.tokens.getActions(stack, this.input)
     for (let i = 0; i < actions.length;) {
       let action = actions[i++], term = actions[i++], end = actions[i++]
       let localStack = i == actions.length ? stack : stack.split()
       localStack.apply(action, term, end)
-      if (verbose) console.log(localStack + ` (via ${action < 0 ? "shift" : `reduce of ${parser.getName(action >> REDUCE_DEPTH_SIZE)}`} for ${
-        parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
-      localStack.put(parses, action >= 0)
+      if (verbose) console.log(localStack + ` (via ${action < 0 ? "shift" : `reduce of ${this.parser.getName(action >> REDUCE_DEPTH_SIZE)}`} for ${
+        this.parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
+      this.putStack(localStack, action >= 0)
     }
-    if (actions.length > 0) continue
+    if (actions.length > 0) return null
 
     // If we're here, the stack failed to advance normally
 
-    if (start == input.length && (stack.state.accepting || parses.length == 0)) {
+    if (start == this.input.length && (stack.state.accepting || this.stacks.length == 0)) {
       while (!stack.state.accepting && stack.forceReduce()) {}
       return stack.toTree()
     }
 
-    let {end, term} = tokens.mainToken
-    if (!strict &&
-        !(stack.badness > BADNESS_WILD && parses.some(s => s.pos >= stack.inputPos && s.badness <= stack.badness))) {
+    let {end, term} = this.tokens.mainToken
+    if (!this.strict &&
+        !(stack.badness > BADNESS_WILD && this.stacks.some(s => s.pos >= stack.inputPos && s.badness <= stack.badness))) {
       let inserted = stack.recoverByInsert(term, end)
       if (inserted) {
         if (verbose) console.log(inserted + " (via recover-insert)")
-        inserted.put(parses)
+        this.putStack(inserted)
       }
 
       if (end == start) {
-        if (start == input.length) continue
+        if (start == this.input.length) return null
         end++
         term = TERM_ERR
       }
       stack.recoverByDelete(term, end)
       if (verbose) console.log(stack + " (via recover-delete)")
-      stack.put(parses)
-    } else if (!parses.length) {
+      this.putStack(stack)
+    } else if (!this.stacks.length) {
       // Only happens in strict mode
-      throw new SyntaxError("No parse at " + start + " with " + parser.getName(term) + " (stack is " + stack + ")")
+      throw new SyntaxError("No parse at " + start + " with " + this.parser.getName(term) + " (stack is " + stack + ")")
     }
+    return null
   }
 }
 
@@ -247,7 +308,15 @@ export class Parser {
   }
 
   parse(input: InputStream, options?: ParseOptions) {
-    return parse(input, this, options)
+    let cx = new ParseContext(this, input, options)
+    for (;;) {
+      let done = cx.advance()
+      if (done) return done
+    }
+  }
+
+  startParse(input: InputStream, options?: ParseOptions) {
+    return new ParseContext(this, input, options)
   }
 
   getGoto(state: number, term: number, loose = false) {
