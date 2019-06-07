@@ -1,7 +1,7 @@
 import {ParseState, REDUCE_DEPTH_MASK, REDUCE_DEPTH_SIZE, ACTION_SKIP} from "./state"
 import {TERM_TAGGED, TERM_ERR} from "./term"
 import {Parser} from "./parse"
-import {Tree, REUSED_VALUE, buildTree, BufferCursor} from "lezer-tree"
+import {Tree, REUSED_VALUE, BufferCursor} from "lezer-tree"
 
 const BADNESS_INCREMENT = 100
 // Limits in between which stacks are less agressively pruned
@@ -276,7 +276,7 @@ export class Stack {
   }
 
   toTree(): Tree {
-    return buildTree(StackBufferCursor.create(this), this.cx.maxBufferLength, false, this.cx.reused)
+    return Tree.build(StackBufferCursor.create(this), this.cx.maxBufferLength, this.cx.reused)
   }
 }
 
