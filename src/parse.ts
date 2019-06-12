@@ -209,7 +209,7 @@ export class ParseContext {
   get pos() { return this.stacks[0].inputPos }
 
   forceFinish() {
-    let stack = this.stacks[0]
+    let stack = this.stacks[0].split()
     while (!stack.state.accepting && stack.forceReduce()) {}
     return stack.toTree()
   }
