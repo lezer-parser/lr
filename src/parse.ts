@@ -217,10 +217,10 @@ export class ParseContext {
   advance() {
     let stack = this.takeStack(), start = stack.inputPos
 
-    if (this.cache) {//  && !stack.state.ambiguous) { // FIXME implement fragility check
+    if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
         let match = this.parser.getGoto(stack.state.id, cached.type)
-        if (match > -1) {
+        if (match > -1 && !isFragile(this.parser, cached)) {
           stack.useCached(cached, this.parser.states[match])
           if (verbose) console.log(stack + ` (via reuse of ${this.parser.getName(cached.type)})`)
           this.putStack(stack)
@@ -418,4 +418,20 @@ function withoutPrototype(obj: {}) {
   let result: {[key: string]: any} = Object.create(null)
   for (let prop in obj) if (Object.prototype.hasOwnProperty.call(obj, prop)) result[prop] = (obj as any)[prop]
   return result
+}
+
+
+function isFragile(parser: Parser, node: Tree) {
+  let doneStart = false, doneEnd = false, fragile = node.type == TERM_ERR
+  if (!fragile) node.iterate(0, node.length, type => {
+    return doneStart || (type == TERM_ERR ? fragile = doneStart = true : undefined)
+  }, type => {
+    if (!parser.isSkipped(type)) doneStart = true
+  })
+  if (!fragile) node.iterate(node.length, 0, type => {
+    return doneEnd || (type == TERM_ERR ? fragile = doneEnd = true : undefined)
+  }, type => {
+    if (!parser.isSkipped(type)) doneEnd = true
+  })
+  return fragile
 }
