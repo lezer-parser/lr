@@ -1,13 +1,23 @@
-// Shifts are encoded as negative state IDs, reduces as bitmasks with
-// the first 6 bits holding the depth of the reduce, and the bits
-// after that the term that's being reduced.
-export const REDUCE_DEPTH_SIZE = 6, REDUCE_DEPTH_MASK = 2**REDUCE_DEPTH_SIZE - 1
+// Actions hold one of:
+//  - shift(target: u16)
+//  - reduce(term: u16, depth: u1, is_repeat: u10)
+// They are encoded as integers for conveniently (and cheaply) passing
+// them around. The first 16 bits hold the target or term. Bit 17 is
+// set to true for reduce actions. Bit 18 for reduce actions that are
+// repeats. And in reduce actions, bits beyond 18 hold the depth.
+// Shift actions have all their bits beyond 16 set to zero, so they
+// directly hold the target state id.
+// When storing actions in 16-bit number arrays, they are split in the
+// middle, with the first element holding the first 16 bits, and the
+// second the rest.
+export const REDUCE_FLAG = 1 << 16, REDUCE_REPEAT_FLAG = 1 << 17
+export const REDUCE_DEPTH_SHIFT = 18, REDUCE_TERM_MASK = 2**16 - 1
 
 // Invalid reduce value used in forcedReduce to encode that a state is
 // accepting
-export const ACCEPTING = 1 << REDUCE_DEPTH_SIZE
+export const ACCEPTING = REDUCE_REPEAT_FLAG
 
-export const ACTION_SKIP = -0xffff
+export const ACTION_SKIP = 0xfffe
 
 export class ParseState {
   constructor(readonly id: number,

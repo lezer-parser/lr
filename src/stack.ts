@@ -1,4 +1,4 @@
-import {ParseState, REDUCE_DEPTH_MASK, REDUCE_DEPTH_SIZE, ACTION_SKIP} from "./state"
+import {ParseState, REDUCE_FLAG, REDUCE_REPEAT_FLAG, REDUCE_DEPTH_SHIFT, REDUCE_TERM_MASK, ACTION_SKIP} from "./state"
 import {TERM_TAGGED, TERM_ERR} from "./term"
 import {Parser} from "./parse"
 import {Tree, REUSED_VALUE, BufferCursor} from "lezer-tree"
@@ -64,7 +64,7 @@ export class Stack {
   }
 
   reduce(action: number) { // Encoded reduction action
-    let depth = (action & REDUCE_DEPTH_MASK) - 1, type = action >> REDUCE_DEPTH_SIZE
+    let depth = action >> REDUCE_DEPTH_SHIFT, type = action & REDUCE_TERM_MASK
     if (depth == 0) {
       this.pushState(this.cx.parser.states[this.cx.parser.getGoto(this.state.id, type, true)], this.pos)
       return
@@ -74,7 +74,7 @@ export class Stack {
     let start = this.stack[base - 2]
     let bufferBase = this.stack[base - 1], count = this.bufferBase + this.buffer.length - bufferBase
     if ((type & TERM_TAGGED) > 0 ||
-        (type <= this.cx.parser.maxRepeated && // FIXME
+        ((action & REDUCE_REPEAT_FLAG) &&
          this.pos - start > this.cx.maxBufferLength && count > 0)) {
       if (this.inputPos == this.pos) { // Simple case, just append
         this.buffer.push(type, start, this.pos, count + 4)
@@ -114,13 +114,13 @@ export class Stack {
   }
 
   apply(action: number, next: number, nextEnd: number) {
-    if (action >= 0) {
+    if (action & REDUCE_FLAG) {
       this.reduce(action)
     } else if (action != ACTION_SKIP) { // Shift, not skipped
       let start = this.inputPos
       if (nextEnd > this.inputPos || (next & TERM_TAGGED))
         this.pos = this.inputPos = nextEnd
-      this.pushState(this.cx.parser.states[-action], start)
+      this.pushState(this.cx.parser.states[action], start)
       if (next & TERM_TAGGED) this.buffer.push(next, start, nextEnd, 4)
       this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
     } else { // Skipped
@@ -167,7 +167,7 @@ export class Stack {
   canShift(term: number) {
     for (let sim = new SimulatedStack(this);;) {
       let action = sim.top.defaultReduce || this.cx.parser.hasAction(sim.top, term)
-      if (action < 0) return true
+      if ((action & REDUCE_FLAG) == 0) return true
       if (action == 0) return false
       sim.reduce(action)
     }
@@ -181,7 +181,7 @@ export class Stack {
       if (parser.hasAction(sim.top, next) || parser.getRecover(sim.top, next) != 0) return true
       // Find a way to reduce from here
       let reduce = parser.anyReduce(sim.top)
-      if (reduce == 0 && ((reduce = sim.top.forcedReduce) & REDUCE_DEPTH_MASK) == 0) return false
+      if (reduce == 0 && ((reduce = sim.top.forcedReduce) & REDUCE_FLAG) == 0) return false
       sim.reduce(reduce)
       if (i > 10) {
         // Guard against getting stuck in a cycle
@@ -219,7 +219,7 @@ export class Stack {
     if (reduce == 0) {
       // FIXME somehow mark the resulting node as not suitable for reuse
       reduce = this.state.forcedReduce
-      if (reduce <= 0) return false
+      if ((reduce & REDUCE_FLAG) == 0) return false
       this.shiftValue(TERM_ERR, this.pos, this.pos)
     }
     this.reduce(reduce)
@@ -246,7 +246,7 @@ class SimulatedStack {
   }
 
   reduce(action: number) {
-    let term = action >> REDUCE_DEPTH_SIZE, depth = (action & REDUCE_DEPTH_MASK) - 1
+    let term = action & REDUCE_TERM_MASK, depth = action >> REDUCE_DEPTH_SHIFT
     if (depth == 0) {
       if (this.rest == this.stack.stack) this.rest = this.rest.slice()
       this.rest.push(this.top.id, 0, 0)

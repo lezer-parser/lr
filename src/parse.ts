@@ -1,5 +1,5 @@
 import {Stack, BADNESS_WILD, BADNESS_STABILIZING} from "./stack"
-import {ParseState, REDUCE_DEPTH_SIZE, ACTION_SKIP} from "./state"
+import {ParseState, REDUCE_TERM_MASK, REDUCE_FLAG, ACTION_SKIP} from "./state"
 import {InputStream, Tokenizer, TokenGroup} from "./token"
 import {TERM_EOF, TERM_ERR} from "./term"
 import {DEFAULT_BUFFER_LENGTH, Tree, TreeBuffer, TagMap} from "lezer-tree"
@@ -134,7 +134,7 @@ class TokenCache {
   addActions(state: ParseState, token: number, end: number, index: number) {
     let data = this.parser.data
     for (let i = state.actions, next; (next = data[i]) != TERM_ERR; i += 3) {
-      if (next == token) index = this.putAction(encode(data[i + 1], data[i + 2]), token, end, index)
+      if (next == token) index = this.putAction(data[i + 1] | (data[i + 2] << 16), token, end, index)
     }
     if (findOffset(data, state.skip, token) > -1) index = this.putAction(ACTION_SKIP, token, end, index)
     return index
@@ -237,7 +237,7 @@ export class ParseContext {
     if (defaultReduce > 0) {
       stack.reduce(defaultReduce)
       this.putStack(stack)
-      if (verbose) console.log(stack + ` (via always-reduce ${this.parser.getName(defaultReduce >> REDUCE_DEPTH_SIZE)})`)
+      if (verbose) console.log(stack + ` (via always-reduce ${this.parser.getName(defaultReduce & REDUCE_TERM_MASK)})`)
       return null
     }
 
@@ -246,9 +246,11 @@ export class ParseContext {
       let action = actions[i++], term = actions[i++], end = actions[i++]
       let localStack = i == actions.length ? stack : stack.split()
       localStack.apply(action, term, end)
-      if (verbose) console.log(localStack + ` (via ${action < 0 ? "shift" : `reduce of ${this.parser.getName(action >> REDUCE_DEPTH_SIZE)}`} for ${
+      if (verbose)
+        console.log(localStack + ` (via ${(action & REDUCE_FLAG) == 0 ? "shift"
+                     : `reduce of ${this.parser.getName(action & REDUCE_TERM_MASK)}`} for ${
         this.parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
-      this.putStack(localStack, action >= 0)
+      this.putStack(localStack, (action & REDUCE_FLAG) != 0)
     }
     if (actions.length > 0) return null
 
@@ -329,7 +331,7 @@ export class Parser {
   hasAction(state: ParseState, terminal: number) {
     let data = this.data
     for (let i = state.actions, next; (next = data[i]) != TERM_ERR; i += 3) {
-      if (next == terminal) return encode(data[i + 1], data[i + 2])
+      if (next == terminal) return data[i + 1] + (data[i + 2] << 16)
     }
     if (findOffset(this.data, state.skip, terminal) > -1) return ACTION_SKIP
     return 0
@@ -345,8 +347,8 @@ export class Parser {
     if (state.defaultReduce > 0) return state.defaultReduce
     for (let i = state.actions;; i += 3) {
       if (this.data[i] == TERM_ERR) return 0
-      let reduce = this.data[i + 1]
-      if (reduce > 0) return reduce | (this.data[i + 2] << REDUCE_DEPTH_SIZE)
+      let isReduce = this.data[i + 2]
+      if (isReduce) return this.data[i + 1] | (isReduce << 16)
     }
   }
 
@@ -391,10 +393,6 @@ export class Parser {
 
   // FIXME Horrid module interop kludge needed when consuming parser packages through ts-node
   get default() { return this }
-}
-
-function encode(reduce: number, value: number) {
-  return reduce ? reduce | (value << REDUCE_DEPTH_SIZE) : -value
 }
 
 function findOffset(data: Readonly<Uint16Array>, start: number, term: number) {
