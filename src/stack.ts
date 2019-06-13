@@ -72,12 +72,12 @@ export class Stack {
 
     let base = this.stack.length - ((depth - 1) * 3)
     let start = this.stack[base - 2]
-    let count = this.bufferBase + this.buffer.length - this.stack[base - 1]
+    let bufferBase = this.stack[base - 1], count = this.bufferBase + this.buffer.length - bufferBase
     if ((type & TERM_TAGGED) > 0 ||
-        this.cx.parser.repeats(type) && this.pos - start > this.cx.maxBufferLength && count > 0) {
-      let storeType = type & TERM_TAGGED ? type : this.cx.parser.getRepeat(type)
+        (type <= this.cx.parser.maxRepeated && // FIXME
+         this.pos - start > this.cx.maxBufferLength && count > 0)) {
       if (this.inputPos == this.pos) { // Simple case, just append
-        this.buffer.push(storeType, start, this.pos, count + 4)
+        this.buffer.push(type, start, this.pos, count + 4)
       } else { // There may be skipped nodes that have to be moved forward
         let index = this.buffer.length
         while (index > 0 && this.buffer[index - 2] > this.pos) {
@@ -89,7 +89,7 @@ export class Stack {
           index -= 4
           count -= 4
         }
-        this.buffer[index] = storeType
+        this.buffer[index] = type
         this.buffer[index + 1] = start
         this.buffer[index + 2] = this.pos
         this.buffer[index + 3] = count + 4

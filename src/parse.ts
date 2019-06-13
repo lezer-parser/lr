@@ -290,8 +290,7 @@ export class Parser {
               readonly goto: Readonly<Uint16Array>,
               readonly tags: TagMap<string>,
               readonly tokenizers: readonly Tokenizer[],
-              readonly repeatTable: number,
-              readonly repeatCount: number,
+              readonly maxRepeated: number,
               readonly specializeTable: number,
               readonly specializations: readonly {[value: string]: number}[],
               readonly tokenPrecTable: number,
@@ -300,11 +299,6 @@ export class Parser {
 
   getName(term: number): string {
     return this.termNames ? this.termNames[term] : this.tags.get(term) || String(term)
-  }
-
-  // Term should be a repeat term
-  getRepeat(term: number): number {
-    return this.data[this.repeatTable + (term >> 1)]
   }
 
   parse(input: InputStream, options?: ParseOptions) {
@@ -356,10 +350,6 @@ export class Parser {
     }
   }
 
-  repeats(term: number) {
-    return (term >> 1) < this.repeatCount
-  }
-
   isSkipped(term: number) {
     for (let i = this.skippedNodes, cur; (cur = this.data[i]) != TERM_ERR; i++)
       if (cur == term) return true
@@ -384,7 +374,7 @@ export class Parser {
 
   static deserialize(states: string, stateData: string, goto: string, tags: readonly string[],
                      tokenData: string, tokenizers: (Tokenizer | number)[],
-                     repeatTable: number, repeatCount: number,
+                     maxRepeated: number,
                      specializeTable: number, specializations: readonly {[term: string]: number}[],
                      tokenPrec: number,
                      skippedNodes: number,
@@ -395,7 +385,7 @@ export class Parser {
     let tokenArray = decodeArray(tokenData)
     return new Parser(stateObjs, decodeArray(stateData), decodeArray(goto), new TagMap(tags),
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
-                      repeatTable, repeatCount, specializeTable, specializations.map(withoutPrototype),
+                      maxRepeated, specializeTable, specializations.map(withoutPrototype),
                       tokenPrec, skippedNodes, termNames)
   }
 
