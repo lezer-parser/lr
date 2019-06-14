@@ -220,7 +220,7 @@ export class ParseContext {
     if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
         let match = this.parser.getGoto(stack.state.id, cached.type)
-        if (match > -1 && !isFragile(this.parser, cached)) {
+        if (match > -1 && !isFragile(cached)) {
           stack.useCached(cached, this.parser.states[match])
           if (verbose) console.log(stack + ` (via reuse of ${this.parser.getName(cached.type)})`)
           this.putStack(stack)
@@ -407,17 +407,17 @@ function withoutPrototype(obj: {}) {
 }
 
 
-function isFragile(parser: Parser, node: Tree) {
+function isFragile(node: Tree) {
   let doneStart = false, doneEnd = false, fragile = node.type == TERM_ERR
   if (!fragile) node.iterate(0, node.length, type => {
     return doneStart || (type == TERM_ERR ? fragile = doneStart = true : undefined)
   }, type => {
-    if (!parser.isSkipped(type)) doneStart = true
+    doneStart = true
   })
   if (!fragile) node.iterate(node.length, 0, type => {
     return doneEnd || (type == TERM_ERR ? fragile = doneEnd = true : undefined)
   }, type => {
-    if (!parser.isSkipped(type)) doneEnd = true
+    doneEnd = true
   })
   return fragile
 }
