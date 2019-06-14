@@ -73,9 +73,7 @@ export class Stack {
     let base = this.stack.length - ((depth - 1) * 3)
     let start = this.stack[base - 2]
     let bufferBase = this.stack[base - 1], count = this.bufferBase + this.buffer.length - bufferBase
-    if ((type & TERM_TAGGED) > 0 ||
-        ((action & REDUCE_REPEAT_FLAG) &&
-         this.pos - start > this.cx.maxBufferLength && count > 0)) {
+    if ((type & TERM_TAGGED) || (action & REDUCE_REPEAT_FLAG)) {
       if (this.inputPos == this.pos) { // Simple case, just append
         this.buffer.push(type, start, this.pos, count + 4)
       } else { // There may be skipped nodes that have to be moved forward
@@ -205,9 +203,8 @@ export class Stack {
         if (parser.hasAction(result.state, next)) return result
         let recover = parser.getRecover(result.state, next)
         if (!recover) break
-        let pos = result.pos
-        result.pushState(this.cx.parser.states[recover], pos)
-        result.shiftValue(TERM_ERR, pos, pos)
+        result.pushState(this.cx.parser.states[recover], result.pos)
+        result.shiftValue(TERM_ERR, result.pos, result.pos)
       }
 
       result.forceReduce()

@@ -292,7 +292,6 @@ export class Parser {
               readonly goto: Readonly<Uint16Array>,
               readonly tags: TagMap<string>,
               readonly tokenizers: readonly Tokenizer[],
-              readonly maxRepeated: number,
               readonly specializeTable: number,
               readonly specializations: readonly {[value: string]: number}[],
               readonly tokenPrecTable: number,
@@ -376,7 +375,6 @@ export class Parser {
 
   static deserialize(states: string, stateData: string, goto: string, tags: readonly string[],
                      tokenData: string, tokenizers: (Tokenizer | number)[],
-                     maxRepeated: number,
                      specializeTable: number, specializations: readonly {[term: string]: number}[],
                      tokenPrec: number,
                      skippedNodes: number,
@@ -387,7 +385,7 @@ export class Parser {
     let tokenArray = decodeArray(tokenData)
     return new Parser(stateObjs, decodeArray(stateData), decodeArray(goto), new TagMap(tags),
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
-                      maxRepeated, specializeTable, specializations.map(withoutPrototype),
+                      specializeTable, specializations.map(withoutPrototype),
                       tokenPrec, skippedNodes, termNames)
   }
 
