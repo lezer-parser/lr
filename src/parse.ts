@@ -1,7 +1,7 @@
 import {Stack, BADNESS_WILD, BADNESS_STABILIZING} from "./stack"
-import {ParseState, REDUCE_TERM_MASK, REDUCE_FLAG} from "./state"
+import {ParseState, ACTION_VALUE_MASK, REDUCE_FLAG} from "./state"
 import {InputStream, Tokenizer, TokenGroup} from "./token"
-import {TERM_EOF, TERM_ERR} from "./term"
+import {TERM_EOF, TERM_ERR, TERM_OTHER} from "./term"
 import {DEFAULT_BUFFER_LENGTH, Tree, TreeBuffer, TagMap} from "lezer-tree"
 import {decodeArray} from "./decode"
 
@@ -133,11 +133,11 @@ class TokenCache {
 
   addActions(state: ParseState, token: number, end: number, index: number) {
     let data = this.parser.data
-    for (let i = state.actions, next; (next = data[i]) != TERM_ERR; i += 3) {
-      if (next == token) index = this.putAction(data[i + 1] | (data[i + 2] << 16), token, end, index)
-    }
-    for (let i = state.skip, next; (next = data[i]) != TERM_ERR; i += 3) {
-      if (next == token) index = this.putAction(data[i + 1] | (data[i + 2] << 16), token, end, index)
+    for (let set = 0; set < 2; set++) {
+      for (let i = set ? state.skip : state.actions, next; (next = data[i]) != TERM_ERR; i += 3) {
+        if (next == token || (next == TERM_OTHER && index == 0))
+          index = this.putAction(data[i + 1] | (data[i + 2] << 16), token, end, index)
+      }
     }
     return index
   }
@@ -239,7 +239,7 @@ export class ParseContext {
     if (defaultReduce > 0) {
       stack.reduce(defaultReduce)
       this.putStack(stack)
-      if (verbose) console.log(stack + ` (via always-reduce ${this.parser.getName(defaultReduce & REDUCE_TERM_MASK)})`)
+      if (verbose) console.log(stack + ` (via always-reduce ${this.parser.getName(defaultReduce & ACTION_VALUE_MASK)})`)
       return null
     }
 
@@ -250,7 +250,7 @@ export class ParseContext {
       localStack.apply(action, term, end)
       if (verbose)
         console.log(localStack + ` (via ${(action & REDUCE_FLAG) == 0 ? "shift"
-                     : `reduce of ${this.parser.getName(action & REDUCE_TERM_MASK)}`} for ${
+                     : `reduce of ${this.parser.getName(action & ACTION_VALUE_MASK)}`} for ${
         this.parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
       this.putStack(localStack, (action & REDUCE_FLAG) != 0)
     }
@@ -332,11 +332,11 @@ export class Parser {
 
   hasAction(state: ParseState, terminal: number) {
     let data = this.data
-    for (let i = state.actions, next; (next = data[i]) != TERM_ERR; i += 3) {
-      if (next == terminal) return data[i + 1] | (data[i + 2] << 16)
-    }
-    for (let i = state.skip, next; (next = data[i]) != TERM_ERR; i += 3) {
-      if (next == terminal) return data[i + 1] | (data[i + 2] << 16)
+    for (let set = 0; set < 2; set++) {
+      for (let i = set ? state.skip : state.actions, next; (next = data[i]) != TERM_ERR; i += 3) {
+        if (next == terminal || next == TERM_OTHER)
+          return data[i + 1] | (data[i + 2] << 16)
+      }
     }
     return 0
   }

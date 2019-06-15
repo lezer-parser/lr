@@ -10,8 +10,8 @@
 // When storing actions in 16-bit number arrays, they are split in the
 // middle, with the first element holding the first 16 bits, and the
 // second the rest.
-export const REDUCE_FLAG = 1 << 16, REDUCE_REPEAT_FLAG = 1 << 17, STAY_FLAG = 1 << 18
-export const REDUCE_DEPTH_SHIFT = 19, REDUCE_TERM_MASK = 2**16 - 1
+export const REDUCE_FLAG = 1 << 16, REDUCE_REPEAT_FLAG = 1 << 17, GOTO_FLAG = 1 << 17, STAY_FLAG = 1 << 18
+export const REDUCE_DEPTH_SHIFT = 19, ACTION_VALUE_MASK = 2**16 - 1
 
 // Invalid reduce value used in forcedReduce to encode that a state is
 // accepting

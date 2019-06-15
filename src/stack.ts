@@ -1,4 +1,4 @@
-import {ParseState, REDUCE_FLAG, REDUCE_REPEAT_FLAG, REDUCE_DEPTH_SHIFT, REDUCE_TERM_MASK, STAY_FLAG} from "./state"
+import {ParseState, REDUCE_FLAG, REDUCE_REPEAT_FLAG, REDUCE_DEPTH_SHIFT, ACTION_VALUE_MASK, STAY_FLAG, GOTO_FLAG} from "./state"
 import {TERM_TAGGED, TERM_ERR} from "./term"
 import {Parser} from "./parse"
 import {Tree, REUSED_VALUE, BufferCursor} from "lezer-tree"
@@ -64,13 +64,13 @@ export class Stack {
   }
 
   reduce(action: number) { // Encoded reduction action
-    let depth = action >> REDUCE_DEPTH_SHIFT, type = action & REDUCE_TERM_MASK
+    let depth = action >> REDUCE_DEPTH_SHIFT, type = action & ACTION_VALUE_MASK
     if (depth == 0) {
       this.pushState(this.cx.parser.states[this.cx.parser.getGoto(this.state.id, type, true)], this.pos)
       return
     }
 
-    let base = this.stack.length - ((depth - 1) * 3)
+    let base = this.stack.length - ((depth - 1) * 3) - (action & STAY_FLAG ? 6 : 0)
     let start = this.stack[base - 2]
     let bufferBase = this.stack[base - 1], count = this.bufferBase + this.buffer.length - bufferBase
     if ((type & TERM_TAGGED) || (action & REDUCE_REPEAT_FLAG)) {
@@ -93,13 +93,13 @@ export class Stack {
         this.buffer[index + 3] = count + 4
       }
     }
-    if ((action & STAY_FLAG) == 0) {
+    if (action & STAY_FLAG) {
+      this.state = this.cx.parser.states[this.stack[base]]
+    } else {
       let baseStateID = this.stack[base - 3]
       this.state = this.cx.parser.states[this.cx.parser.getGoto(baseStateID, type, true)]
-    } else if (depth > 1) {
-      this.state = this.cx.parser.states[this.stack[base]]
     }
-    if (depth > 1) this.stack.length = base
+    if (base < this.stack.length) this.stack.length = base
   }
 
   shiftValue(term: number, start: number, end: number, childCount = 4) {
@@ -115,9 +115,9 @@ export class Stack {
     this.buffer.push(term, start, end, childCount)
   }
 
-  apply(action: number, next: number, nextEnd: number) {
-    if (action & REDUCE_FLAG) {
-      this.reduce(action)
+  shift(action: number, next: number, nextEnd: number) {
+    if (action & GOTO_FLAG) {
+      this.pushState(this.cx.parser.states[action & ACTION_VALUE_MASK], this.inputPos)
     } else if ((action & STAY_FLAG) == 0) { // Regular shift
       let start = this.inputPos
       if (nextEnd > this.inputPos || (next & TERM_TAGGED))
@@ -129,6 +129,11 @@ export class Stack {
       if (next & TERM_TAGGED) this.buffer.push(next, this.inputPos, nextEnd, 4)
       this.inputPos = nextEnd
     }
+  }
+
+  apply(action: number, next: number, nextEnd: number) {
+    if (action & REDUCE_FLAG) this.reduce(action)
+    else this.shift(action, next, nextEnd)
   }
 
   useCached(value: Tree, next: ParseState) {
@@ -247,7 +252,7 @@ class SimulatedStack {
   }
 
   reduce(action: number) {
-    let term = action & REDUCE_TERM_MASK, depth = action >> REDUCE_DEPTH_SHIFT
+    let term = action & ACTION_VALUE_MASK, depth = action >> REDUCE_DEPTH_SHIFT
     if (depth == 0) {
       if (this.rest == this.stack.stack) this.rest = this.rest.slice()
       this.rest.push(this.top.id, 0, 0)
