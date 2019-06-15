@@ -1,4 +1,4 @@
-import {ParseState, REDUCE_FLAG, REDUCE_REPEAT_FLAG, REDUCE_DEPTH_SHIFT, REDUCE_TERM_MASK, ACTION_SKIP} from "./state"
+import {ParseState, REDUCE_FLAG, REDUCE_REPEAT_FLAG, REDUCE_DEPTH_SHIFT, REDUCE_TERM_MASK, STAY_FLAG} from "./state"
 import {TERM_TAGGED, TERM_ERR} from "./term"
 import {Parser} from "./parse"
 import {Tree, REUSED_VALUE, BufferCursor} from "lezer-tree"
@@ -93,8 +93,12 @@ export class Stack {
         this.buffer[index + 3] = count + 4
       }
     }
-    let baseStateID = this.stack[base - 3]
-    this.state = this.cx.parser.states[this.cx.parser.getGoto(baseStateID, type, true)]
+    if ((action & STAY_FLAG) == 0) {
+      let baseStateID = this.stack[base - 3]
+      this.state = this.cx.parser.states[this.cx.parser.getGoto(baseStateID, type, true)]
+    } else if (depth > 1) {
+      this.state = this.cx.parser.states[this.stack[base]]
+    }
     if (depth > 1) this.stack.length = base
   }
 
@@ -114,14 +118,14 @@ export class Stack {
   apply(action: number, next: number, nextEnd: number) {
     if (action & REDUCE_FLAG) {
       this.reduce(action)
-    } else if (action != ACTION_SKIP) { // Shift, not skipped
+    } else if ((action & STAY_FLAG) == 0) { // Regular shift
       let start = this.inputPos
       if (nextEnd > this.inputPos || (next & TERM_TAGGED))
         this.pos = this.inputPos = nextEnd
       this.pushState(this.cx.parser.states[action], start)
       if (next & TERM_TAGGED) this.buffer.push(next, start, nextEnd, 4)
       this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
-    } else { // Skipped
+    } else { // Shift-and-stay, which means this is skipped token
       if (next & TERM_TAGGED) this.buffer.push(next, this.inputPos, nextEnd, 4)
       this.inputPos = nextEnd
     }

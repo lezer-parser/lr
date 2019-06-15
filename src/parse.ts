@@ -1,5 +1,5 @@
 import {Stack, BADNESS_WILD, BADNESS_STABILIZING} from "./stack"
-import {ParseState, REDUCE_TERM_MASK, REDUCE_FLAG, ACTION_SKIP} from "./state"
+import {ParseState, REDUCE_TERM_MASK, REDUCE_FLAG} from "./state"
 import {InputStream, Tokenizer, TokenGroup} from "./token"
 import {TERM_EOF, TERM_ERR} from "./term"
 import {DEFAULT_BUFFER_LENGTH, Tree, TreeBuffer, TagMap} from "lezer-tree"
@@ -136,7 +136,9 @@ class TokenCache {
     for (let i = state.actions, next; (next = data[i]) != TERM_ERR; i += 3) {
       if (next == token) index = this.putAction(data[i + 1] | (data[i + 2] << 16), token, end, index)
     }
-    if (findOffset(data, state.skip, token) > -1) index = this.putAction(ACTION_SKIP, token, end, index)
+    for (let i = state.skip, next; (next = data[i]) != TERM_ERR; i += 3) {
+      if (next == token) index = this.putAction(data[i + 1] | (data[i + 2] << 16), token, end, index)
+    }
     return index
   }
 }
@@ -295,6 +297,7 @@ export class Parser {
               readonly specializeTable: number,
               readonly specializations: readonly {[value: string]: number}[],
               readonly tokenPrecTable: number,
+              readonly firstSkipState: number,
               readonly skippedNodes: number,
               readonly termNames: null | {[id: number]: string} = null) {}
 
@@ -330,9 +333,11 @@ export class Parser {
   hasAction(state: ParseState, terminal: number) {
     let data = this.data
     for (let i = state.actions, next; (next = data[i]) != TERM_ERR; i += 3) {
-      if (next == terminal) return data[i + 1] + (data[i + 2] << 16)
+      if (next == terminal) return data[i + 1] | (data[i + 2] << 16)
     }
-    if (findOffset(this.data, state.skip, terminal) > -1) return ACTION_SKIP
+    for (let i = state.skip, next; (next = data[i]) != TERM_ERR; i += 3) {
+      if (next == terminal) return data[i + 1] | (data[i + 2] << 16)
+    }
     return 0
   }
 
@@ -377,7 +382,7 @@ export class Parser {
                      tokenData: string, tokenizers: (Tokenizer | number)[],
                      specializeTable: number, specializations: readonly {[term: string]: number}[],
                      tokenPrec: number,
-                     skippedNodes: number,
+                     firstSkipState: number, skippedNodes: number,
                      termNames?: {[id: number]: string}) {
     let arr = decodeArray(states, Uint32Array), stateObjs: ParseState[] = []
     for (let i = 0, id = 0; i < arr.length;)
@@ -386,7 +391,7 @@ export class Parser {
     return new Parser(stateObjs, decodeArray(stateData), decodeArray(goto), new TagMap(tags),
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
                       specializeTable, specializations.map(withoutPrototype),
-                      tokenPrec, skippedNodes, termNames)
+                      tokenPrec, firstSkipState, skippedNodes, termNames)
   }
 
   // FIXME Horrid module interop kludge needed when consuming parser packages through ts-node

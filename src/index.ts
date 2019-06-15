@@ -1,5 +1,5 @@
 export {Parser, ParseOptions, ParseContext, SPECIALIZE, EXTEND} from "./parse"
-export {ParseState, REDUCE_FLAG, REDUCE_REPEAT_FLAG, REDUCE_DEPTH_SHIFT, REDUCE_TERM_MASK, ACCEPTING, ACTION_SKIP} from "./state"
+export {ParseState, REDUCE_FLAG, REDUCE_REPEAT_FLAG, STAY_FLAG, REDUCE_DEPTH_SHIFT, REDUCE_TERM_MASK, ACCEPTING} from "./state"
 export {InputStream, StringStream, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
 export {TERM_TAGGED, TERM_ERR, TERM_EOF} from "./term"
 export {Tree, TreeBuffer, Subtree, TagMap} from "lezer-tree"
