@@ -74,11 +74,12 @@ export class Stack {
     let start = this.stack[base - 2]
     let bufferBase = this.stack[base - 1], count = this.bufferBase + this.buffer.length - bufferBase
     if ((type & TERM_TAGGED) || (action & REDUCE_REPEAT_FLAG)) {
-      if (this.inputPos == this.pos) { // Simple case, just append
-        this.buffer.push(type, start, this.pos, count + 4)
+      let pos = this.state.id < this.cx.parser.firstSkipState ? this.pos : this.inputPos
+      if (this.inputPos == pos) { // Simple case, just append
+        this.buffer.push(type, start, pos, count + 4)
       } else { // There may be skipped nodes that have to be moved forward
         let index = this.buffer.length
-        while (index > 0 && this.buffer[index - 2] > this.pos) {
+        while (index > 0 && this.buffer[index - 2] > pos) {
           // Move this record forward
           this.buffer[index] = this.buffer[index - 4]
           this.buffer[index + 1] = this.buffer[index - 3]
@@ -89,7 +90,7 @@ export class Stack {
         }
         this.buffer[index] = type
         this.buffer[index + 1] = start
-        this.buffer[index + 2] = this.pos
+        this.buffer[index + 2] = pos
         this.buffer[index + 3] = count + 4
       }
     }
@@ -119,10 +120,12 @@ export class Stack {
     if (action & GOTO_FLAG) {
       this.pushState(this.cx.parser.states[action & ACTION_VALUE_MASK], this.inputPos)
     } else if ((action & STAY_FLAG) == 0) { // Regular shift
-      let start = this.inputPos
-      if (nextEnd > this.inputPos || (next & TERM_TAGGED))
-        this.pos = this.inputPos = nextEnd
-      this.pushState(this.cx.parser.states[action], start)
+      let start = this.inputPos, nextState = this.cx.parser.states[action]
+      if (nextEnd > this.inputPos || (next & TERM_TAGGED)) {
+        this.inputPos = nextEnd
+        if (nextState.id < this.cx.parser.firstSkipState) this.pos = nextEnd
+      }
+      this.pushState(nextState, start)
       if (next & TERM_TAGGED) this.buffer.push(next, start, nextEnd, 4)
       this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
     } else { // Shift-and-stay, which means this is skipped token
