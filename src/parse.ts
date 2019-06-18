@@ -304,7 +304,7 @@ export class Parser {
               readonly goto: Readonly<Uint16Array>,
               readonly tags: TagMap<string>,
               readonly tokenizers: readonly Tokenizer[],
-              readonly nested: readonly NestedGrammar[],
+              readonly nested: readonly {grammar: NestedGrammar, end: Tokenizer}[],
               readonly specializeTable: number,
               readonly specializations: readonly {[value: string]: number}[],
               readonly tokenPrecTable: number,
@@ -392,7 +392,7 @@ export class Parser {
   }
 
   static deserialize(states: string, stateData: string, goto: string, tags: readonly string[],
-                     tokenData: string, tokenizers: (Tokenizer | number)[], nested: NestedGrammar[],
+                     tokenData: string, tokenizers: (Tokenizer | number)[], nested: [NestedGrammar, string][],
                      specializeTable: number, specializations: readonly {[term: string]: number}[],
                      tokenPrec: number,
                      skippedNodes: number,
@@ -403,7 +403,8 @@ export class Parser {
     let tokenArray = decodeArray(tokenData), id = Parser.allocateID()
     return new Parser(id, stateObjs, decodeArray(stateData), decodeArray(goto), TagMap.single(id, tags),
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
-                      nested, specializeTable, specializations.map(withoutPrototype),
+                      nested.map(([grammar, endToken]) => ({grammar, end: new TokenGroup(decodeArray(endToken), 0)})),
+                      specializeTable, specializations.map(withoutPrototype),
                       tokenPrec, skippedNodes, termNames)
   }
 
