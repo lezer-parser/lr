@@ -10,6 +10,7 @@ export interface InputStream {
   tokenEnd: number
   goto(n: number): InputStream
   read(from: number, to: number): string
+  clip(at: number): InputStream
 }
 
 export class StringStream implements InputStream {
@@ -17,17 +18,15 @@ export class StringStream implements InputStream {
   token = -1
   tokenEnd = -1
 
-  constructor(readonly string: string) {}
-
-  get length() { return this.string.length }
+  constructor(readonly string: string, readonly length = string.length) {}
 
   next(): number {
-    if (this.pos == this.string.length) return -1
+    if (this.pos == this.length) return -1
     return this.string.charCodeAt(this.pos++)
   }
 
   peek(pos = this.pos) {
-    return pos < 0 || pos >= this.string.length ? -1 : this.string.charCodeAt(pos)
+    return pos < 0 || pos >= this.length ? -1 : this.string.charCodeAt(pos)
   }
   
   accept(term: number, pos = this.pos) {
@@ -41,7 +40,9 @@ export class StringStream implements InputStream {
     return this
   }
 
-  read(from: number, to: number): string { return this.string.slice(from, to) }
+  read(from: number, to: number): string { return this.string.slice(from, Math.min(this.length, to)) }
+
+  clip(at: number) { return new StringStream(this.string, at) }
 }
 
 export interface Tokenizer {
