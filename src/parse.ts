@@ -301,7 +301,6 @@ export class Parser {
               readonly specializeTable: number,
               readonly specializations: readonly {[value: string]: number}[],
               readonly tokenPrecTable: number,
-              readonly firstSkipState: number,
               readonly skippedNodes: number,
               readonly termNames: null | {[id: number]: string} = null) {}
 
@@ -389,16 +388,16 @@ export class Parser {
                      tokenData: string, tokenizers: (Tokenizer | number)[],
                      specializeTable: number, specializations: readonly {[term: string]: number}[],
                      tokenPrec: number,
-                     firstSkipState: number, skippedNodes: number,
+                     skippedNodes: number,
                      termNames?: {[id: number]: string}) {
     let arr = decodeArray(states, Uint32Array), stateObjs: ParseState[] = []
     for (let i = 0, id = 0; i < arr.length;)
-      stateObjs.push(new ParseState(id++, arr[i++], arr[i++], arr[i++], arr[i++], arr[i++], arr[i++]))
+      stateObjs.push(new ParseState(id++, arr[i++], arr[i++], arr[i++], arr[i++], arr[i++], arr[i++], arr[i++]))
     let tokenArray = decodeArray(tokenData), id = Parser.allocateID()
     return new Parser(id, stateObjs, decodeArray(stateData), decodeArray(goto), TagMap.single(id, tags),
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
                       specializeTable, specializations.map(withoutPrototype),
-                      tokenPrec, firstSkipState, skippedNodes, termNames)
+                      tokenPrec, skippedNodes, termNames)
   }
 
   // FIXME Horrid module interop kludge needed when consuming parser packages through ts-node

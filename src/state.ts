@@ -13,19 +13,21 @@
 export const REDUCE_FLAG = 1 << 16, REDUCE_REPEAT_FLAG = 1 << 17, GOTO_FLAG = 1 << 17, STAY_FLAG = 1 << 18
 export const REDUCE_DEPTH_SHIFT = 19, ACTION_VALUE_MASK = 2**16 - 1
 
-// Invalid reduce value used in forcedReduce to encode that a state is
-// accepting
-export const ACCEPTING = REDUCE_REPEAT_FLAG
+export const SKIPPED_FLAG = 1, ACCEPTING_FLAG = 2, NEST_START_FLAG = 4, NEST_SHIFT = 10
 
 export class ParseState {
   constructor(readonly id: number,
+              readonly flags: number,
+
               // These are offsets into the state data array
               readonly actions: number,
               readonly recover: number,
               readonly skip: number,
+
               readonly tokenizerMask: number,
               readonly defaultReduce: number,
               readonly forcedReduce: number) {}
 
-  get accepting() { return this.forcedReduce == ACCEPTING }
+  get accepting() { return (this.flags & ACCEPTING_FLAG) > 0 }
+  get skipped() { return (this.flags & SKIPPED_FLAG) > 0 }
 }

@@ -74,7 +74,7 @@ export class Stack {
     let start = this.stack[base - 2]
     let bufferBase = this.stack[base - 1], count = this.bufferBase + this.buffer.length - bufferBase
     if ((type & TERM_TAGGED) || (action & REDUCE_REPEAT_FLAG)) {
-      let pos = this.state.id < this.cx.parser.firstSkipState ? this.pos : this.inputPos
+      let pos = this.state.skipped ? this.inputPos : this.pos
       if (this.inputPos == pos) { // Simple case, just append
         this.buffer.push(type, start, pos, count + 4)
       } else { // There may be skipped nodes that have to be moved forward
@@ -123,7 +123,7 @@ export class Stack {
       let start = this.inputPos, nextState = this.cx.parser.states[action]
       if (nextEnd > this.inputPos || (next & TERM_TAGGED)) {
         this.inputPos = nextEnd
-        if (nextState.id < this.cx.parser.firstSkipState) this.pos = nextEnd
+        if (!nextState.skipped) this.pos = nextEnd
       }
       this.pushState(nextState, start)
       if (next & TERM_TAGGED) this.buffer.push(next, start, nextEnd, 4)
