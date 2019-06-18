@@ -240,7 +240,7 @@ export class Stack {
   }
 
   toTree(): Tree {
-    return Tree.build(StackBufferCursor.create(this), this.cx.maxBufferLength, this.cx.reused)
+    return Tree.build(StackBufferCursor.create(this), this.cx.parser.id, this.cx.maxBufferLength, this.cx.reused)
   }
 }
 

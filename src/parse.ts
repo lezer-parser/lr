@@ -2,7 +2,7 @@ import {Stack, BADNESS_WILD, BADNESS_STABILIZING} from "./stack"
 import {ParseState, ACTION_VALUE_MASK, REDUCE_FLAG} from "./state"
 import {InputStream, Tokenizer, TokenGroup} from "./token"
 import {TERM_EOF, TERM_ERR, TERM_OTHER} from "./term"
-import {DEFAULT_BUFFER_LENGTH, Tree, TreeBuffer, TagMap} from "lezer-tree"
+import {DEFAULT_BUFFER_LENGTH, TERM_ID_MASK, GRAMMAR_ID_MASK, Tree, TreeBuffer, TagMap} from "lezer-tree"
 import {decodeArray} from "./decode"
 
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
@@ -221,7 +221,8 @@ export class ParseContext {
 
     if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
-        let match = this.parser.getGoto(stack.state.id, cached.type)
+        if ((cached.type & GRAMMAR_ID_MASK) != this.parser.id) continue
+        let match = this.parser.getGoto(stack.state.id, cached.type & TERM_ID_MASK)
         if (match > -1 && !isFragile(cached)) {
           stack.useCached(cached, this.parser.states[match])
           if (verbose) console.log(stack + ` (via reuse of ${this.parser.getName(cached.type)})`)
@@ -288,8 +289,11 @@ export class ParseContext {
   }
 }
 
+let nextGrammarID = 0
+
 export class Parser {
-  constructor(readonly states: readonly ParseState[],
+  constructor(readonly id: number,
+              readonly states: readonly ParseState[],
               readonly data: Readonly<Uint16Array>,
               readonly goto: Readonly<Uint16Array>,
               readonly tags: TagMap<string>,
@@ -369,13 +373,16 @@ export class Parser {
 
   tagMap<T>(values: {[name: string]: T}) {
     let content: (T | null)[] = []
-    for (let i = 0; i < this.tags.content.length; i++) {
-      let tag = this.tags.content[i]!
+    let tagArray = this.tags.grammars[this.id >> 16] || []
+    for (let i = 0; i < tagArray.length; i++) {
+      let tag = tagArray[i]!
       content.push(
         Object.prototype.hasOwnProperty.call(values, tag) ? values[tag] :
         tag[0] == '"' && Object.prototype.hasOwnProperty.call(values, JSON.parse(tag)) ? values[JSON.parse(tag)] : null)
     }
-    return new TagMap<T>(content)
+    let grammars = []
+    grammars[this.id >> 16] = content
+    return new TagMap<T>(grammars)
   }
 
   static deserialize(states: string, stateData: string, goto: string, tags: readonly string[],
@@ -387,8 +394,8 @@ export class Parser {
     let arr = decodeArray(states, Uint32Array), stateObjs: ParseState[] = []
     for (let i = 0, id = 0; i < arr.length;)
       stateObjs.push(new ParseState(id++, arr[i++], arr[i++], arr[i++], arr[i++], arr[i++], arr[i++]))
-    let tokenArray = decodeArray(tokenData)
-    return new Parser(stateObjs, decodeArray(stateData), decodeArray(goto), new TagMap(tags),
+    let tokenArray = decodeArray(tokenData), id = Parser.allocateID()
+    return new Parser(id, stateObjs, decodeArray(stateData), decodeArray(goto), TagMap.single(id, tags),
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
                       specializeTable, specializations.map(withoutPrototype),
                       tokenPrec, firstSkipState, skippedNodes, termNames)
@@ -396,6 +403,8 @@ export class Parser {
 
   // FIXME Horrid module interop kludge needed when consuming parser packages through ts-node
   get default() { return this }
+
+  static allocateID() { return (nextGrammarID++) << 16 }
 }
 
 function findOffset(data: Readonly<Uint16Array>, start: number, term: number) {
