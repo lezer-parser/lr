@@ -9,6 +9,12 @@ const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LO
 
 export const SPECIALIZE = 0, EXTEND = 1
 
+export type NestedGrammar = Parser | ((input: InputStream, stack: Stack) => {
+  parse?: (input: InputStream, end: number) => Tree
+  parser?: Parser
+  filterEnd?: (endToken: string) => boolean
+})
+
 class CacheCursor {
   trees: Tree[]
   start = [0]
@@ -298,6 +304,7 @@ export class Parser {
               readonly goto: Readonly<Uint16Array>,
               readonly tags: TagMap<string>,
               readonly tokenizers: readonly Tokenizer[],
+              readonly nested: readonly NestedGrammar[],
               readonly specializeTable: number,
               readonly specializations: readonly {[value: string]: number}[],
               readonly tokenPrecTable: number,
@@ -385,7 +392,7 @@ export class Parser {
   }
 
   static deserialize(states: string, stateData: string, goto: string, tags: readonly string[],
-                     tokenData: string, tokenizers: (Tokenizer | number)[],
+                     tokenData: string, tokenizers: (Tokenizer | number)[], nested: NestedGrammar[],
                      specializeTable: number, specializations: readonly {[term: string]: number}[],
                      tokenPrec: number,
                      skippedNodes: number,
@@ -396,7 +403,7 @@ export class Parser {
     let tokenArray = decodeArray(tokenData), id = Parser.allocateID()
     return new Parser(id, stateObjs, decodeArray(stateData), decodeArray(goto), TagMap.single(id, tags),
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
-                      specializeTable, specializations.map(withoutPrototype),
+                      nested, specializeTable, specializations.map(withoutPrototype),
                       tokenPrec, skippedNodes, termNames)
   }
 
@@ -418,7 +425,6 @@ function withoutPrototype(obj: {}) {
   for (let prop in obj) if (Object.prototype.hasOwnProperty.call(obj, prop)) result[prop] = (obj as any)[prop]
   return result
 }
-
 
 function isFragile(node: Tree) {
   let doneStart = false, doneEnd = false, fragile = node.type == TERM_ERR
