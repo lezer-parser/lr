@@ -9,8 +9,9 @@ const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LO
 
 export const SPECIALIZE = 0, EXTEND = 1
 
-export type NestedGrammar = Parser | ((input: InputStream, stack: Stack) => null | {
-  parse?: (input: InputStream) => Tree
+export type NestedGrammar = null | Parser | ((input: InputStream, stack: Stack) => {
+  stay?: boolean
+  parseNode?: (input: InputStream) => Tree
   parser?: Parser
   filterEnd?: (endToken: string) => boolean
 })
@@ -252,23 +253,24 @@ export class ParseContext {
     let nest = stack.state.startNested
     maybeNest: if (nest > -1) {
       let {grammar, end: endToken, type, placeholder} = parser.nested[nest]
-      let filterEnd = undefined, parse = null, nested
-      if (!(grammar instanceof Parser)) {
+      let filterEnd = undefined, parseNode = null, nested
+      if (typeof grammar == "function") {
         let query = grammar(input.goto(stack.inputPos), stack)
-        if (!query) break maybeNest
-        ;({parse, parser: nested, filterEnd} = query)
+        if (query.stay) break maybeNest
+        ;({parseNode, parser: nested, filterEnd} = query)
       } else {
         nested = grammar
       }
       let end = this.scanForNestEnd(stack, endToken, filterEnd)
       let clippedInput = stack.cx.input.clip(end)
-      if (parse) {
-        let node = parse(clippedInput)
-        stack.useNode(new Tree(node.children, node.positions, node.type & TERM_TAGGED ? node.type : type | parser.id, end - stack.inputPos),
+      if (parseNode || !nested) {
+        let node = parseNode ? parseNode(clippedInput) : Tree.empty
+        stack.useNode(new Tree(node.children, node.positions, node.type & TERM_TAGGED || type < 0 ? node.type : type | parser.id,
+                               end - stack.inputPos),
                       parser.getGoto(stack.state.id, placeholder, true))
         this.putStack(stack)
       } else {
-        let newStack = Stack.start(new StackContext(nested!, stack.cx.maxBufferLength, clippedInput, stack), stack.inputPos)
+        let newStack = Stack.start(new StackContext(nested, stack.cx.maxBufferLength, clippedInput, stack), stack.inputPos)
         if (verbose) console.log(newStack + ` (nested)`)
         this.putStack(newStack)
       }
@@ -306,7 +308,7 @@ export class ParseContext {
         // continue with that one.
         let parentParser = parent.cx.parser, info = parentParser.nested[parent.state.startNested]
         let node = new Tree(tree.children, tree.positions.map(p => p - parent!.inputPos),
-                            info.type | parentParser.id, stack.inputPos - parent.inputPos)
+                            info.type >= 0 ? info.type | parentParser.id : tree.type, stack.inputPos - parent.inputPos)
         parent.useNode(node, parentParser.getGoto(parent.state.id, info.placeholder, true))
         if (verbose) console.log(parent + ` (via unnest ${parentParser.getName(info.type)})`)
         this.putStack(parent)
@@ -360,7 +362,7 @@ export class Parser {
               readonly goto: Readonly<Uint16Array>,
               readonly tags: TagMap<string>,
               readonly tokenizers: readonly Tokenizer[],
-              readonly nested: readonly {name: string, grammar: NestedGrammar, end: TokenGroup, type: number, placeholder: number}[],
+              readonly nested: readonly {name: string, grammar: null | NestedGrammar, end: TokenGroup, type: number, placeholder: number}[],
               readonly specializeTable: number,
               readonly specializations: readonly {[value: string]: number}[],
               readonly tokenPrecTable: number,
@@ -448,7 +450,7 @@ export class Parser {
     return new TagMap<T>(grammars)
   }
 
-  withNested(spec: {[name: string]: NestedGrammar}) {
+  withNested(spec: {[name: string]: NestedGrammar | null}) {
     return new Parser(this.id, this.states, this.data, this.goto, this.tags, this.tokenizers,
                       this.nested.map(obj => {
                         if (!Object.prototype.hasOwnProperty.call(spec, obj.name)) return obj
@@ -459,7 +461,7 @@ export class Parser {
 
   static deserialize(states: string, stateData: string, goto: string, tags: readonly string[],
                      tokenData: string, tokenizers: (Tokenizer | number)[],
-                     nested: [string, NestedGrammar, string, number, number][],
+                     nested: [string, null | NestedGrammar, string, number, number][],
                      specializeTable: number, specializations: readonly {[term: string]: number}[],
                      tokenPrec: number,
                      skippedNodes: number,
