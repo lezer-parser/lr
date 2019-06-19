@@ -1,6 +1,6 @@
 import {Stack, StackContext, BADNESS_WILD, BADNESS_STABILIZING} from "./stack"
 import {ParseState, ACTION_VALUE_MASK, REDUCE_FLAG} from "./state"
-import {InputStream, Tokenizer, TokenGroup} from "./token"
+import {InputStream, StringStream, Tokenizer, TokenGroup} from "./token"
 import {TERM_EOF, TERM_ERR, TERM_OTHER, TERM_TAGGED} from "./term"
 import {DEFAULT_BUFFER_LENGTH, TERM_ID_MASK, GRAMMAR_ID_MASK, Tree, TreeBuffer, TagMap} from "lezer-tree"
 import {decodeArray} from "./decode"
@@ -359,7 +359,8 @@ export class Parser {
     return this.termNames ? this.termNames[term] : this.tags.get(term) || String(term)
   }
 
-  parse(input: InputStream, options?: ParseOptions) {
+  parse(input: InputStream | string, options?: ParseOptions) {
+    if (typeof input == "string") input = new StringStream(input)
     let cx = new ParseContext(this, input, options)
     for (;;) {
       let done = cx.advance()
