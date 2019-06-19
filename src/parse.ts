@@ -360,7 +360,7 @@ export class Parser {
               readonly goto: Readonly<Uint16Array>,
               readonly tags: TagMap<string>,
               readonly tokenizers: readonly Tokenizer[],
-              readonly nested: readonly {grammar: NestedGrammar, end: TokenGroup, type: number, placeholder: number}[],
+              readonly nested: readonly {name: string, grammar: NestedGrammar, end: TokenGroup, type: number, placeholder: number}[],
               readonly specializeTable: number,
               readonly specializations: readonly {[value: string]: number}[],
               readonly tokenPrecTable: number,
@@ -448,8 +448,18 @@ export class Parser {
     return new TagMap<T>(grammars)
   }
 
+  withNested(spec: {[name: string]: NestedGrammar}) {
+    return new Parser(this.id, this.states, this.data, this.goto, this.tags, this.tokenizers,
+                      this.nested.map(obj => {
+                        if (!Object.prototype.hasOwnProperty.call(spec, obj.name)) return obj
+                        return {name: obj.name, grammar: spec[obj.name], end: obj.end, type: obj.type, placeholder: obj.placeholder}
+                      }),
+                      this.specializeTable, this.specializations, this.tokenPrecTable, this.skippedNodes, this.termNames)
+  }
+
   static deserialize(states: string, stateData: string, goto: string, tags: readonly string[],
-                     tokenData: string, tokenizers: (Tokenizer | number)[], nested: [NestedGrammar, string, number, number][],
+                     tokenData: string, tokenizers: (Tokenizer | number)[],
+                     nested: [string, NestedGrammar, string, number, number][],
                      specializeTable: number, specializations: readonly {[term: string]: number}[],
                      tokenPrec: number,
                      skippedNodes: number,
@@ -460,8 +470,8 @@ export class Parser {
     let tokenArray = decodeArray(tokenData), id = Parser.allocateID()
     return new Parser(id, stateObjs, decodeArray(stateData), decodeArray(goto), TagMap.single(id, tags),
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
-                      nested.map(([grammar, endToken, type, placeholder]) =>
-                                   ({grammar, end: new TokenGroup(decodeArray(endToken), 0), type, placeholder})),
+                      nested.map(([name, grammar, endToken, type, placeholder]) =>
+                                   ({name, grammar, end: new TokenGroup(decodeArray(endToken), 0), type, placeholder})),
                       specializeTable, specializations.map(withoutPrototype),
                       tokenPrec, skippedNodes, termNames)
   }
