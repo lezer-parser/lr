@@ -186,6 +186,13 @@ export class Stack {
     }
   }
 
+  get ruleStart() {
+    let force = this.state.forcedReduce
+    if (!(force & REDUCE_FLAG)) return 0
+    let base = this.stack.length - (3 * (force >> REDUCE_DEPTH_SHIFT))
+    return this.stack[base - 2]
+  }
+
   canRecover(next: number) {
     // Scan for a state that has either a direct action or a recovery
     // action for next, without actually building up a new stack
