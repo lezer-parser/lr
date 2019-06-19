@@ -30,4 +30,5 @@ export class ParseState {
 
   get accepting() { return (this.flags & ACCEPTING_FLAG) > 0 }
   get skipped() { return (this.flags & SKIPPED_FLAG) > 0 }
+  get startNested() { return this.flags & NEST_START_FLAG ? this.flags >> NEST_SHIFT : -1 }
 }

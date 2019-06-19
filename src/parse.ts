@@ -1,7 +1,7 @@
-import {Stack, BADNESS_WILD, BADNESS_STABILIZING} from "./stack"
+import {Stack, StackContext, BADNESS_WILD, BADNESS_STABILIZING} from "./stack"
 import {ParseState, ACTION_VALUE_MASK, REDUCE_FLAG} from "./state"
 import {InputStream, Tokenizer, TokenGroup} from "./token"
-import {TERM_EOF, TERM_ERR, TERM_OTHER} from "./term"
+import {TERM_EOF, TERM_ERR, TERM_OTHER, TERM_TAGGED} from "./term"
 import {DEFAULT_BUFFER_LENGTH, TERM_ID_MASK, GRAMMAR_ID_MASK, Tree, TreeBuffer, TagMap} from "lezer-tree"
 import {decodeArray} from "./decode"
 
@@ -9,8 +9,8 @@ const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LO
 
 export const SPECIALIZE = 0, EXTEND = 1
 
-export type NestedGrammar = Parser | ((input: InputStream, stack: Stack) => {
-  parse?: (input: InputStream, end: number) => Tree
+export type NestedGrammar = Parser | ((input: InputStream, stack: Stack) => null | {
+  parse?: (input: InputStream) => Tree
   parser?: Parser
   filterEnd?: (endToken: string) => boolean
 })
@@ -70,28 +70,25 @@ class CachedToken {
 
 class TokenCache {
   tokens: CachedToken[] = []
-  mainToken!: CachedToken
+  mainToken: CachedToken = null as any as CachedToken
 
   actions: number[] = []
-
-  constructor(readonly parser: Parser) {
-    this.mainToken = null as any as CachedToken
-  }
 
   getActions(stack: Stack, input: InputStream) {
     let actionIndex = 0
     let main: CachedToken | null = null
+    let {tokenizers} = stack.cx.parser
 
-    for (let i = 0; i < this.parser.tokenizers.length; i++) {
+    for (let i = 0; i < tokenizers.length; i++) {
       if (((1 << i) & stack.state.tokenizerMask) == 0) continue
-      let tokenizer = this.parser.tokenizers[i]
+      let tokenizer = tokenizers[i]
       let token = this.tokens.find(c => c.tokenizer == tokenizer)
       if (!token) this.tokens.push(token = new CachedToken(tokenizer))
       if (tokenizer.contextual || token.start != stack.inputPos) this.updateCachedToken(token, stack, input)
 
       let startIndex = actionIndex
-      if (token.extended > -1) actionIndex = this.addActions(stack.state, token.extended, token.end, actionIndex)
-      actionIndex = this.addActions(stack.state, token.term, token.end, actionIndex)
+      if (token.extended > -1) actionIndex = this.addActions(stack, token.extended, token.end, actionIndex)
+      actionIndex = this.addActions(stack, token.term, token.end, actionIndex)
       if (actionIndex > startIndex) {
         main = token
         break
@@ -111,9 +108,10 @@ class TokenCache {
     if (input.token > -1) {
       token.end = input.tokenEnd
       token.term = input.token
-      let specIndex = findOffset(this.parser.data, this.parser.specializeTable, token.term)
+      let {parser} = stack.cx
+      let specIndex = findOffset(parser.data, parser.specializeTable, token.term)
       if (specIndex >= 0) {
-        let found = this.parser.specializations[specIndex][input.read(token.start, token.end)]
+        let found = parser.specializations[specIndex][input.read(token.start, token.end)]
         if (found != null) {
           if ((found & 1) == SPECIALIZE) token.term = found >> 1
           else token.extended = found >> 1
@@ -137,8 +135,8 @@ class TokenCache {
     return index
   }
 
-  addActions(state: ParseState, token: number, end: number, index: number) {
-    let data = this.parser.data
+  addActions(stack: Stack, token: number, end: number, index: number) {
+    let {state} = stack, {data} = stack.cx.parser
     for (let set = 0; set < 2; set++) {
       for (let i = set ? state.skip : state.actions, next; (next = data[i]) != TERM_ERR; i += 3) {
         if (next == token || (next == TERM_OTHER && index == 0))
@@ -156,16 +154,14 @@ export class ParseContext {
   tokens: TokenCache
   stacks: Stack[]
   cache: CacheCursor | null
-  maxBufferLength: number
   strict: boolean
 
   // @internal
-  constructor(readonly parser: Parser,
-              readonly input: InputStream,
+  constructor(parser: Parser,
+              input: InputStream,
               {cache = null, strict = false, bufferLength = DEFAULT_BUFFER_LENGTH}: ParseOptions = {}) {
-    this.tokens = new TokenCache(parser)
-    this.stacks = [Stack.start(this)]
-    this.maxBufferLength = bufferLength
+    this.tokens = new TokenCache
+    this.stacks = [Stack.start(new StackContext(parser, bufferLength, input))]
     this.strict = strict
     this.cache = cache ? new CacheCursor(cache) : null
   }
@@ -223,15 +219,15 @@ export class ParseContext {
   }
 
   advance() {
-    let stack = this.takeStack(), start = stack.inputPos
+    let stack = this.takeStack(), start = stack.inputPos, {input, parser} = stack.cx
 
     if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
-        if ((cached.type & GRAMMAR_ID_MASK) != this.parser.id) continue
-        let match = this.parser.getGoto(stack.state.id, cached.type & TERM_ID_MASK)
+        if ((cached.type & GRAMMAR_ID_MASK) != parser.id) continue
+        let match = parser.getGoto(stack.state.id, cached.type & TERM_ID_MASK)
         if (match > -1 && !isFragile(cached)) {
-          stack.useCached(cached, this.parser.states[match])
-          if (verbose) console.log(stack + ` (via reuse of ${this.parser.getName(cached.type)})`)
+          stack.useNode(cached, match)
+          if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.type)})`)
           this.putStack(stack)
           return null
         }
@@ -242,32 +238,71 @@ export class ParseContext {
       }
     }
 
+    let nest = stack.state.startNested
+    maybeNest: if (nest > -1) {
+      let {grammar, end: endToken, type} = parser.nested[nest]
+      let filterEnd = undefined, parse = null, nested
+      if (!(grammar instanceof Parser)) {
+        let query = grammar(input, stack)
+        if (!query) break maybeNest
+        ;({parse, parser: nested, filterEnd} = query)
+      } else {
+        nested = grammar
+      }
+      let end = this.scanForNestEnd(stack, endToken, filterEnd)
+      let clippedInput = stack.cx.input.clip(end)
+      if (parse) {
+        let node = parse(clippedInput)
+        if (!(node.type & TERM_TAGGED)) node = node.withType(type | parser.id)
+        stack.useNode(node, parser.getGoto(stack.state.id, type, true))
+        this.putStack(stack)
+      } else {
+        let newStack = Stack.start(new StackContext(nested!, stack.cx.maxBufferLength, clippedInput, stack), stack.inputPos)
+        if (verbose) console.log(newStack + ` (nested)`)
+        this.putStack(newStack)
+      }
+      return null
+    }
+
     let defaultReduce = stack.state.defaultReduce
     if (defaultReduce > 0) {
       stack.reduce(defaultReduce)
       this.putStack(stack)
-      if (verbose) console.log(stack + ` (via always-reduce ${this.parser.getName(defaultReduce & ACTION_VALUE_MASK)})`)
+      if (verbose) console.log(stack + ` (via always-reduce ${parser.getName(defaultReduce & ACTION_VALUE_MASK)})`)
       return null
     }
 
-    let actions = this.tokens.getActions(stack, this.input)
+    let actions = this.tokens.getActions(stack, input)
     for (let i = 0; i < actions.length;) {
       let action = actions[i++], term = actions[i++], end = actions[i++]
       let localStack = i == actions.length ? stack : stack.split()
       localStack.apply(action, term, end)
       if (verbose)
         console.log(localStack + ` (via ${(action & REDUCE_FLAG) == 0 ? "shift"
-                     : `reduce of ${this.parser.getName(action & ACTION_VALUE_MASK)}`} for ${
-        this.parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
+                     : `reduce of ${parser.getName(action & ACTION_VALUE_MASK)}`} for ${
+        parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
       this.putStack(localStack, (action & REDUCE_FLAG) != 0)
     }
     if (actions.length > 0) return null
 
     // If we're here, the stack failed to advance normally
 
-    if (start == this.input.length && (stack.state.accepting || this.stacks.length == 0)) {
+    if (start == input.length && (stack.state.accepting || this.stacks.length == 0)) {
       while (!stack.state.accepting && stack.forceReduce()) {}
-      return stack.toTree()
+      let tree = stack.toTree(), {parent} = stack.cx
+      if (parent) {
+        // This is a nested parse—add its result to the parent stack and
+        // continue with that one.
+        let parentParser = parent.cx.parser, info = parentParser.nested[parent.state.startNested]
+        parent.useNode(tree.withType(info.type | parentParser.id).move(-parent.inputPos),
+                       parentParser.getGoto(parent.state.id, info.type, true))
+        if (verbose) console.log(parent + ` (via unnest ${parentParser.getName(info.type)})`)
+        this.putStack(parent)
+        return null
+      } else {
+        // Actual end of parse
+        return stack.toTree()
+      }
     }
 
     let {end, term} = this.tokens.mainToken
@@ -280,18 +315,27 @@ export class ParseContext {
       }
 
       if (end == start) {
-        if (start == this.input.length) return null
+        if (start == input.length) return null
         end++
         term = TERM_ERR
       }
       stack.recoverByDelete(term, end)
-      if (verbose) console.log(stack + " (via recover-delete)")
+      if (verbose) console.log(stack + ` (via recover-delete ${parser.getName(term)})`)
       this.putStack(stack)
     } else if (!this.stacks.length) {
       // Only happens in strict mode
-      throw new SyntaxError("No parse at " + start + " with " + this.parser.getName(term) + " (stack is " + stack + ")")
+      throw new SyntaxError("No parse at " + start + " with " + parser.getName(term) + " (stack is " + stack + ")")
     }
     return null
+  }
+
+  scanForNestEnd(stack: Stack, endToken: TokenGroup, filter?: ((token: string) => boolean)) {
+    let input = stack.cx.input
+    for (let pos = stack.inputPos; pos < input.length; pos++) {
+      endToken.token(input.goto(pos), stack)
+      if (input.token > -1 && (!filter || filter(input.read(pos, input.tokenEnd)))) return pos
+    }
+    return input.length
   }
 }
 
@@ -304,7 +348,7 @@ export class Parser {
               readonly goto: Readonly<Uint16Array>,
               readonly tags: TagMap<string>,
               readonly tokenizers: readonly Tokenizer[],
-              readonly nested: readonly {grammar: NestedGrammar, end: Tokenizer}[],
+              readonly nested: readonly {grammar: NestedGrammar, end: TokenGroup, type: number}[],
               readonly specializeTable: number,
               readonly specializations: readonly {[value: string]: number}[],
               readonly tokenPrecTable: number,
@@ -392,7 +436,7 @@ export class Parser {
   }
 
   static deserialize(states: string, stateData: string, goto: string, tags: readonly string[],
-                     tokenData: string, tokenizers: (Tokenizer | number)[], nested: [NestedGrammar, string][],
+                     tokenData: string, tokenizers: (Tokenizer | number)[], nested: [NestedGrammar, string, number, number][],
                      specializeTable: number, specializations: readonly {[term: string]: number}[],
                      tokenPrec: number,
                      skippedNodes: number,
@@ -403,7 +447,7 @@ export class Parser {
     let tokenArray = decodeArray(tokenData), id = Parser.allocateID()
     return new Parser(id, stateObjs, decodeArray(stateData), decodeArray(goto), TagMap.single(id, tags),
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
-                      nested.map(([grammar, endToken]) => ({grammar, end: new TokenGroup(decodeArray(endToken), 0)})),
+                      nested.map(([grammar, endToken, type]) => ({grammar, end: new TokenGroup(decodeArray(endToken), 0), type})),
                       specializeTable, specializations.map(withoutPrototype),
                       tokenPrec, skippedNodes, termNames)
   }

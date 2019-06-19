@@ -1,6 +1,7 @@
 import {ParseState, REDUCE_FLAG, REDUCE_REPEAT_FLAG, REDUCE_DEPTH_SHIFT, ACTION_VALUE_MASK, STAY_FLAG, GOTO_FLAG} from "./state"
 import {TERM_TAGGED, TERM_ERR} from "./term"
 import {Parser} from "./parse"
+import {InputStream} from "./token"
 import {Tree, REUSED_VALUE, BufferCursor} from "lezer-tree"
 
 const BADNESS_INCREMENT = 100
@@ -31,10 +32,12 @@ export const BADNESS_STABILIZING = 50, BADNESS_WILD = 150
 // applied when its badness is < BADNESS_WILD, or no better parse
 // exists at that point.
 
-type StackContext = {
-  parser: Parser
-  reused: Tree[]
-  maxBufferLength: number
+export class StackContext {
+  reused: Tree[] = []
+  constructor(readonly parser: Parser,
+              readonly maxBufferLength: number,
+              readonly input: InputStream,
+              readonly parent: Stack | null = null) {}
 }
 
 export class Stack {
@@ -54,8 +57,8 @@ export class Stack {
     return "[" + this.stack.filter((_, i) => i % 3 == 0).concat(this.state.id).join(",") + "]"
   }
 
-  static start(cx: StackContext) {
-    return new Stack(cx, [], cx.parser.states[0], 0, 0, 0, [], 0, null)
+  static start(cx: StackContext, pos = 0) {
+    return new Stack(cx, [], cx.parser.states[0], pos, pos, 0, [], 0, null)
   }
 
   pushState(state: ParseState, start: number) {
@@ -139,7 +142,7 @@ export class Stack {
     else this.shift(action, next, nextEnd)
   }
 
-  useCached(value: Tree, next: ParseState) {
+  useNode(value: Tree, next: number) {
     let index = this.cx.reused.length - 1
     if (index < 0 || this.cx.reused[index] != value) {
       this.cx.reused.push(value)
@@ -147,7 +150,7 @@ export class Stack {
     }
     let start = this.inputPos
     this.pos = this.inputPos = start + value.length
-    this.pushState(next, start)
+    this.pushState(this.cx.parser.states[next], start)
     this.badness >> 1 // FIXME
     this.buffer.push(index, start, this.pos, REUSED_VALUE)
   }
