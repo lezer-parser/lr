@@ -9,6 +9,10 @@
 // When storing actions in 16-bit number arrays, they are split in the
 // middle, with the first element holding the first 16 bits, and the
 // second the rest.
+//
+// The value 0 (which is not a valid action because no shift goes to
+// state 0, the start state), is often used to denote the absence of a
+// valid action.
 export const enum Action {
   // Distinguishes between shift (off) and reduce (on) actions.
   ReduceFlag = 1 << 16,

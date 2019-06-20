@@ -1,5 +1,10 @@
 import {Stack} from "./stack"
 
+// This is the interface the parser uses to access the document. It
+// supports both sequential (`next()`) and random-access (`peek`,
+// `read`) reads.
+//
+// This is an interface to a stream of UTF16 code points.
 export interface InputStream {
   pos: number
   length: number
