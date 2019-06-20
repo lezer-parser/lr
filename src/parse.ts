@@ -1,5 +1,5 @@
 import {Stack, Badness} from "./stack"
-import {Action, Specialize, Term} from "./constants"
+import {Action, Specialize, Term, Seq} from "./constants"
 import {ParseState} from "./state"
 import {InputStream, StringStream, Tokenizer, TokenGroup} from "./token"
 import {DefaultBufferLength, grammarID, termID, Tree, TreeBuffer, TagMap} from "lezer-tree"
@@ -147,8 +147,8 @@ class TokenCache {
   addActions(stack: Stack, token: number, end: number, index: number) {
     let {state} = stack, {data} = stack.cx.parser
     for (let set = 0; set < 2; set++) {
-      for (let i = set ? state.skip : state.actions, next; (next = data[i]) != Term.Err; i += 3) {
-        if (next == token || (next == Term.Other && index == 0))
+      for (let i = set ? state.skip : state.actions, next; (next = data[i]) != Seq.End; i += 3) {
+        if (next == token || (next == Term.Err && index == 0))
           index = this.putAction(data[i + 1] | (data[i + 2] << 16), token, end, index)
       }
     }
@@ -406,8 +406,8 @@ export class Parser {
   hasAction(state: ParseState, terminal: number) {
     let data = this.data
     for (let set = 0; set < 2; set++) {
-      for (let i = set ? state.skip : state.actions, next; (next = data[i]) != Term.Err; i += 3) {
-        if (next == terminal || next == Term.Other)
+      for (let i = set ? state.skip : state.actions, next; (next = data[i]) != Seq.End; i += 3) {
+        if (next == terminal || next == Term.Err)
           return data[i + 1] | (data[i + 2] << 16)
       }
     }
@@ -415,7 +415,7 @@ export class Parser {
   }
 
   getRecover(state: ParseState, terminal: number) {
-    for (let i = state.recover, next; (next = this.data[i]) != Term.Err; i += 2)
+    for (let i = state.recover, next; (next = this.data[i]) != Seq.End; i += 2)
       if (next == terminal) return this.data[i + 1]
     return 0
   }
@@ -423,14 +423,14 @@ export class Parser {
   anyReduce(state: ParseState) {
     if (state.defaultReduce > 0) return state.defaultReduce
     for (let i = state.actions;; i += 3) {
-      if (this.data[i] == Term.Err) return 0
+      if (this.data[i] == Seq.End) return 0
       let isReduce = this.data[i + 2]
       if (isReduce) return this.data[i + 1] | (isReduce << 16)
     }
   }
 
   isSkipped(term: number) {
-    for (let i = this.skippedNodes, cur; (cur = this.data[i]) != Term.Err; i++)
+    for (let i = this.skippedNodes, cur; (cur = this.data[i]) != Seq.End; i++)
       if (cur == term) return true
     return false
   }
@@ -486,7 +486,7 @@ export class Parser {
 }
 
 function findOffset(data: Readonly<Uint16Array>, start: number, term: number) {
-  for (let i = start, next; (next = data[i]) != Term.Err; i++)
+  for (let i = start, next; (next = data[i]) != Seq.End; i++)
     if (next == term) return i - start
   return -1
 }

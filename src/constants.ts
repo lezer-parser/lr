@@ -71,8 +71,10 @@ export const enum Term {
   // others are allocated per grammar.
   Eof = 0,
   Err = 1,
-  // A parse state's actions map may end with a mapping for
-  // `Term.Other` to indicate that any other term should match a given
-  // action.
-  Other = 0xffff
+}
+
+export const enum Seq {
+  // Used as end marker for most of the sequences stored in uint16
+  // arrays
+  End = 0xffff
 }

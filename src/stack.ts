@@ -231,7 +231,6 @@ export class Stack {
   forceReduce() {
     let reduce = this.cx.parser.anyReduce(this.state)
     if (reduce == 0) {
-      // FIXME somehow mark the resulting node as not suitable for reuse
       reduce = this.state.forcedReduce
       if ((reduce & Action.ReduceFlag) == 0) return false
       this.shiftValue(Term.Err, this.pos, this.pos)
