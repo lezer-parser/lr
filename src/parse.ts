@@ -132,7 +132,7 @@ class TokenCache {
 
   updateCachedToken(token: CachedToken, stack: Stack, input: InputStream) {
     token.clear(stack.inputPos)
-    token.tokenizer.token(input.goto(stack.inputPos), token, stack)
+    token.tokenizer.token(input, token, stack)
     if (token.value > -1) {
       let {parser} = stack.cx
       let specIndex = findOffset(parser.data, parser.specializeTable, token.value)
@@ -308,7 +308,7 @@ export class ParseContext {
       let {grammar, end: endToken, type, placeholder} = parser.nested[nest]
       let filterEnd = undefined, parseNode = null, nested
       if (typeof grammar == "function") {
-        let query = grammar(input.goto(stack.inputPos), stack)
+        let query = grammar(input, stack)
         if (query.stay) break maybeNest
         ;({parseNode, parser: nested, filterEnd} = query)
       } else {
@@ -401,7 +401,7 @@ export class ParseContext {
     for (let pos = stack.inputPos; pos < input.length; pos++) {
       dummyToken.start = pos
       dummyToken.value = -1
-      endToken.token(input.goto(pos), dummyToken, stack)
+      endToken.token(input, dummyToken, stack)
       if (dummyToken.value > -1 && (!filter || filter(input.read(pos, dummyToken.end)))) return pos
     }
     return input.length

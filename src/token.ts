@@ -31,42 +31,19 @@ export class Token {
 //
 // This is an interface to a stream of UTF16 code points.
 export interface InputStream {
-  pos: number
   length: number
-  next(): number
-  peek(pos?: number): number
-  goto(n: number): InputStream
+  get(pos: number): number
   read(from: number, to: number): string
   clip(at: number): InputStream
 }
 
 export class StringStream implements InputStream {
-  pos = 0
-  token = -1
-  tokenEnd = -1
-
   constructor(readonly string: string, readonly length = string.length) {}
 
-  next(): number {
-    if (this.pos == this.length) return -1
-    return this.string.charCodeAt(this.pos++)
-  }
-
-  peek(pos = this.pos) {
+  get(pos: number) {
     return pos < 0 || pos >= this.length ? -1 : this.string.charCodeAt(pos)
   }
   
-  accept(term: number, pos = this.pos) {
-    this.token = term
-    this.tokenEnd = pos
-  }
-
-  goto(n: number) {
-    this.pos = this.tokenEnd = n
-    this.token = -1
-    return this
-  }
-
   read(from: number, to: number): string { return this.string.slice(from, Math.min(this.length, to)) }
 
   clip(at: number) { return new StringStream(this.string, at) }
@@ -122,7 +99,7 @@ function readToken(data: Readonly<Uint16Array>,
                    stack: Stack,
                    group: number) {
   let state = 0, groupMask = 1 << group
-  scan: for (;;) {
+  scan: for (let pos = token.start;;) {
     if ((groupMask & data[state]) == 0) break
     let accEnd = data[state + 1]
     // Check whether this state can lead to a token in the current group
@@ -131,11 +108,11 @@ function readToken(data: Readonly<Uint16Array>,
     for (let i = state + 3; i < accEnd; i += 2) if ((data[i + 1] & groupMask) > 0) {
       let term = data[i]
       if (token.value == -1 || token.value == term || stack.cx.parser.overrides(term, token.value)) {
-        token.accept(term, input.pos)
+        token.accept(term, pos)
         break
       }
     }
-    let next = input.next()
+    let next = input.get(pos++)
     // Do a binary search on the state's edges
     for (let low = 0, high = data[state + 2]; low < high;) {
       let mid = (low + high) >> 1
