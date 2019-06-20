@@ -1,7 +1,7 @@
 import {Stack, Badness} from "./stack"
 import {Action, Specialize, Term, Seq} from "./constants"
 import {ParseState} from "./state"
-import {InputStream, StringStream, Tokenizer, TokenGroup} from "./token"
+import {InputStream, Token, StringStream, Tokenizer, TokenGroup} from "./token"
 import {DefaultBufferLength, grammarID, termID, Tree, TreeBuffer, TagMap, allocateGrammarID} from "lezer-tree"
 import {decodeArray} from "./decode"
 
@@ -84,32 +84,22 @@ class CacheCursor {
   }
 }
 
-class CachedToken {
-  start = -1
-  end = -1
-  term = -1
+class CachedToken extends Token {
   extended = -1
 
-  constructor(readonly tokenizer: Tokenizer) {}
+  constructor(readonly tokenizer: Tokenizer) { super() }
 
-  asError(pos: number, eof: number) {
-    this.start = pos
-    if (pos == eof) {
-      this.term = Term.Eof
-      this.end = pos
-    } else {
-      this.term = Term.Err
-      this.end = pos + 1
-    }
-    return this
+  clear(start: number) {
+    this.start = start
+    this.value = this.extended = -1
   }
 }
 
-const dummyToken = new CachedToken(null as any)
+const dummyToken = new Token
 
 class TokenCache {
   tokens: CachedToken[] = []
-  mainToken: CachedToken = null as any as CachedToken
+  mainToken: Token = dummyToken
 
   actions: number[] = []
 
@@ -127,12 +117,12 @@ class TokenCache {
 
       let startIndex = actionIndex
       if (token.extended > -1) actionIndex = this.addActions(stack, token.extended, token.end, actionIndex)
-      actionIndex = this.addActions(stack, token.term, token.end, actionIndex)
+      actionIndex = this.addActions(stack, token.value, token.end, actionIndex)
       if (actionIndex > startIndex) {
         main = token
         break
       }
-      if (!main || token.term != Term.Err) main = token
+      if (!main || token.value != Term.Err) main = token
     }
 
     if (this.actions.length > actionIndex) this.actions.length = actionIndex
@@ -141,18 +131,15 @@ class TokenCache {
   }
 
   updateCachedToken(token: CachedToken, stack: Stack, input: InputStream) {
-    token.extended = -1
-    token.tokenizer.token(input.goto(stack.inputPos), stack)
-    if (input.token > -1) {
-      token.start = stack.inputPos
-      token.end = input.tokenEnd
-      token.term = input.token
+    token.clear(stack.inputPos)
+    token.tokenizer.token(input.goto(stack.inputPos), token, stack)
+    if (token.value > -1) {
       let {parser} = stack.cx
-      let specIndex = findOffset(parser.data, parser.specializeTable, token.term)
+      let specIndex = findOffset(parser.data, parser.specializeTable, token.value)
       if (specIndex >= 0) {
         let found = parser.specializations[specIndex][input.read(token.start, token.end)]
         if (found != null) {
-          if ((found & 1) == Specialize.Specialize) token.term = found >> 1
+          if ((found & 1) == Specialize.Specialize) token.value = found >> 1
           else token.extended = found >> 1
         }
       }
@@ -385,7 +372,7 @@ export class ParseContext {
       }
     }
 
-    let {end, term} = stack.cx.tokens.mainToken
+    let {end, value: term} = stack.cx.tokens.mainToken
     if (!this.strict &&
         !(stack.badness > Badness.Wild && this.stacks.some(s => s.pos >= stack.inputPos && s.badness <= stack.badness))) {
       let inserted = stack.recoverByInsert(term, end)
@@ -412,8 +399,10 @@ export class ParseContext {
   private scanForNestEnd(stack: Stack, endToken: TokenGroup, filter?: ((token: string) => boolean)) {
     let input = stack.cx.input
     for (let pos = stack.inputPos; pos < input.length; pos++) {
-      endToken.token(input.goto(pos), stack)
-      if (input.token > -1 && (!filter || filter(input.read(pos, input.tokenEnd)))) return pos
+      dummyToken.start = pos
+      dummyToken.value = -1
+      endToken.token(input.goto(pos), dummyToken, stack)
+      if (dummyToken.value > -1 && (!filter || filter(input.read(pos, dummyToken.end)))) return pos
     }
     return input.length
   }

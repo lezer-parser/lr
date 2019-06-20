@@ -1,4 +1,29 @@
+import {Term} from "./constants"
 import {Stack} from "./stack"
+
+export class Token {
+  start = -1
+  end = -1
+  value = -1
+
+  accept(value: number, end: number) {
+    this.value = value
+    this.end = end
+  }
+
+  // @internal
+  asError(start: number, eof: number) {
+    this.start = start
+    if (start == eof) {
+      this.value = Term.Eof
+      this.end = start
+    } else {
+      this.value = Term.Err
+      this.end = start + 1
+    }
+    return this
+  }
+}
 
 // This is the interface the parser uses to access the document. It
 // supports both sequential (`next()`) and random-access (`peek`,
@@ -10,9 +35,6 @@ export interface InputStream {
   length: number
   next(): number
   peek(pos?: number): number
-  accept(term: number, pos?: number): void
-  token: number
-  tokenEnd: number
   goto(n: number): InputStream
   read(from: number, to: number): string
   clip(at: number): InputStream
@@ -51,7 +73,7 @@ export class StringStream implements InputStream {
 }
 
 export interface Tokenizer {
-  token(input: InputStream, stack: Stack): void
+  token(input: InputStream, token: Token, stack: Stack): void
   contextual: boolean
 }
 
@@ -60,7 +82,7 @@ export class TokenGroup implements Tokenizer {
 
   constructor(readonly data: Readonly<Uint16Array>, readonly id: number) {}
 
-  token(input: InputStream, stack: Stack) { token(this.data, input, stack, this.id) }
+  token(input: InputStream, token: Token, stack: Stack) { readToken(this.data, input, token, stack, this.id) }
 }
 
 TokenGroup.prototype.contextual = false
@@ -68,7 +90,7 @@ TokenGroup.prototype.contextual = false
 export class ExternalTokenizer {
   contextual: boolean
 
-  constructor(readonly token: (input: InputStream, stack: Stack) => void,
+  constructor(readonly token: (input: InputStream, token: Token, stack: Stack) => void,
               options: {contextual?: boolean} = {}) {
     this.contextual = options && options.contextual || false
   }
@@ -93,11 +115,12 @@ export class ExternalTokenizer {
 //
 // This function interprets that data, running through a stream as
 // long as new states with the a matching group mask can be reached,
-// and calling `input.accept` when it matches a token.
-function token(data: Readonly<Uint16Array>,
-               input: InputStream,
-               stack: Stack,
-               group: number) {
+// and updating `token` when it matches a token.
+function readToken(data: Readonly<Uint16Array>,
+                   input: InputStream,
+                   token: Token,
+                   stack: Stack,
+                   group: number) {
   let state = 0, groupMask = 1 << group
   scan: for (;;) {
     if ((groupMask & data[state]) == 0) break
@@ -107,8 +130,8 @@ function token(data: Readonly<Uint16Array>,
     // lower-precedence / shorter tokens
     for (let i = state + 3; i < accEnd; i += 2) if ((data[i + 1] & groupMask) > 0) {
       let term = data[i]
-      if (input.token == -1 || input.token == term || stack.cx.parser.overrides(term, input.token)) {
-        input.accept(term)
+      if (token.value == -1 || token.value == term || stack.cx.parser.overrides(term, token.value)) {
+        token.accept(term, input.pos)
         break
       }
     }
