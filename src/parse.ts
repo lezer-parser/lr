@@ -482,9 +482,6 @@ export class Parser {
                       tokenPrec, skippedNodes, termNames)
   }
 
-  // FIXME Horrid module interop kludge needed when consuming parser packages through ts-node
-  get default() { return this }
-
   static allocateID() { return (nextGrammarID++) << 16 }
 }
 
