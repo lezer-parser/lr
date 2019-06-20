@@ -1,13 +1,11 @@
-import {Stack, StackContext, BADNESS_WILD, BADNESS_STABILIZING} from "./stack"
-import {ParseState, ACTION_VALUE_MASK, REDUCE_FLAG} from "./state"
+import {Stack, StackContext, Badness} from "./stack"
+import {Action, Specialize, Term} from "./constants"
+import {ParseState} from "./state"
 import {InputStream, StringStream, Tokenizer, TokenGroup} from "./token"
-import {TERM_EOF, TERM_ERR, TERM_OTHER, TERM_TAGGED} from "./term"
 import {DEFAULT_BUFFER_LENGTH, TERM_ID_MASK, GRAMMAR_ID_MASK, Tree, TreeBuffer, TagMap} from "lezer-tree"
 import {decodeArray} from "./decode"
 
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
-
-export const SPECIALIZE = 0, EXTEND = 1
 
 export type NestedGrammar = null | Parser | ((input: InputStream, stack: Stack) => {
   stay?: boolean
@@ -71,10 +69,10 @@ class CachedToken {
   asError(pos: number, eof: number) {
     this.start = pos
     if (pos == eof) {
-      this.term = TERM_EOF
+      this.term = Term.Eof
       this.end = pos
     } else {
-      this.term = TERM_ERR
+      this.term = Term.Err
       this.end = pos + 1
     }
     return this
@@ -108,7 +106,7 @@ class TokenCache {
         main = token
         break
       }
-      if (!main || token.term != TERM_ERR) main = token
+      if (!main || token.term != Term.Err) main = token
     }
 
     if (this.actions.length > actionIndex) this.actions.length = actionIndex
@@ -128,7 +126,7 @@ class TokenCache {
       if (specIndex >= 0) {
         let found = parser.specializations[specIndex][input.read(token.start, token.end)]
         if (found != null) {
-          if ((found & 1) == SPECIALIZE) token.term = found >> 1
+          if ((found & 1) == Specialize.Specialize) token.term = found >> 1
           else token.extended = found >> 1
         }
       }
@@ -149,8 +147,8 @@ class TokenCache {
   addActions(stack: Stack, token: number, end: number, index: number) {
     let {state} = stack, {data} = stack.cx.parser
     for (let set = 0; set < 2; set++) {
-      for (let i = set ? state.skip : state.actions, next; (next = data[i]) != TERM_ERR; i += 3) {
-        if (next == token || (next == TERM_OTHER && index == 0))
+      for (let i = set ? state.skip : state.actions, next; (next = data[i]) != Term.Err; i += 3) {
+        if (next == token || (next == Term.Other && index == 0))
           index = this.putAction(data[i + 1] | (data[i + 2] << 16), token, end, index)
       }
     }
@@ -199,12 +197,12 @@ export class ParseContext {
     return elt
   }
 
-  putStack(stack: Stack, strict = stack.badness < BADNESS_STABILIZING || stack.badness > BADNESS_WILD): boolean {
+  putStack(stack: Stack, strict = stack.badness < Badness.Stabilizing || stack.badness > Badness.Wild): boolean {
     let stacks = this.stacks
     for (let i = 0; i < stacks.length; i++) {
       let other = stacks[i]
       if ((strict || other.state == stack.state) && other.inputPos == stack.inputPos) {
-        let diff = stack.badness - other.badness || (stack.badness < BADNESS_STABILIZING ? 0 : stack.stack.length - other.stack.length)
+        let diff = stack.badness - other.badness || (stack.badness < Badness.Stabilizing ? 0 : stack.stack.length - other.stack.length)
         if (diff < 0) { stacks[i] = stack; return true }
         else if (diff > 0) return false
       }
@@ -265,7 +263,7 @@ export class ParseContext {
       let clippedInput = stack.cx.input.clip(end)
       if (parseNode || !nested) {
         let node = parseNode ? parseNode(clippedInput) : Tree.empty
-        stack.useNode(new Tree(node.children, node.positions, node.type & TERM_TAGGED || type < 0 ? node.type : type | parser.id,
+        stack.useNode(new Tree(node.children, node.positions, node.type & Term.Tagged || type < 0 ? node.type : type | parser.id,
                                end - stack.inputPos),
                       parser.getGoto(stack.state.id, placeholder, true))
         this.putStack(stack)
@@ -281,7 +279,7 @@ export class ParseContext {
     if (defaultReduce > 0) {
       stack.reduce(defaultReduce)
       this.putStack(stack)
-      if (verbose) console.log(stack + ` (via always-reduce ${parser.getName(defaultReduce & ACTION_VALUE_MASK)})`)
+      if (verbose) console.log(stack + ` (via always-reduce ${parser.getName(defaultReduce & Action.ValueMask)})`)
       return null
     }
 
@@ -291,10 +289,10 @@ export class ParseContext {
       let localStack = i == actions.length ? stack : stack.split()
       localStack.apply(action, term, end)
       if (verbose)
-        console.log(localStack + ` (via ${(action & REDUCE_FLAG) == 0 ? "shift"
-                     : `reduce of ${parser.getName(action & ACTION_VALUE_MASK)}`} for ${
+        console.log(localStack + ` (via ${(action & Action.ReduceFlag) == 0 ? "shift"
+                     : `reduce of ${parser.getName(action & Action.ValueMask)}`} for ${
         parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
-      this.putStack(localStack, (action & REDUCE_FLAG) != 0)
+      this.putStack(localStack, (action & Action.ReduceFlag) != 0)
     }
     if (actions.length > 0) return null
 
@@ -321,7 +319,7 @@ export class ParseContext {
 
     let {end, term} = this.tokens.mainToken
     if (!this.strict &&
-        !(stack.badness > BADNESS_WILD && this.stacks.some(s => s.pos >= stack.inputPos && s.badness <= stack.badness))) {
+        !(stack.badness > Badness.Wild && this.stacks.some(s => s.pos >= stack.inputPos && s.badness <= stack.badness))) {
       let inserted = stack.recoverByInsert(term, end)
       if (inserted) {
         if (verbose) console.log(inserted + " (via recover-insert)")
@@ -331,7 +329,7 @@ export class ParseContext {
       if (end == start) {
         if (start == input.length) return null
         end++
-        term = TERM_ERR
+        term = Term.Err
       }
       stack.recoverByDelete(term, end)
       if (verbose) console.log(stack + ` (via recover-delete ${parser.getName(term)})`)
@@ -402,8 +400,8 @@ export class Parser {
   hasAction(state: ParseState, terminal: number) {
     let data = this.data
     for (let set = 0; set < 2; set++) {
-      for (let i = set ? state.skip : state.actions, next; (next = data[i]) != TERM_ERR; i += 3) {
-        if (next == terminal || next == TERM_OTHER)
+      for (let i = set ? state.skip : state.actions, next; (next = data[i]) != Term.Err; i += 3) {
+        if (next == terminal || next == Term.Other)
           return data[i + 1] | (data[i + 2] << 16)
       }
     }
@@ -411,7 +409,7 @@ export class Parser {
   }
 
   getRecover(state: ParseState, terminal: number) {
-    for (let i = state.recover, next; (next = this.data[i]) != TERM_ERR; i += 2)
+    for (let i = state.recover, next; (next = this.data[i]) != Term.Err; i += 2)
       if (next == terminal) return this.data[i + 1]
     return 0
   }
@@ -419,14 +417,14 @@ export class Parser {
   anyReduce(state: ParseState) {
     if (state.defaultReduce > 0) return state.defaultReduce
     for (let i = state.actions;; i += 3) {
-      if (this.data[i] == TERM_ERR) return 0
+      if (this.data[i] == Term.Err) return 0
       let isReduce = this.data[i + 2]
       if (isReduce) return this.data[i + 1] | (isReduce << 16)
     }
   }
 
   isSkipped(term: number) {
-    for (let i = this.skippedNodes, cur; (cur = this.data[i]) != TERM_ERR; i++)
+    for (let i = this.skippedNodes, cur; (cur = this.data[i]) != Term.Err; i++)
       if (cur == term) return true
     return false
   }
@@ -485,7 +483,7 @@ export class Parser {
 }
 
 function findOffset(data: Readonly<Uint16Array>, start: number, term: number) {
-  for (let i = start, next; (next = data[i]) != TERM_ERR; i++)
+  for (let i = start, next; (next = data[i]) != Term.Err; i++)
     if (next == term) return i - start
   return -1
 }
@@ -498,14 +496,14 @@ function withoutPrototype(obj: {}) {
 }
 
 function isFragile(node: Tree) {
-  let doneStart = false, doneEnd = false, fragile = node.type == TERM_ERR
+  let doneStart = false, doneEnd = false, fragile = node.type == Term.Err
   if (!fragile) node.iterate(0, node.length, type => {
-    return doneStart || (type == TERM_ERR ? fragile = doneStart = true : undefined)
+    return doneStart || (type == Term.Err ? fragile = doneStart = true : undefined)
   }, type => {
     doneStart = true
   })
   if (!fragile) node.iterate(node.length, 0, type => {
-    return doneEnd || (type == TERM_ERR ? fragile = doneEnd = true : undefined)
+    return doneEnd || (type == Term.Err ? fragile = doneEnd = true : undefined)
   }, type => {
     doneEnd = true
   })
