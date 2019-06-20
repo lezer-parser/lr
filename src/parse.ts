@@ -375,7 +375,7 @@ export class ParseContext {
     let {end, value: term} = stack.cx.tokens.mainToken
     if (!this.strict &&
         !(stack.badness > Badness.Wild && this.stacks.some(s => s.pos >= stack.pos && s.badness <= stack.badness))) {
-      let inserted = stack.recoverByInsert(term, end)
+      let inserted = stack.recoverByInsert(term)
       if (inserted) {
         if (verbose) console.log(inserted + " (via recover-insert)")
         this.putStack(inserted)
