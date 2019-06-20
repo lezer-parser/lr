@@ -1,4 +1,4 @@
-import {Stack, StackContext, Badness} from "./stack"
+import {Stack, Badness} from "./stack"
 import {Action, Specialize, Term} from "./constants"
 import {ParseState} from "./state"
 import {InputStream, StringStream, Tokenizer, TokenGroup} from "./token"
@@ -158,9 +158,17 @@ class TokenCache {
 
 export type ParseOptions = {cache?: Tree | null, strict?: boolean, bufferLength?: number}
 
+export class StackContext {
+  reused: Tree[] = []
+  tokens = new TokenCache
+  constructor(readonly parser: Parser,
+              readonly maxBufferLength: number,
+              readonly input: InputStream,
+              readonly parent: Stack | null = null) {}
+}
+
 export class ParseContext {
   reused: Tree[] = []
-  tokens: TokenCache
   stacks: Stack[]
   cache: CacheCursor | null
   strict: boolean
@@ -169,8 +177,6 @@ export class ParseContext {
   constructor(parser: Parser,
               input: InputStream,
               {cache = null, strict = false, bufferLength = DefaultBufferLength}: ParseOptions = {}) {
-    // FIXME per stack context?
-    this.tokens = new TokenCache
     this.stacks = [Stack.start(new StackContext(parser, bufferLength, input))]
     this.strict = strict
     this.cache = cache ? new CacheCursor(cache) : null
@@ -283,7 +289,7 @@ export class ParseContext {
       return null
     }
 
-    let actions = this.tokens.getActions(stack, input)
+    let actions = stack.cx.tokens.getActions(stack, input)
     for (let i = 0; i < actions.length;) {
       let action = actions[i++], term = actions[i++], end = actions[i++]
       let localStack = i == actions.length ? stack : stack.split()
@@ -317,7 +323,7 @@ export class ParseContext {
       }
     }
 
-    let {end, term} = this.tokens.mainToken
+    let {end, term} = stack.cx.tokens.mainToken
     if (!this.strict &&
         !(stack.badness > Badness.Wild && this.stacks.some(s => s.pos >= stack.inputPos && s.badness <= stack.badness))) {
       let inserted = stack.recoverByInsert(term, end)

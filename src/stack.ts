@@ -1,7 +1,6 @@
 import {ParseState} from "./state"
 import {Action, Term} from "./constants"
-import {Parser} from "./parse"
-import {InputStream} from "./token"
+import {StackContext} from "./parse"
 import {Tree, BufferCursor} from "lezer-tree"
 
 export const enum Badness {
@@ -35,14 +34,6 @@ export const enum Badness {
 // When a stack fails to find an advancing action, recovery is only
 // applied when its badness is < `Badness.Wild`, or no better parse
 // exists at that point.
-
-export class StackContext {
-  reused: Tree[] = []
-  constructor(readonly parser: Parser,
-              readonly maxBufferLength: number,
-              readonly input: InputStream,
-              readonly parent: Stack | null = null) {}
-}
 
 export class Stack {
   constructor(readonly cx: StackContext,
