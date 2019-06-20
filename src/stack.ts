@@ -146,7 +146,7 @@ export class Stack {
     let start = this.inputPos
     this.pos = this.inputPos = start + value.length
     this.pushState(this.cx.parser.states[next], start)
-    this.badness >> 1 // FIXME
+    this.badness >>= 2 // (* 0.25)
     this.buffer.push(index, start, this.pos, -1 /* size < 0 means this is a reused value */)
   }
 

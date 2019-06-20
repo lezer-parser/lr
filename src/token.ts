@@ -69,6 +69,26 @@ export class ExternalTokenizer {
   }
 }
 
+// Tokenizer data is stored a big uint16 array containing, for each
+// state:
+//
+//  - A group bitmask, indicating what token groups are reachable from
+//    this state, so that paths that can only lead to tokens not in
+//    any of the current groups can be cut off early.
+//
+//  - The position of the end of the state's sequence of accepting
+//    tokens
+//
+//  - The number of outgoing edges for the state
+//
+//  - The accepting tokens, as (token id, group mask) pairs
+//
+//  - The outgoing edges, as (start character, end character, state
+//    index) triples, with end character being exclusive
+//
+// This function interprets that data, running through a stream as
+// long as new states with the a matching group mask can be reached,
+// and calling `input.accept` when it matches a token.
 function token(data: Readonly<Uint16Array>,
                input: InputStream,
                stack: Stack,
@@ -87,10 +107,15 @@ function token(data: Readonly<Uint16Array>,
         break
       }
     }
-    let next = input.next(), end = data[state + 2]
-    for (let i = accEnd; i < end; i += 3) { // FIXME binary search, multiple table forms
-      let from = data[i], to = data[i + 1]
-      if (next >= from && next < to) { state = data[i + 2]; continue scan }
+    let next = input.next()
+    // Do a binary search on the state's edges
+    for (let low = 0, high = data[state + 2]; low < high;) {
+      let mid = (low + high) >> 1
+      let index = accEnd + mid + (mid << 1)
+      let from = data[index], to = data[index + 1]
+      if (next < from) high = mid
+      else if (next >= to) low = mid + 1
+      else { state = data[index + 2]; continue scan }
     }
     break
   }
