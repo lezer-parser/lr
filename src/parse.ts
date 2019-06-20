@@ -2,7 +2,7 @@ import {Stack, Badness} from "./stack"
 import {Action, Specialize, Term, Seq} from "./constants"
 import {ParseState} from "./state"
 import {InputStream, StringStream, Tokenizer, TokenGroup} from "./token"
-import {DefaultBufferLength, grammarID, termID, Tree, TreeBuffer, TagMap} from "lezer-tree"
+import {DefaultBufferLength, grammarID, termID, Tree, TreeBuffer, TagMap, allocateGrammarID} from "lezer-tree"
 import {decodeArray} from "./decode"
 
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
@@ -357,8 +357,6 @@ export class ParseContext {
   }
 }
 
-let nextGrammarID = 0
-
 export class Parser {
   constructor(readonly id: number,
               readonly states: readonly ParseState[],
@@ -473,7 +471,7 @@ export class Parser {
     let arr = decodeArray(states, Uint32Array), stateObjs: ParseState[] = []
     for (let i = 0, id = 0; i < arr.length;)
       stateObjs.push(new ParseState(id++, arr[i++], arr[i++], arr[i++], arr[i++], arr[i++], arr[i++], arr[i++]))
-    let tokenArray = decodeArray(tokenData), id = Parser.allocateID()
+    let tokenArray = decodeArray(tokenData), id = allocateGrammarID()
     return new Parser(id, stateObjs, decodeArray(stateData), decodeArray(goto), TagMap.single(id, tags),
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
                       nested.map(([name, grammar, endToken, type, placeholder]) =>
@@ -481,8 +479,6 @@ export class Parser {
                       specializeTable, specializations.map(withoutPrototype),
                       tokenPrec, skippedNodes, termNames)
   }
-
-  static allocateID() { return (nextGrammarID++) << 16 }
 }
 
 function findOffset(data: Readonly<Uint16Array>, start: number, term: number) {
