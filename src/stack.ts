@@ -40,8 +40,8 @@ export class Stack {
               // Holds state, pos, value stack pos (15 bits array index, 15 bits buffer index) triplets for all but the top state
               readonly stack: number[],
               public state: ParseState,
+              public reducePos: number,
               public pos: number,
-              public inputPos: number,
               public badness: number,
               // Holds type,start,end,nodeCount quads
               readonly buffer: number[],
@@ -64,7 +64,7 @@ export class Stack {
   reduce(action: number) { // Encoded reduction action
     let depth = action >> Action.ReduceDepthShift, type = action & Action.ValueMask
     if (depth == 0) {
-      this.pushState(this.cx.parser.states[this.cx.parser.getGoto(this.state.id, type, true)], this.pos)
+      this.pushState(this.cx.parser.states[this.cx.parser.getGoto(this.state.id, type, true)], this.reducePos)
       return
     }
 
@@ -72,8 +72,8 @@ export class Stack {
     let start = this.stack[base - 2]
     let bufferBase = this.stack[base - 1], count = this.bufferBase + this.buffer.length - bufferBase
     if ((type & Term.Tagged) || (action & Action.RepeatFlag)) {
-      let pos = this.state.skipped ? this.inputPos : this.pos
-      if (this.inputPos == pos) { // Simple case, just append
+      let pos = this.state.skipped ? this.pos : this.reducePos
+      if (this.pos == pos) { // Simple case, just append
         this.buffer.push(type, start, pos, count + 4)
       } else { // There may be skipped nodes that have to be moved forward
         let index = this.buffer.length
@@ -116,19 +116,19 @@ export class Stack {
 
   shift(action: number, next: number, nextEnd: number) {
     if (action & Action.GotoFlag) {
-      this.pushState(this.cx.parser.states[action & Action.ValueMask], this.inputPos)
+      this.pushState(this.cx.parser.states[action & Action.ValueMask], this.pos)
     } else if ((action & Action.StayFlag) == 0) { // Regular shift
-      let start = this.inputPos, nextState = this.cx.parser.states[action]
-      if (nextEnd > this.inputPos || (next & Term.Tagged)) {
-        this.inputPos = nextEnd
-        if (!nextState.skipped) this.pos = nextEnd
+      let start = this.pos, nextState = this.cx.parser.states[action]
+      if (nextEnd > this.pos || (next & Term.Tagged)) {
+        this.pos = nextEnd
+        if (!nextState.skipped) this.reducePos = nextEnd
       }
       this.pushState(nextState, start)
       if (next & Term.Tagged) this.buffer.push(next, start, nextEnd, 4)
       this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
     } else { // Shift-and-stay, which means this is skipped token
-      if (next & Term.Tagged) this.buffer.push(next, this.inputPos, nextEnd, 4)
-      this.inputPos = nextEnd
+      if (next & Term.Tagged) this.buffer.push(next, this.pos, nextEnd, 4)
+      this.pos = nextEnd
     }
   }
 
@@ -143,11 +143,11 @@ export class Stack {
       this.cx.reused.push(value)
       index++
     }
-    let start = this.inputPos
-    this.pos = this.inputPos = start + value.length
+    let start = this.pos
+    this.reducePos = this.pos = start + value.length
     this.pushState(this.cx.parser.states[next], start)
     this.badness >>= 2 // (* 0.25)
-    this.buffer.push(index, start, this.pos, -1 /* size < 0 means this is a reused value */)
+    this.buffer.push(index, start, this.reducePos, -1 /* size < 0 means this is a reused value */)
   }
 
   split() {
@@ -157,18 +157,18 @@ export class Stack {
     // to reorder reductions and skipped tokens, and shared buffers
     // should be immutable, this copies any outstanding skipped tokens
     // to the new buffer, and puts the base pointer before them.
-    while (off > 0 && parent.buffer[off - 2] > parent.pos) off -= 4
+    while (off > 0 && parent.buffer[off - 2] > parent.reducePos) off -= 4
     let buffer = parent.buffer.slice(off), base = parent.bufferBase + off
     // Make sure parent points to an actual parent with content, if there is such a parent.
     while (parent && base == parent.bufferBase) parent = parent.parent
-    return new Stack(this.cx, this.stack.slice(), this.state, this.pos, this.inputPos,
+    return new Stack(this.cx, this.stack.slice(), this.state, this.reducePos, this.pos,
                      this.badness, buffer, base, parent)
   }
 
   recoverByDelete(next: number, nextEnd: number) {
-    if (next & Term.Tagged) this.shiftValue(next, this.inputPos, nextEnd)
-    this.shiftValue(Term.Err, this.inputPos, nextEnd, (next & Term.Tagged) ? 8 : 4)
-    this.inputPos = nextEnd
+    if (next & Term.Tagged) this.shiftValue(next, this.pos, nextEnd)
+    this.shiftValue(Term.Err, this.pos, nextEnd, (next & Term.Tagged) ? 8 : 4)
+    this.pos = nextEnd
     this.badness += Badness.Unit
   }
 
@@ -213,7 +213,7 @@ export class Stack {
     // Now that we know there's a recovery to be found, run the
     // reduces again, the expensive way, updating the stack
     let result = this.split(), parser = this.cx.parser
-    result.pos = result.inputPos
+    result.reducePos = result.pos
     result.badness += Badness.Unit
     for (;;) {
       for (;;) {
@@ -240,7 +240,7 @@ export class Stack {
   }
 
   compare(other: Stack) {
-    return this.inputPos - other.inputPos || this.badness - other.badness
+    return this.pos - other.pos || this.badness - other.badness
   }
 
   toTree(): Tree {

@@ -113,7 +113,7 @@ class TokenCache {
       let tokenizer = tokenizers[i]
       let token = this.tokens.find(c => c.tokenizer == tokenizer)
       if (!token) this.tokens.push(token = new CachedToken(tokenizer))
-      if (tokenizer.contextual || token.start != stack.inputPos) this.updateCachedToken(token, stack, input)
+      if (tokenizer.contextual || token.start != stack.pos) this.updateCachedToken(token, stack, input)
 
       let startIndex = actionIndex
       if (token.extended > -1) actionIndex = this.addActions(stack, token.extended, token.end, actionIndex)
@@ -126,12 +126,12 @@ class TokenCache {
     }
 
     if (this.actions.length > actionIndex) this.actions.length = actionIndex
-    this.mainToken = main || dummyToken.asError(stack.inputPos, input.length)
+    this.mainToken = main || dummyToken.asError(stack.pos, input.length)
     return this.actions
   }
 
   updateCachedToken(token: CachedToken, stack: Stack, input: InputStream) {
-    token.clear(stack.inputPos)
+    token.clear(stack.pos)
     token.tokenizer.token(input, token, stack)
     if (token.value > -1) {
       let {parser} = stack.cx
@@ -144,7 +144,7 @@ class TokenCache {
         }
       }
     } else {
-      token.asError(stack.inputPos, input.length)
+      token.asError(stack.pos, input.length)
     }
   }
 
@@ -241,7 +241,7 @@ export class ParseContext {
     let stacks = this.stacks
     for (let i = 0; i < stacks.length; i++) {
       let other = stacks[i]
-      if ((strict || other.state == stack.state) && other.inputPos == stack.inputPos) {
+      if ((strict || other.state == stack.state) && other.pos == stack.pos) {
         let diff = stack.badness - other.badness || (stack.badness < Badness.Stabilizing ? 0 : stack.stack.length - other.stack.length)
         if (diff < 0) { stacks[i] = stack; return true }
         else if (diff > 0) return false
@@ -261,7 +261,7 @@ export class ParseContext {
   }
 
   // The position to which the parse has advanced.
-  get pos() { return this.stacks[0].inputPos }
+  get pos() { return this.stacks[0].pos }
 
   // Force the parse to finish, generating a tree containing the nodes
   // parsed so far.
@@ -284,7 +284,7 @@ export class ParseContext {
   // When the parse is finished, this will return a syntax tree. When
   // not, it returns `null`.
   advance() {
-    let stack = this.takeStack(), start = stack.inputPos, {input, parser} = stack.cx
+    let stack = this.takeStack(), start = stack.pos, {input, parser} = stack.cx
 
     if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
@@ -319,11 +319,11 @@ export class ParseContext {
       if (parseNode || !nested) {
         let node = parseNode ? parseNode(clippedInput) : Tree.empty
         stack.useNode(new Tree(node.children, node.positions, node.type & Term.Tagged || type < 0 ? node.type : type | parser.id,
-                               end - stack.inputPos),
+                               end - stack.pos),
                       parser.getGoto(stack.state.id, placeholder, true))
         this.putStack(stack)
       } else {
-        let newStack = Stack.start(new StackContext(nested, stack.cx.maxBufferLength, clippedInput, stack), stack.inputPos)
+        let newStack = Stack.start(new StackContext(nested, stack.cx.maxBufferLength, clippedInput, stack), stack.pos)
         if (verbose) console.log(newStack + ` (nested)`)
         this.putStack(newStack)
       }
@@ -360,8 +360,8 @@ export class ParseContext {
         // This is a nested parse—add its result to the parent stack and
         // continue with that one.
         let parentParser = parent.cx.parser, info = parentParser.nested[parent.state.startNested]
-        let node = new Tree(tree.children, tree.positions.map(p => p - parent!.inputPos),
-                            info.type >= 0 ? info.type | parentParser.id : tree.type, stack.inputPos - parent.inputPos)
+        let node = new Tree(tree.children, tree.positions.map(p => p - parent!.pos),
+                            info.type >= 0 ? info.type | parentParser.id : tree.type, stack.pos - parent.pos)
         parent.useNode(node, parentParser.getGoto(parent.state.id, info.placeholder, true))
         if (verbose) console.log(parent + ` (via unnest ${parentParser.getName(info.type)})`)
         this.putStack(parent)
@@ -374,7 +374,7 @@ export class ParseContext {
 
     let {end, value: term} = stack.cx.tokens.mainToken
     if (!this.strict &&
-        !(stack.badness > Badness.Wild && this.stacks.some(s => s.pos >= stack.inputPos && s.badness <= stack.badness))) {
+        !(stack.badness > Badness.Wild && this.stacks.some(s => s.pos >= stack.pos && s.badness <= stack.badness))) {
       let inserted = stack.recoverByInsert(term, end)
       if (inserted) {
         if (verbose) console.log(inserted + " (via recover-insert)")
@@ -398,7 +398,7 @@ export class ParseContext {
 
   private scanForNestEnd(stack: Stack, endToken: TokenGroup, filter?: ((token: string) => boolean)) {
     let input = stack.cx.input
-    for (let pos = stack.inputPos; pos < input.length; pos++) {
+    for (let pos = stack.pos; pos < input.length; pos++) {
       dummyToken.start = pos
       dummyToken.value = -1
       endToken.token(input, dummyToken, stack)
