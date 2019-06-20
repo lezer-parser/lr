@@ -2,7 +2,7 @@ import {Stack, StackContext, Badness} from "./stack"
 import {Action, Specialize, Term} from "./constants"
 import {ParseState} from "./state"
 import {InputStream, StringStream, Tokenizer, TokenGroup} from "./token"
-import {DEFAULT_BUFFER_LENGTH, TERM_ID_MASK, GRAMMAR_ID_MASK, Tree, TreeBuffer, TagMap} from "lezer-tree"
+import {DefaultBufferLength, grammarID, termID, Tree, TreeBuffer, TagMap} from "lezer-tree"
 import {decodeArray} from "./decode"
 
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
@@ -168,7 +168,7 @@ export class ParseContext {
   // @internal
   constructor(parser: Parser,
               input: InputStream,
-              {cache = null, strict = false, bufferLength = DEFAULT_BUFFER_LENGTH}: ParseOptions = {}) {
+              {cache = null, strict = false, bufferLength = DefaultBufferLength}: ParseOptions = {}) {
     // FIXME per stack context?
     this.tokens = new TokenCache
     this.stacks = [Stack.start(new StackContext(parser, bufferLength, input))]
@@ -233,8 +233,8 @@ export class ParseContext {
 
     if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
-        if ((cached.type & GRAMMAR_ID_MASK) != parser.id) continue
-        let match = parser.getGoto(stack.state.id, cached.type & TERM_ID_MASK)
+        if (grammarID(cached.type) != parser.id) continue
+        let match = parser.getGoto(stack.state.id, termID(cached.type))
         if (match > -1 && !isFragile(cached)) {
           stack.useNode(cached, match)
           if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.type)})`)

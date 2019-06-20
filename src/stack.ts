@@ -2,7 +2,7 @@ import {ParseState} from "./state"
 import {Action, Term} from "./constants"
 import {Parser} from "./parse"
 import {InputStream} from "./token"
-import {Tree, REUSED_VALUE, BufferCursor} from "lezer-tree"
+import {Tree, BufferCursor} from "lezer-tree"
 
 export const enum Badness {
   // Amount to add for a single recover action
@@ -156,7 +156,7 @@ export class Stack {
     this.pos = this.inputPos = start + value.length
     this.pushState(this.cx.parser.states[next], start)
     this.badness >> 1 // FIXME
-    this.buffer.push(index, start, this.pos, REUSED_VALUE)
+    this.buffer.push(index, start, this.pos, -1 /* size < 0 means this is a reused value */)
   }
 
   split() {
