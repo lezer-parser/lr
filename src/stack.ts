@@ -41,38 +41,38 @@ export const enum Badness {
 export class Stack {
   // @internal
   constructor(
-    // @internal A group of values that the stack will share with all
-    // split instances
+    // A group of values that the stack will share with all
+    // split instances @internal
     readonly cx: StackContext,
-    // @internal Holds state, pos, value stack pos (15 bits array
-    // index, 15 bits buffer index) triplets for all but the top state
+    // Holds state, pos, value stack pos (15 bits array index, 15 bits
+    // buffer index) triplets for all but the top state @internal
     readonly stack: number[],
-    // @internal The current parse state
+    // The current parse state @internal
     public state: number,
-    // @internal The position at which the next reduce should take
-    // place. This can be less than `this.pos` when skipped
-    // expressions have been added to the stack (which should be moved
-    // outside of the next reduction)
+    // The position at which the next reduce should take place. This
+    // can be less than `this.pos` when skipped expressions have been
+    // added to the stack (which should be moved outside of the next
+    // reduction) @internal
     public reducePos: number,
     // The input position up to which this stack has parsed.
     public pos: number,
-    // @internal A measure of the amount of error-recovery that
-    // recently happened on this stack
+    // A measure of the amount of error-recovery that recently
+    // happened on this stack @internal
     public badness: number,
-    // @internal The output buffer. Holds (type, start, end, size)
-    // quads representing nodes created by the parser, where `size` is
-    // amount of buffer array entries covered by this node.
+    // The output buffer. Holds (type, start, end, size) quads
+    // representing nodes created by the parser, where `size` is
+    // amount of buffer array entries covered by this node. @internal
     readonly buffer: number[],
-    // @internal The base offset of the buffer. When stacks are split,
-    // the split instance shared the buffer history with its parent
-    // up to `bufferBase`, which is the absolute offset (including the
+    // The base offset of the buffer. When stacks are split, the split
+    // instance shared the buffer history with its parent up to
+    // `bufferBase`, which is the absolute offset (including the
     // offset of previous splits) into the buffer at which this stack
-    // starts writing.
+    // starts writing. @internal
     readonly bufferBase: number,
-    // @internal A parent stack from which this was split off, if
-    // any. This is set up so that it always points to a stack that
-    // has some additional buffer content, never to a stack with an
-    // equal `bufferBase`.
+    // A parent stack from which this was split off, if any. This is
+    // set up so that it always points to a stack that has some
+    // additional buffer content, never to a stack with an equal
+    // `bufferBase`. @internal
     readonly parent: Stack | null
   ) {}
 
@@ -81,19 +81,19 @@ export class Stack {
     return "[" + this.stack.filter((_, i) => i % 3 == 0).concat(this.state).join(",") + "]"
   }
 
-  // @internal Start an empty stack
+  // Start an empty stack @internal
   static start(cx: StackContext, pos = 0) {
     return new Stack(cx, [], cx.parser.states[0], pos, pos, 0, [], 0, null)
   }
 
-  // @internal Push a state onto the stack, tracking its start
-  // position as well as the buffer base at that point.
+  // Push a state onto the stack, tracking its start position as well
+  // as the buffer base at that point. @internal
   pushState(state: number, start: number) {
     this.stack.push(this.state, start, this.bufferBase + this.buffer.length)
     this.state = state
   }
 
-  // @internal Apply a reduce action
+  // Apply a reduce action @internal
   reduce(action: number) {
     let depth = action >> Action.ReduceDepthShift, type = action & Action.ValueMask
     if (depth == 0) {
@@ -141,7 +141,7 @@ export class Stack {
     if (base < this.stack.length) this.stack.length = base
   }
 
-  // @internal Shift a value into the buffer
+  // Shift a value into the buffer @internal
   shiftValue(term: number, start: number, end: number, childCount = 4) {
     if (term == Term.Err) { // Try to omit superfluous error nodes
       let cur: Stack | null = this, top = this.buffer.length
@@ -155,7 +155,7 @@ export class Stack {
     this.buffer.push(term, start, end, childCount)
   }
 
-  // @internal Apply a shift action
+  // Apply a shift action @internal
   shift(action: number, next: number, nextEnd: number) {
     if (action & Action.GotoFlag) {
       this.pushState(action & Action.ValueMask, this.pos)
@@ -174,14 +174,14 @@ export class Stack {
     }
   }
 
-  // @internal Apply an action
+  // Apply an action @internal
   apply(action: number, next: number, nextEnd: number) {
     if (action & Action.ReduceFlag) this.reduce(action)
     else this.shift(action, next, nextEnd)
   }
 
-  // @internal Add a prebuilt node into the buffer. This may be a
-  // reused node or the result of running a nested parser.
+  // Add a prebuilt node into the buffer. This may be a reused node or
+  // the result of running a nested parser. @internal
   useNode(value: Tree, next: number) {
     let index = this.cx.reused.length - 1
     if (index < 0 || this.cx.reused[index] != value) {
@@ -195,9 +195,9 @@ export class Stack {
     this.buffer.push(index, start, this.reducePos, -1 /* size < 0 means this is a reused value */)
   }
 
-  // @internal Split the stack. Due to the buffer sharing and the fact
+  // Split the stack. Due to the buffer sharing and the fact
   // that `this.stack` tends to stay quite shallow, this isn't very
-  // expensive.
+  // expensive. @internal
   split() {
     let parent: Stack | null = this
     let off = parent.buffer.length
@@ -213,8 +213,8 @@ export class Stack {
                      this.badness, buffer, base, parent)
   }
 
-  // @internal Try to recover from an error by 'deleting' (ignoring)
-  // one token.
+  // Try to recover from an error by 'deleting' (ignoring) one token.
+  // @internal
   recoverByDelete(next: number, nextEnd: number) {
     if (next & Term.Tagged) this.shiftValue(next, this.pos, nextEnd)
     this.shiftValue(Term.Err, this.pos, nextEnd, (next & Term.Tagged) ? 8 : 4)
@@ -243,9 +243,9 @@ export class Stack {
     return this.stack[base - 2]
   }
 
-  // @internal Scan for a state that has either a direct action or a
-  // recovery action for next, without actually building up a new
-  // stack
+  // Scan for a state that has either a direct action or a recovery
+  // action for next, without actually building up a new stack
+  // @internal
   canRecover(next: number) {
     let visited: number[] | null = null, parser = this.cx.parser
     for (let sim = new SimulatedStack(this), i = 0;; i++) {
@@ -263,10 +263,10 @@ export class Stack {
     }
   }
 
-  // @internal Try to apply a recovery action that conceptually
+  // Try to apply a recovery action that conceptually
   // inserts some missing content and syncs back to a state that will
   // match `next`. If it finds one, it'll return a new stack with the
-  // insertion applied. If not, it'll return null.
+  // insertion applied. If not, it'll return null. @internal
   recoverByInsert(next: number): Stack | null {
     if (!this.canRecover(next)) return null
 
@@ -288,8 +288,8 @@ export class Stack {
     }
   }
 
-  // @internal Force a reduce, if possible. Return false if that can't
-  // be done.
+  // Force a reduce, if possible. Return false if that can't
+  // be done. @internal
   forceReduce() {
     let reduce = this.cx.parser.anyReduce(this.state)
     if (reduce == 0) {
@@ -301,14 +301,14 @@ export class Stack {
     return true
   }
 
-  // @internal Compare two stacks to get a number that indicates which
-  // one is behind or, if they are at the same position, which one has
-  // less badness.
+  // Compare two stacks to get a number that indicates which one is
+  // behind or, if they are at the same position, which one has less
+  // badness. @internal
   compare(other: Stack) {
     return this.pos - other.pos || this.badness - other.badness
   }
 
-  // @internal Convert the stack's buffer to a syntax tree.
+  // Convert the stack's buffer to a syntax tree. @internal
   toTree(): Tree {
     return Tree.build(StackBufferCursor.create(this), this.cx.parser.id, this.cx.maxBufferLength, this.cx.reused)
   }
