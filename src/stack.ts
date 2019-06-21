@@ -1,5 +1,4 @@
-import {ParseState} from "./state"
-import {Action, Term} from "./constants"
+import {Action, Term, StateFlag, ParseState} from "./constants"
 import {StackContext} from "./parse"
 import {Tree, BufferCursor} from "lezer-tree"
 
@@ -49,7 +48,7 @@ export class Stack {
     // index, 15 bits buffer index) triplets for all but the top state
     readonly stack: number[],
     // @internal The current parse state
-    public state: ParseState,
+    public state: number,
     // @internal The position at which the next reduce should take
     // place. This can be less than `this.pos` when skipped
     // expressions have been added to the stack (which should be moved
@@ -79,7 +78,7 @@ export class Stack {
 
   // @internal
   toString() {
-    return "[" + this.stack.filter((_, i) => i % 3 == 0).concat(this.state.id).join(",") + "]"
+    return "[" + this.stack.filter((_, i) => i % 3 == 0).concat(this.state).join(",") + "]"
   }
 
   // @internal Start an empty stack
@@ -89,8 +88,8 @@ export class Stack {
 
   // @internal Push a state onto the stack, tracking its start
   // position as well as the buffer base at that point.
-  pushState(state: ParseState, start: number) {
-    this.stack.push(this.state.id, start, this.bufferBase + this.buffer.length)
+  pushState(state: number, start: number) {
+    this.stack.push(this.state, start, this.bufferBase + this.buffer.length)
     this.state = state
   }
 
@@ -100,7 +99,7 @@ export class Stack {
     if (depth == 0) {
       // Zero-depth reductions are a special case—they add stuff to
       // the stack without popping anything off.
-      this.pushState(this.cx.parser.states[this.cx.parser.getGoto(this.state.id, type, true)], this.reducePos)
+      this.pushState(this.cx.parser.getGoto(this.state, type, true), this.reducePos)
       return
     }
 
@@ -113,7 +112,7 @@ export class Stack {
     let start = this.stack[base - 2]
     let bufferBase = this.stack[base - 1], count = this.bufferBase + this.buffer.length - bufferBase
     if ((type & Term.Tagged) || (action & Action.RepeatFlag)) {
-      let pos = this.state.skipped ? this.pos : this.reducePos
+      let pos = this.cx.parser.stateFlag(this.state, StateFlag.Skipped) ? this.pos : this.reducePos
       if (this.pos == pos) { // Simple case, just append
         this.buffer.push(type, start, pos, count + 4)
       } else { // There may be skipped nodes that have to be moved forward
@@ -134,10 +133,10 @@ export class Stack {
       }
     }
     if (action & Action.StayFlag) {
-      this.state = this.cx.parser.states[this.stack[base]]
+      this.state = this.stack[base]
     } else {
       let baseStateID = this.stack[base - 3]
-      this.state = this.cx.parser.states[this.cx.parser.getGoto(baseStateID, type, true)]
+      this.state = this.cx.parser.getGoto(baseStateID, type, true)
     }
     if (base < this.stack.length) this.stack.length = base
   }
@@ -159,12 +158,12 @@ export class Stack {
   // @internal Apply a shift action
   shift(action: number, next: number, nextEnd: number) {
     if (action & Action.GotoFlag) {
-      this.pushState(this.cx.parser.states[action & Action.ValueMask], this.pos)
+      this.pushState(action & Action.ValueMask, this.pos)
     } else if ((action & Action.StayFlag) == 0) { // Regular shift
-      let start = this.pos, nextState = this.cx.parser.states[action]
+      let start = this.pos, nextState = action
       if (nextEnd > this.pos || (next & Term.Tagged)) {
         this.pos = nextEnd
-        if (!nextState.skipped) this.reducePos = nextEnd
+        if (!this.cx.parser.stateFlag(nextState, StateFlag.Skipped)) this.reducePos = nextEnd
       }
       this.pushState(nextState, start)
       if (next & Term.Tagged) this.buffer.push(next, start, nextEnd, 4)
@@ -191,7 +190,7 @@ export class Stack {
     }
     let start = this.pos
     this.reducePos = this.pos = start + value.length
-    this.pushState(this.cx.parser.states[next], start)
+    this.pushState(next, start)
     this.badness >>= 2 // (* 0.25)
     this.buffer.push(index, start, this.reducePos, -1 /* size < 0 means this is a reused value */)
   }
@@ -229,7 +228,7 @@ export class Stack {
   // given token when it applies.
   canShift(term: number) {
     for (let sim = new SimulatedStack(this);;) {
-      let action = sim.top.defaultReduce || this.cx.parser.hasAction(sim.top, term)
+      let action = this.cx.parser.stateSlot(sim.top, ParseState.DefaultReduce) || this.cx.parser.hasAction(sim.top, term)
       if ((action & Action.ReduceFlag) == 0) return true
       if (action == 0) return false
       sim.reduce(action)
@@ -238,7 +237,7 @@ export class Stack {
 
   // Find the start position of the rule that is currently being parsed.
   get ruleStart() {
-    let force = this.state.forcedReduce
+    let force = this.cx.parser.stateSlot(this.state, ParseState.ForcedReduce)
     if (!(force & Action.ReduceFlag)) return 0
     let base = this.stack.length - (3 * ((force >> Action.ReduceDepthShift) - 1))
     return this.stack[base - 2]
@@ -253,13 +252,13 @@ export class Stack {
       if (parser.hasAction(sim.top, next) || parser.getRecover(sim.top, next) != 0) return true
       // Find a way to reduce from here
       let reduce = parser.anyReduce(sim.top)
-      if (reduce == 0 && ((reduce = sim.top.forcedReduce) & Action.ReduceFlag) == 0) return false
+      if (reduce == 0 && ((reduce = this.cx.parser.stateSlot(sim.top, ParseState.ForcedReduce)) & Action.ReduceFlag) == 0) return false
       sim.reduce(reduce)
       if (i > 10) {
         // Guard against getting stuck in a cycle
         if (!visited) visited = []
-        else if (i == 100 || visited.includes(sim.top.id)) return false
-        visited.push(sim.top.id)
+        else if (i == 100 || visited.includes(sim.top)) return false
+        visited.push(sim.top)
       }
     }
   }
@@ -281,7 +280,7 @@ export class Stack {
         if (parser.hasAction(result.state, next)) return result
         let recover = parser.getRecover(result.state, next)
         if (!recover) break
-        result.pushState(this.cx.parser.states[recover], result.pos)
+        result.pushState(recover, result.pos)
         result.shiftValue(Term.Err, result.pos, result.pos)
       }
 
@@ -294,7 +293,7 @@ export class Stack {
   forceReduce() {
     let reduce = this.cx.parser.anyReduce(this.state)
     if (reduce == 0) {
-      reduce = this.state.forcedReduce
+      reduce = this.cx.parser.stateSlot(this.state, ParseState.ForcedReduce)
       if ((reduce & Action.ReduceFlag) == 0) return false
       this.shiftValue(Term.Err, this.pos, this.pos)
     }
@@ -318,7 +317,7 @@ export class Stack {
 // Used to cheaply run some reductions to scan ahead without mutating
 // an entire stack
 class SimulatedStack {
-  top: ParseState
+  top: number
   rest: number[]
   offset: number
 
@@ -332,13 +331,13 @@ class SimulatedStack {
     let term = action & Action.ValueMask, depth = action >> Action.ReduceDepthShift
     if (depth == 0) {
       if (this.rest == this.stack.stack) this.rest = this.rest.slice()
-      this.rest.push(this.top.id, 0, 0)
+      this.rest.push(this.top, 0, 0)
       this.offset += 3
     } else {
       this.offset -= (depth - 1) * 3
     }
     let goto = this.stack.cx.parser.getGoto(this.rest[this.offset - 3], term, true)
-    this.top = this.stack.cx.parser.states[goto]
+    this.top = goto
   }
 }
 

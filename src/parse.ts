@@ -1,6 +1,5 @@
 import {Stack, Badness} from "./stack"
-import {Action, Specialize, Term, Seq} from "./constants"
-import {ParseState} from "./state"
+import {Action, Specialize, Term, Seq, StateFlag, ParseState} from "./constants"
 import {InputStream, Token, StringStream, Tokenizer, TokenGroup} from "./token"
 import {DefaultBufferLength, grammarID, termID, Tree, TreeBuffer, TagMap, allocateGrammarID} from "lezer-tree"
 import {decodeArray} from "./decode"
@@ -106,10 +105,10 @@ class TokenCache {
   getActions(stack: Stack, input: InputStream) {
     let actionIndex = 0
     let main: CachedToken | null = null
-    let {tokenizers} = stack.cx.parser
+    let {parser} = stack.cx, {tokenizers} = parser
 
     for (let i = 0; i < tokenizers.length; i++) {
-      if (((1 << i) & stack.state.tokenizerMask) == 0) continue
+      if (((1 << i) & parser.stateSlot(stack.state, ParseState.TokenizerMask)) == 0) continue
       let tokenizer = tokenizers[i]
       let token = this.tokens.find(c => c.tokenizer == tokenizer)
       if (!token) this.tokens.push(token = new CachedToken(tokenizer))
@@ -158,9 +157,9 @@ class TokenCache {
   }
 
   addActions(stack: Stack, token: number, end: number, index: number) {
-    let {state} = stack, {data} = stack.cx.parser
+    let {state} = stack, {parser} = stack.cx, {data} = parser
     for (let set = 0; set < 2; set++) {
-      for (let i = set ? state.skip : state.actions, next; (next = data[i]) != Seq.End; i += 3) {
+      for (let i = parser.stateSlot(state, set ? ParseState.Skip : ParseState.Actions), next; (next = data[i]) != Seq.End; i += 3) {
         if (next == token || (next == Term.Err && index == 0))
           index = this.putAction(data[i + 1] | (data[i + 2] << 16), token, end, index)
       }
@@ -267,7 +266,7 @@ export class ParseContext {
   // parsed so far.
   forceFinish() {
     let stack = this.stacks[0].split()
-    while (!stack.state.accepting && stack.forceReduce()) {}
+    while (!stack.cx.parser.stateFlag(stack.state, StateFlag.Accepting) && stack.forceReduce()) {}
     return stack.toTree()
   }
 
@@ -289,7 +288,7 @@ export class ParseContext {
     if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
         if (grammarID(cached.type) != parser.id) continue
-        let match = parser.getGoto(stack.state.id, termID(cached.type))
+        let match = parser.getGoto(stack.state, termID(cached.type))
         if (match > -1 && !isFragile(cached)) {
           stack.useNode(cached, match)
           if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.type)})`)
@@ -303,7 +302,7 @@ export class ParseContext {
       }
     }
 
-    let nest = stack.state.startNested
+    let nest = parser.startNested(stack.state)
     maybeNest: if (nest > -1) {
       let {grammar, end: endToken, type, placeholder} = parser.nested[nest]
       let filterEnd = undefined, parseNode = null, nested
@@ -320,7 +319,7 @@ export class ParseContext {
         let node = parseNode ? parseNode(clippedInput) : Tree.empty
         stack.useNode(new Tree(node.children, node.positions, node.type & Term.Tagged || type < 0 ? node.type : type | parser.id,
                                end - stack.pos),
-                      parser.getGoto(stack.state.id, placeholder, true))
+                      parser.getGoto(stack.state, placeholder, true))
         this.putStack(stack)
       } else {
         let newStack = Stack.start(new StackContext(nested, stack.cx.maxBufferLength, clippedInput, stack), stack.pos)
@@ -330,7 +329,7 @@ export class ParseContext {
       return null
     }
 
-    let defaultReduce = stack.state.defaultReduce
+    let defaultReduce = parser.stateSlot(stack.state, ParseState.DefaultReduce)
     if (defaultReduce > 0) {
       stack.reduce(defaultReduce)
       this.putStack(stack)
@@ -353,16 +352,16 @@ export class ParseContext {
 
     // If we're here, the stack failed to advance normally
 
-    if (start == input.length && (stack.state.accepting || this.stacks.length == 0)) {
-      while (!stack.state.accepting && stack.forceReduce()) {}
+    if (start == input.length && (parser.stateFlag(stack.state, StateFlag.Accepting) || this.stacks.length == 0)) {
+      while (!parser.stateFlag(stack.state, StateFlag.Accepting) && stack.forceReduce()) {}
       let tree = stack.toTree(), {parent} = stack.cx
       if (parent) {
         // This is a nested parse—add its result to the parent stack and
         // continue with that one.
-        let parentParser = parent.cx.parser, info = parentParser.nested[parent.state.startNested]
+        let parentParser = parent.cx.parser, info = parentParser.nested[parentParser.startNested(parent.state)]
         let node = new Tree(tree.children, tree.positions.map(p => p - parent!.pos),
                             info.type >= 0 ? info.type | parentParser.id : tree.type, stack.pos - parent.pos)
-        parent.useNode(node, parentParser.getGoto(parent.state.id, info.placeholder, true))
+        parent.useNode(node, parentParser.getGoto(parent.state, info.placeholder, true))
         if (verbose) console.log(parent + ` (via unnest ${parentParser.getName(info.type)})`)
         this.putStack(parent)
         return null
@@ -414,7 +413,7 @@ export class Parser {
   constructor(
     readonly id: number,
     // @internal The parse states for this grammar.
-    readonly states: readonly ParseState[],
+    readonly states: Readonly<Uint32Array>,
     // @internal A blob of data that the parse states, as well as some
     // of `Parser`'s fields, point into.
     readonly data: Readonly<Uint16Array>,
@@ -498,10 +497,10 @@ export class Parser {
   }
 
   // @internal Check if this state has an action for a given terminal.
-  hasAction(state: ParseState, terminal: number) {
+  hasAction(state: number, terminal: number) {
     let data = this.data
     for (let set = 0; set < 2; set++) {
-      for (let i = set ? state.skip : state.actions, next; (next = data[i]) != Seq.End; i += 3) {
+      for (let i = this.stateSlot(state, set ? ParseState.Skip : ParseState.Actions), next; (next = data[i]) != Seq.End; i += 3) {
         if (next == terminal || next == Term.Err)
           return data[i + 1] | (data[i + 2] << 16)
       }
@@ -511,16 +510,33 @@ export class Parser {
 
   // @internal Get a recovery action for a given state and terminal,
   // or 0 when none.
-  getRecover(state: ParseState, terminal: number) {
-    for (let i = state.recover, next; (next = this.data[i]) != Seq.End; i += 2)
+  getRecover(state: number, terminal: number) {
+    for (let i = this.stateSlot(state, ParseState.Recover), next; (next = this.data[i]) != Seq.End; i += 2)
       if (next == terminal) return this.data[i + 1]
     return 0
   }
 
   // @internal
-  anyReduce(state: ParseState) {
-    if (state.defaultReduce > 0) return state.defaultReduce
-    for (let i = state.actions;; i += 3) {
+  stateSlot(state: number, slot: number) {
+    return this.states[(state << ParseState.Shift) + slot]
+  }
+
+  // @internal
+  stateFlag(state: number, flag: number) {
+    return (this.stateSlot(state, ParseState.Flags) & flag) > 0
+  }
+
+  // @internal
+  startNested(state: number) {
+    let flags = this.stateSlot(state, ParseState.Flags)
+    return flags & StateFlag.StartNest ? flags >> StateFlag.NestShift : -1
+  }
+
+  // @internal
+  anyReduce(state: number) {
+    let defaultReduce = this.stateSlot(state, ParseState.DefaultReduce)
+    if (defaultReduce > 0) return defaultReduce
+    for (let i = this.stateSlot(state, ParseState.Actions);; i += 3) {
       if (this.data[i] == Seq.End) return 0
       let isReduce = this.data[i + 2]
       if (isReduce) return this.data[i + 1] | (isReduce << 16)
@@ -578,11 +594,9 @@ export class Parser {
                      tokenPrec: number,
                      skippedNodes: number,
                      termNames?: {[id: number]: string}) {
-    let arr = decodeArray(states, Uint32Array), stateObjs: ParseState[] = []
-    for (let i = 0, id = 0; i < arr.length;)
-      stateObjs.push(new ParseState(id++, arr[i++], arr[i++], arr[i++], arr[i++], arr[i++], arr[i++], arr[i++]))
     let tokenArray = decodeArray(tokenData), id = allocateGrammarID()
-    return new Parser(id, stateObjs, decodeArray(stateData), decodeArray(goto), TagMap.single(id, tags),
+    return new Parser(id, decodeArray(states, Uint32Array), decodeArray(stateData),
+                      decodeArray(goto), TagMap.single(id, tags),
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
                       nested.map(([name, grammar, endToken, type, placeholder]) =>
                                    ({name, grammar, end: new TokenGroup(decodeArray(endToken), 0), type, placeholder})),

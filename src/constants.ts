@@ -82,3 +82,18 @@ export const enum Seq {
   // arrays
   End = 0xffff
 }
+
+// Memory layout of parse states
+export const enum ParseState {
+  // Offsets into the record of the individual fields
+  Flags = 0,
+  Actions = 1,
+  Skip = 2,
+  Recover = 3,
+  TokenizerMask = 4,
+  DefaultReduce = 5,
+  ForcedReduce = 6,
+  // Total size of a state record
+  Size = 8,
+  Shift = 3
+}
