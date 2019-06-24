@@ -69,6 +69,7 @@ export interface Tokenizer {
   contextual: boolean
 }
 
+// @internal
 export class TokenGroup implements Tokenizer {
   contextual!: boolean
 

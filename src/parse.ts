@@ -28,10 +28,10 @@ export interface NestedGrammarSpec {
   // responsible for parsing the region.
   parseNode?: (input: InputStream) => Tree
   // When a `filterEnd` property is present, that should hold a
-  // function from string to boolean that determines whether a given
-  // end token (which matches the end token specified in the grammar)
-  // should be used (true) or ignored (false). This is mostly useful
-  // for implementing things like XML closing tag matching.
+  // function that determines whether a given end token (which matches
+  // the end token specified in the grammar) should be used (true) or
+  // ignored (false). This is mostly useful for implementing things
+  // like XML closing tag matching.
   filterEnd?: (endToken: string) => boolean
 }
 
@@ -165,7 +165,7 @@ class TokenCache {
 }
 
 // Options that can be passed to control parsing.
-export type ParseOptions = {
+export interface ParseOptions {
   // Passing a cached tree is used for incremental parsing. This
   // should be a tree whose content is aligned with the current
   // document (though a call to `Tree.unchanged`) if any changes were
