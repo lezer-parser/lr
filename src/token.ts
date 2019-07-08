@@ -1,26 +1,26 @@
 import {Term} from "./constants"
 import {Stack} from "./stack"
 
-// Tokenizers write the tokens they read into instances of this class.
+/// Tokenizers write the tokens they read into instances of this class.
 export class Token {
-  // The start of the token. This is set by the parser, and should not
-  // be mutated by the tokenizer.
+  /// The start of the token. This is set by the parser, and should not
+  /// be mutated by the tokenizer.
   start = -1
-  // This starts at -1, and should be updated to a term id when a
-  // matching token is found.
+  /// This starts at -1, and should be updated to a term id when a
+  /// matching token is found.
   value = -1
-  // When setting `.value`, you should also set `.end` to the end
-  // position of the token. (You'll usually want to use the `accept`
-  // method.)
+  /// When setting `.value`, you should also set `.end` to the end
+  /// position of the token. (You'll usually want to use the `accept`
+  /// method.)
   end = -1
 
-  // Accept a token, setting `value` and `end` to the given values.
+  /// Accept a token, setting `value` and `end` to the given values.
   accept(value: number, end: number) {
     this.value = value
     this.end = end
   }
 
-  // @internal
+  /// @internal
   asError(start: number, eof: number) {
     this.start = start
     if (start == eof) {
@@ -34,24 +34,24 @@ export class Token {
   }
 }
 
-// This is the interface the parser uses to access the document. It
-// exposes a sequence of UTF16 code points. Most access will be
-// sequential, so implementations can optimize for that.
+/// This is the interface the parser uses to access the document. It
+/// exposes a sequence of UTF16 code points. Most access will be
+/// sequential, so implementations can optimize for that.
 export interface InputStream {
-  // The end of the stream.
+  /// The end of the stream.
   length: number
-  // Get the code point at the given position. Will return -1 when
-  // asked for a point below 0 or beyond the end of the stream
+  /// Get the code point at the given position. Will return -1 when
+  /// asked for a point below 0 or beyond the end of the stream
   get(pos: number): number
-  // Read part of the stream as a string
+  /// Read part of the stream as a string
   read(from: number, to: number): string
-  // Return a new `InputStream` over the same data, but with a lower
-  // `length`. Used, for example, when nesting grammars to give the
-  // inner grammar a narrower view of the input.
+  /// Return a new `InputStream` over the same data, but with a lower
+  /// `length`. Used, for example, when nesting grammars to give the
+  /// inner grammar a narrower view of the input.
   clip(at: number): InputStream
 }
 
-// An `InputStream` that is backed by a single, flat string.
+/// An `InputStream` that is backed by a single, flat string.
 export class StringStream implements InputStream {
   constructor(readonly string: string, readonly length = string.length) {}
 
@@ -69,7 +69,7 @@ export interface Tokenizer {
   contextual: boolean
 }
 
-// @internal
+/// @internal
 export class TokenGroup implements Tokenizer {
   contextual!: boolean
 

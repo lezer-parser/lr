@@ -7,31 +7,31 @@ import {decodeArray} from "./decode"
 // Environment variable used to control console output
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
 
-// Nested grammar values are associated with nesting positions in the
-// grammar. If they are null, the nested region is simply skipped
-// over. If they hold a parser object, that parser is used to parse
-// the region. To implement dynamic behavior, the value may also be a
-// function which returns a description of the way the region should
-// be parsed.
+/// Nested grammar values are associated with nesting positions in the
+/// grammar. If they are null, the nested region is simply skipped
+/// over. If they hold a parser object, that parser is used to parse
+/// the region. To implement dynamic behavior, the value may also be a
+/// function which returns a description of the way the region should
+/// be parsed.
 export type NestedGrammar = null | Parser | ((input: InputStream, stack: Stack) => NestedGrammarSpec)
 
-// An object indicating how to proceed with a nested parse.
+/// An object indicating how to proceed with a nested parse.
 export interface NestedGrammarSpec {
-  // When given, this is used to provide a parser that should be used
-  // to parse the content.
+  /// When given, this is used to provide a parser that should be used
+  /// to parse the content.
   parser?: Parser
-  // This being true means that the outer grammar should use
-  // the fallback expression provided for the nesting to parse the
-  // content.
+  /// This being true means that the outer grammar should use
+  /// the fallback expression provided for the nesting to parse the
+  /// content.
   stay?: boolean
-  // Alternatively, `parseNode` may hold a function which will be made
-  // responsible for parsing the region.
+  /// Alternatively, `parseNode` may hold a function which will be made
+  /// responsible for parsing the region.
   parseNode?: (input: InputStream) => Tree
-  // When a `filterEnd` property is present, that should hold a
-  // function that determines whether a given end token (which matches
-  // the end token specified in the grammar) should be used (true) or
-  // ignored (false). This is mostly useful for implementing things
-  // like XML closing tag matching.
+  /// When a `filterEnd` property is present, that should hold a
+  /// function that determines whether a given end token (which matches
+  /// the end token specified in the grammar) should be used (true) or
+  /// ignored (false). This is mostly useful for implementing things
+  /// like XML closing tag matching.
   filterEnd?: (endToken: string) => boolean
 }
 
@@ -164,21 +164,21 @@ class TokenCache {
   }
 }
 
-// Options that can be passed to control parsing.
+/// Options that can be passed to control parsing.
 export interface ParseOptions {
-  // Passing a cached tree is used for incremental parsing. This
-  // should be a tree whose content is aligned with the current
-  // document (though a call to `Tree.unchanged`) if any changes were
-  // made since it was produced. The parser will try to reuse nodes
-  // from this tree in the new parse, greatly speeding up the parse
-  // when it can reuse nodes for most of the document.
+  /// Passing a cached tree is used for incremental parsing. This
+  /// should be a tree whose content is aligned with the current
+  /// document (though a call to `Tree.unchanged`) if any changes were
+  /// made since it was produced. The parser will try to reuse nodes
+  /// from this tree in the new parse, greatly speeding up the parse
+  /// when it can reuse nodes for most of the document.
   cache?: Tree
-  // When true, the parser will raise an exception, rather than run
-  // its error-recovery strategies, when the input doesn't match the
-  // grammar.
+  /// When true, the parser will raise an exception, rather than run
+  /// its error-recovery strategies, when the input doesn't match the
+  /// grammar.
   strict?: boolean,
-  // The maximum length of the TreeBuffers generated in the output
-  // tree. Defaults to 1024.
+  /// The maximum length of the TreeBuffers generated in the output
+  /// tree. Defaults to 1024.
   bufferLength?: number
 }
 
@@ -191,18 +191,18 @@ export class StackContext {
               readonly parent: Stack | null = null) {}
 }
 
-// A parse context can be used for step-by-step parsing. After
-// creating it, you repeatedly call `.advance()` until it returns a
-// tree to indicate it has reached the end of the parse.
+/// A parse context can be used for step-by-step parsing. After
+/// creating it, you repeatedly call `.advance()` until it returns a
+/// tree to indicate it has reached the end of the parse.
 export class ParseContext {
-  // @internal
+  /// @internal
   stacks: Stack[]
-  // @internal
+  /// @internal
   cache: CacheCursor | null
-  // @internal
+  /// @internal
   strict: boolean
 
-  // @internal
+  /// @internal
   constructor(parser: Parser,
               input: InputStream,
               {cache = undefined, strict = false, bufferLength = DefaultBufferLength}: ParseOptions = {}) {
@@ -255,18 +255,18 @@ export class ParseContext {
     return true
   }
 
-  // Execute one parse step. This picks the parse stack that's
-  // currently the least far along, and does the next thing that can
-  // be done with it. This may be:
-  //
-  // - Add a cached node, if a matching one is found.
-  // - Enter a nested grammar.
-  // - Perform all shift or reduce actions that match the current
-  //   token (if there are more than one, this will split the stack)
-  // - Finish the parse
-  //
-  // When the parse is finished, this will return a syntax tree. When
-  // not, it returns `null`.
+  /// Execute one parse step. This picks the parse stack that's
+  /// currently the least far along, and does the next thing that can
+  /// be done with it. This may be:
+  ///
+  /// - Add a cached node, if a matching one is found.
+  /// - Enter a nested grammar.
+  /// - Perform all shift or reduce actions that match the current
+  ///   token (if there are more than one, this will split the stack)
+  /// - Finish the parse
+  ///
+  /// When the parse is finished, this will return a syntax tree. When
+  /// not, it returns `null`.
   advance() {
     let stack = this.takeStack(), start = stack.pos, {input, parser} = stack.cx
 
@@ -380,11 +380,11 @@ export class ParseContext {
     return null
   }
 
-  // The position to which the parse has advanced.
+  /// The position to which the parse has advanced.
   get pos() { return this.stacks[0].pos }
 
-  // Force the parse to finish, generating a tree containing the nodes
-  // parsed so far.
+  /// Force the parse to finish, generating a tree containing the nodes
+  /// parsed so far.
   forceFinish() {
     let stack = this.stacks[0].split()
     while (!stack.cx.parser.stateFlag(stack.state, StateFlag.Accepting) && stack.forceReduce()) {}
@@ -403,61 +403,61 @@ export class ParseContext {
   }
 }
 
-// A parser holds the parse tables for a given grammar, as generated
-// by `lezer-generator`.
+/// A parser holds the parse tables for a given grammar, as generated
+/// by `lezer-generator`.
 export class Parser {
-  // @internal
+  /// @internal
   constructor(
-    // The grammar's ID. Used to create globally unique tree node types.
+    /// The grammar's ID. Used to create globally unique tree node types.
     readonly id: number,
-    // The parse states for this grammar @internal
+    /// The parse states for this grammar @internal
     readonly states: Readonly<Uint32Array>,
-    // A blob of data that the parse states, as well as some
-    // of `Parser`'s fields, point into @internal
+    /// A blob of data that the parse states, as well as some
+    /// of `Parser`'s fields, point into @internal
     readonly data: Readonly<Uint16Array>,
-    // The goto table. See `computeGotoTable` in
-    // lezer-generator for details on the format @internal
+    /// The goto table. See `computeGotoTable` in
+    /// lezer-generator for details on the format @internal
     readonly goto: Readonly<Uint16Array>,
-    // A `TagMap` mapping the node types in this grammar to their tag
-    // names.
+    /// A `TagMap` mapping the node types in this grammar to their tag
+    /// names.
     readonly tags: TagMap<string>,
-    // The tokenizer objects used by the grammar @internal
+    /// The tokenizer objects used by the grammar @internal
     readonly tokenizers: readonly Tokenizer[],
-    // Metadata about nested grammars used in this grammar @internal
+    /// Metadata about nested grammars used in this grammar @internal
     readonly nested: readonly {
-      // A name, used by `withNested`
+      /// A name, used by `withNested`
       name: string,
-      // The grammar or grammar query function to use
+      /// The grammar or grammar query function to use
       grammar: NestedGrammar,
-      // A token-recognizing automaton for the end of the nesting
+      /// A token-recognizing automaton for the end of the nesting
       end: TokenGroup,
-      // The node type to assign to subtrees parsed with this grammar,
-      // or -1 if no type should be added.
+      /// The node type to assign to subtrees parsed with this grammar,
+      /// or -1 if no type should be added.
       type: number,
-      // The id of the placeholder term that appears in the grammar at
-      // the position of this nesting
+      /// The id of the placeholder term that appears in the grammar at
+      /// the position of this nesting
       placeholder: number
     }[],
-    // Points into this.data at an array of token types that
-    // are specialized @internal
+    /// Points into this.data at an array of token types that
+    /// are specialized @internal
     readonly specializeTable: number,
-    // For each specialized token type, this holds an object mapping
-    // names to numbers, with the first bit indicating whether the
-    // specialization extends or replaces the original token, and the
-    // rest of the bits holding the specialized token type. @internal
+    /// For each specialized token type, this holds an object mapping
+    /// names to numbers, with the first bit indicating whether the
+    /// specialization extends or replaces the original token, and the
+    /// rest of the bits holding the specialized token type. @internal
     readonly specializations: readonly {[value: string]: number}[],
-    // Points into this.data at an array that holds the
-    // precedence order (higher precedence first) for ambiguous
-    // tokens @internal
+    /// Points into this.data at an array that holds the
+    /// precedence order (higher precedence first) for ambiguous
+    /// tokens @internal
     readonly tokenPrecTable: number,
-    // Points at an array of node types that are part of
-    // skip rules @internal
+    /// Points at an array of node types that are part of
+    /// skip rules @internal
     readonly skippedNodes: number,
-    // An optional object mapping term ids to name strings @internal
+    /// An optional object mapping term ids to name strings @internal
     readonly termNames: null | {[id: number]: string} = null
   ) {}
 
-  // Parse a given string or stream.
+  /// Parse a given string or stream.
   parse(input: InputStream | string, options?: ParseOptions) {
     if (typeof input == "string") input = new StringStream(input)
     let cx = new ParseContext(this, input, options)
@@ -467,12 +467,12 @@ export class Parser {
     }
   }
 
-  // Create a `ParseContext`.
+  /// Create a `ParseContext`.
   startParse(input: InputStream, options?: ParseOptions) {
     return new ParseContext(this, input, options)
   }
 
-  // Get a goto table entry @internal
+  /// Get a goto table entry @internal
   getGoto(state: number, term: number, loose = false) {
     let table = this.goto
     if (term >= table[0]) return -1
@@ -486,7 +486,7 @@ export class Parser {
     }
   }
 
-  // Check if this state has an action for a given terminal @internal
+  /// Check if this state has an action for a given terminal @internal
   hasAction(state: number, terminal: number) {
     let data = this.data
     for (let set = 0; set < 2; set++) {
@@ -499,30 +499,31 @@ export class Parser {
   }
 
   // Get a recovery action for a given state and terminal, or 0 when
-  // none @internal
+  // none
+  ///@internal
   getRecover(state: number, terminal: number) {
     for (let i = this.stateSlot(state, ParseState.Recover), next; (next = this.data[i]) != Seq.End; i += 2)
       if (next == terminal) return this.data[i + 1]
     return 0
   }
 
-  // @internal
+  /// @internal
   stateSlot(state: number, slot: number) {
     return this.states[(state << ParseState.Shift) + slot]
   }
 
-  // @internal
+  /// @internal
   stateFlag(state: number, flag: number) {
     return (this.stateSlot(state, ParseState.Flags) & flag) > 0
   }
 
-  // @internal
+  /// @internal
   startNested(state: number) {
     let flags = this.stateSlot(state, ParseState.Flags)
     return flags & StateFlag.StartNest ? flags >> StateFlag.NestShift : -1
   }
 
-  // @internal
+  /// @internal
   anyReduce(state: number) {
     let defaultReduce = this.stateSlot(state, ParseState.DefaultReduce)
     if (defaultReduce > 0) return defaultReduce
@@ -533,22 +534,22 @@ export class Parser {
     }
   }
 
-  // Tells you whether a given term is part of the skip rules for the
-  // grammar.
+  /// Tells you whether a given term is part of the skip rules for the
+  /// grammar.
   isSkipped(term: number) {
     for (let i = this.skippedNodes, cur; (cur = this.data[i]) != Seq.End; i++)
       if (cur == term) return true
     return false
   }
 
-  // @internal
+  /// @internal
   overrides(token: number, prev: number) {
     let iPrev = findOffset(this.data, this.tokenPrecTable, prev)
     return iPrev < 0 || findOffset(this.data, this.tokenPrecTable, token) < iPrev
   }
 
-  // Build up a tag map for this grammar. The values object should map
-  // from tag names to associated values.
+  /// Build up a tag map for this grammar. The values object should map
+  /// from tag names to associated values.
   tagMap<T>(values: {[name: string]: T}): TagMap<T> {
     let content: (T | null)[] = []
     let tagArray = this.tags.grammars[this.id >> 16] || []
@@ -563,10 +564,10 @@ export class Parser {
     return new TagMap<T>(grammars)
   }
 
-  // Create a new `Parser` instance with different values for (some
-  // of) the nested grammars. This can be used to, for example, swap
-  // in a different language for a nested grammar or fill in a nested
-  // grammar that was left blank by the original grammar.
+  /// Create a new `Parser` instance with different values for (some
+  /// of) the nested grammars. This can be used to, for example, swap
+  /// in a different language for a nested grammar or fill in a nested
+  /// grammar that was left blank by the original grammar.
   withNested(spec: {[name: string]: NestedGrammar | null}) {
     return new Parser(this.id, this.states, this.data, this.goto, this.tags, this.tokenizers,
                       this.nested.map(obj => {
@@ -576,15 +577,15 @@ export class Parser {
                       this.specializeTable, this.specializations, this.tokenPrecTable, this.skippedNodes, this.termNames)
   }
 
-  // Returns the name associated with a given term. This will only
-  // work for all terms when the parser was generated with the
-  // `--names` option. By default, only the names of tagged terms are
-  // stored.
+  /// Returns the name associated with a given term. This will only
+  /// work for all terms when the parser was generated with the
+  /// `--names` option. By default, only the names of tagged terms are
+  /// stored.
   getName(term: number): string {
     return this.termNames ? this.termNames[term] : this.tags.get(term) || String(term)
   }
 
-  // (Used by the output of the parser generator) @internal
+  /// (Used by the output of the parser generator) @internal
   static deserialize(states: string, stateData: string, goto: string, tags: readonly string[],
                      tokenData: string, tokenizers: (Tokenizer | number)[],
                      nested: [string, null | NestedGrammar, string, number, number][],
