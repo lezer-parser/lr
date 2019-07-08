@@ -302,8 +302,8 @@ export class ParseContext {
       let clippedInput = stack.cx.input.clip(end)
       if (parseNode || !nested) {
         let node = parseNode ? parseNode(clippedInput) : Tree.empty
-        stack.useNode(new Tree(node.children, node.positions, node.type & Term.Tagged || type < 0 ? node.type : type | parser.id,
-                               end - stack.pos),
+        stack.useNode(new Tree(node.children, node.positions, end - stack.pos,
+                               node.type & Term.Tagged || type < 0 ? node.type : type | parser.id),
                       parser.getGoto(stack.state, placeholder, true))
         this.putStack(stack)
       } else {
@@ -344,8 +344,8 @@ export class ParseContext {
         // This is a nested parse—add its result to the parent stack and
         // continue with that one.
         let parentParser = parent.cx.parser, info = parentParser.nested[parentParser.startNested(parent.state)]
-        let node = new Tree(tree.children, tree.positions.map(p => p - parent!.pos),
-                            info.type >= 0 ? info.type | parentParser.id : tree.type, stack.pos - parent.pos)
+        let node = new Tree(tree.children, tree.positions.map(p => p - parent!.pos), stack.pos - parent.pos,
+                            info.type >= 0 ? info.type | parentParser.id : tree.type)
         parent.useNode(node, parentParser.getGoto(parent.state, info.placeholder, true))
         if (verbose) console.log(parent + ` (via unnest ${parentParser.getName(info.type)})`)
         this.putStack(parent)
