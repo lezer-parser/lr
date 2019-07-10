@@ -4,6 +4,7 @@ import commonJS from "rollup-plugin-commonjs"
 
 export default {
   input: "./src/index.ts",
+  external: ["lezer-tree"],
   output: {
     format: "cjs",
     file: "./dist/index.js",
