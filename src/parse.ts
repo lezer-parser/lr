@@ -1,7 +1,7 @@
 import {Stack, Badness} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState} from "./constants"
 import {InputStream, Token, StringStream, Tokenizer, TokenGroup} from "./token"
-import {DefaultBufferLength, grammarID, termID, Tree, TreeBuffer, TagMap, allocateGrammarID} from "lezer-tree"
+import {DefaultBufferLength, Tree, TreeBuffer, Tag} from "lezer-tree"
 import {decodeArray} from "./decode"
 
 // Environment variable used to control console output
@@ -272,8 +272,8 @@ export class ParseContext {
 
     if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
-        if (grammarID(cached.type) != parser.id) continue
-        let match = parser.getGoto(stack.state, termID(cached.type))
+        if (cached.tags != parser.tags) continue
+        let match = parser.getGoto(stack.state, cached.type)
         if (match > -1 && !isFragile(cached)) {
           stack.useNode(cached, match)
           if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.type)})`)
@@ -302,8 +302,9 @@ export class ParseContext {
       let clippedInput = stack.cx.input.clip(end)
       if (parseNode || !nested) {
         let node = parseNode ? parseNode(clippedInput) : Tree.empty
+        let keepType = (node.type & Term.Tagged) || type < 0
         stack.useNode(new Tree(node.children, node.positions, end - stack.pos,
-                               node.type & Term.Tagged || type < 0 ? node.type : type | parser.id),
+                               keepType ? node.tags : parser.tags, keepType ? node.type : type),
                       parser.getGoto(stack.state, placeholder, true))
         this.putStack(stack)
       } else {
@@ -344,8 +345,9 @@ export class ParseContext {
         // This is a nested parse—add its result to the parent stack and
         // continue with that one.
         let parentParser = parent.cx.parser, info = parentParser.nested[parentParser.startNested(parent.state)]
+        let keepType = info.type < 0
         let node = new Tree(tree.children, tree.positions.map(p => p - parent!.pos), stack.pos - parent.pos,
-                            info.type >= 0 ? info.type | parentParser.id : tree.type)
+                            keepType ? tree.tags : parentParser.tags, keepType ? tree.type : info.type)
         parent.useNode(node, parentParser.getGoto(parent.state, info.placeholder, true))
         if (verbose) console.log(parent + ` (via unnest ${parentParser.getName(info.type)})`)
         this.putStack(parent)
@@ -408,8 +410,6 @@ export class ParseContext {
 export class Parser {
   /// @internal
   constructor(
-    /// The grammar's ID. Used to create globally unique tree node types.
-    readonly id: number,
     /// The parse states for this grammar @internal
     readonly states: Readonly<Uint32Array>,
     /// A blob of data that the parse states, as well as some
@@ -420,7 +420,7 @@ export class Parser {
     readonly goto: Readonly<Uint16Array>,
     /// A `TagMap` mapping the node types in this grammar to their tag
     /// names.
-    readonly tags: TagMap<string>,
+    readonly tags: readonly Tag[],
     /// The tokenizer objects used by the grammar @internal
     readonly tokenizers: readonly Tokenizer[],
     /// Metadata about nested grammars used in this grammar @internal
@@ -548,28 +548,12 @@ export class Parser {
     return iPrev < 0 || findOffset(this.data, this.tokenPrecTable, token) < iPrev
   }
 
-  /// Build up a tag map for this grammar. The values object should map
-  /// from tag names to associated values.
-  tagMap<T>(values: {[name: string]: T}): TagMap<T> {
-    let content: (T | null)[] = []
-    let tagArray = this.tags.grammars[this.id >> 16] || []
-    for (let i = 0; i < tagArray.length; i++) {
-      let tag = tagArray[i]!
-      content.push(
-        Object.prototype.hasOwnProperty.call(values, tag) ? values[tag] :
-        tag[0] == '"' && Object.prototype.hasOwnProperty.call(values, JSON.parse(tag)) ? values[JSON.parse(tag)] : null)
-    }
-    let grammars = []
-    grammars[this.id >> 16] = content
-    return new TagMap<T>(grammars)
-  }
-
   /// Create a new `Parser` instance with different values for (some
   /// of) the nested grammars. This can be used to, for example, swap
   /// in a different language for a nested grammar or fill in a nested
   /// grammar that was left blank by the original grammar.
   withNested(spec: {[name: string]: NestedGrammar | null}) {
-    return new Parser(this.id, this.states, this.data, this.goto, this.tags, this.tokenizers,
+    return new Parser(this.states, this.data, this.goto, this.tags, this.tokenizers,
                       this.nested.map(obj => {
                         if (!Object.prototype.hasOwnProperty.call(spec, obj.name)) return obj
                         return {name: obj.name, grammar: spec[obj.name], end: obj.end, type: obj.type, placeholder: obj.placeholder}
@@ -582,7 +566,7 @@ export class Parser {
   /// `--names` option. By default, only the names of tagged terms are
   /// stored.
   getName(term: number): string {
-    return this.termNames ? this.termNames[term] : this.tags.get(term) || String(term)
+    return this.termNames ? this.termNames[term] : (term & Term.Tagged) && this.tags[term >> 1].tag || String(term)
   }
 
   /// (Used by the output of the parser generator) @internal
@@ -593,9 +577,9 @@ export class Parser {
                      tokenPrec: number,
                      skippedNodes: number,
                      termNames?: {[id: number]: string}) {
-    let tokenArray = decodeArray(tokenData), id = allocateGrammarID()
-    return new Parser(id, decodeArray(states, Uint32Array), decodeArray(stateData),
-                      decodeArray(goto), TagMap.single(id, tags),
+    let tokenArray = decodeArray(tokenData)
+    return new Parser(decodeArray(states, Uint32Array), decodeArray(stateData),
+                      decodeArray(goto), tags.map(tag => new Tag(tag)),
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
                       nested.map(([name, grammar, endToken, type, placeholder]) =>
                                    ({name, grammar, end: new TokenGroup(decodeArray(endToken), 0), type, placeholder})),
@@ -623,13 +607,13 @@ function withoutPrototype(obj: {}) {
 // case we shouldn't reuse it.
 function isFragile(node: Tree) {
   let doneStart = false, doneEnd = false, fragile = node.type == Term.Err
-  if (!fragile) node.iterate(0, node.length, type => {
-    return doneStart || (type == Term.Err ? fragile = doneStart = true : undefined)
+  if (!fragile) node.iterate(0, node.length, tag => {
+    return doneStart || (tag.tag == "⚠" ? fragile = doneStart = true : undefined)
   }, type => {
     doneStart = true
   })
-  if (!fragile) node.iterate(node.length, 0, type => {
-    return doneEnd || (type == Term.Err ? fragile = doneEnd = true : undefined)
+  if (!fragile) node.iterate(node.length, 0, tag => {
+    return doneEnd || (tag.tag == "⚠" ? fragile = doneEnd = true : undefined)
   }, type => {
     doneEnd = true
   })
