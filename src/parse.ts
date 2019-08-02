@@ -570,7 +570,11 @@ export class Parser {
   }
 
   /// (Used by the output of the parser generator) @internal
-  static deserialize(states: string, stateData: string, goto: string, tags: readonly string[],
+  static deserialize(states: string,
+                     stateData: string,
+                     goto: string,
+                     tags: readonly string[],
+                     globalTag: string | null,
                      tokenData: string, tokenizers: (Tokenizer | number)[],
                      nested: [string, null | NestedGrammar, string, number, number][],
                      specializeTable: number, specializations: readonly {[term: string]: number}[],
@@ -579,7 +583,7 @@ export class Parser {
                      termNames?: {[id: number]: string}) {
     let tokenArray = decodeArray(tokenData)
     return new Parser(decodeArray(states, Uint32Array), decodeArray(stateData),
-                      decodeArray(goto), tags.map(tag => new Tag(tag)),
+                      decodeArray(goto), tags.map(tag => new Tag(tag + (globalTag ? "." + globalTag : ""))),
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
                       nested.map(([name, grammar, endToken, type, placeholder]) =>
                                    ({name, grammar, end: new TokenGroup(decodeArray(endToken), 0), type, placeholder})),
