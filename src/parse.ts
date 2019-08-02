@@ -272,7 +272,7 @@ export class ParseContext {
 
     if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
-        if (cached.tags != parser.tags) continue
+        if (!cached.isPartOf(parser.tags)) continue
         let match = parser.getGoto(stack.state, cached.type)
         if (match > -1 && !isFragile(cached)) {
           stack.useNode(cached, match)

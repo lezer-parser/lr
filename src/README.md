@@ -29,6 +29,4 @@ well for convenience.
 
 @Subtree
 
-@TagMap
-
-@allocateGrammarID
+@Tag
