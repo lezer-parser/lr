@@ -255,8 +255,35 @@ export class Stack {
   get ruleStart() {
     let force = this.cx.parser.stateSlot(this.state, ParseState.ForcedReduce)
     if (!(force & Action.ReduceFlag)) return 0
-    let base = this.stack.length - (3 * ((force >> Action.ReduceDepthShift) - 1))
-    return this.stack[base - 2]
+    let base = this.stack.length - (3 * (force >> Action.ReduceDepthShift))
+    return this.stack[base + 1]
+  }
+
+  /// Find the start position of the innermost instance of any of the
+  /// given term types, or return `-1` when none of them are found.
+  ///
+  /// **Note:** this is only reliable when there is at least some
+  /// state that unambiguously matches the given rule on the stack.
+  /// I.e. if you have a grammar like this, where the difference
+  /// between `a` and `b` is only apparent at the third token:
+  ///
+  ///     a { b | c }
+  ///     b { "x" "y" "x" }
+  ///     c { "x" "y" "z" }
+  ///
+  /// Then a parse state after `"x"` will not reliably tell you that
+  /// `b` is on the stack. You _can_ pass `[b, c]` to reliably check
+  /// for either of those two rules (assuming that `a` isn't part of
+  /// some rule that includes other things starting with `"x"`).
+  startOf(types: readonly number[]) {
+    for (let frame = this.stack.length - 3; frame >= 0; frame -= 3) {
+      let force = this.cx.parser.stateSlot(this.stack[frame], ParseState.ForcedReduce)
+      if (types.includes(force & Action.ValueMask)) {
+        let base = frame - (3 * (force >> Action.ReduceDepthShift))
+        return this.stack[base + 1]
+      }
+    }
+    return -1
   }
 
   // Scan for a state that has either a direct action or a recovery
