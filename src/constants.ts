@@ -97,3 +97,12 @@ export const enum ParseState {
   Size = 8,
   Shift = 3
 }
+
+export const enum Encode {
+  BigValCode = 126,
+  BigVal = 0xffff,
+  Start = 32,
+  Gap1 = 34, // '"'
+  Gap2 = 92, // '\\;
+  Base = 46 // (126 - 32 - 2) / 2
+}
