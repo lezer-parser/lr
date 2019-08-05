@@ -26,7 +26,7 @@ export interface NestedGrammarSpec {
   stay?: boolean
   /// Alternatively, `parseNode` may hold a function which will be made
   /// responsible for parsing the region.
-  parseNode?: (input: InputStream) => Tree
+  parseNode?: (input: InputStream, start: number) => Tree
   /// When a `filterEnd` property is present, that should hold a
   /// function that determines whether a given end token (which matches
   /// the end token specified in the grammar) should be used (true) or
@@ -301,7 +301,7 @@ export class ParseContext {
       let end = this.scanForNestEnd(stack, endToken, filterEnd)
       let clippedInput = stack.cx.input.clip(end)
       if (parseNode || !nested) {
-        let node = parseNode ? parseNode(clippedInput) : Tree.empty
+        let node = parseNode ? parseNode(clippedInput, stack.pos) : Tree.empty
         let keepType = (node.type & Term.Tagged) || type < 0
         stack.useNode(new Tree(node.children, node.positions, end - stack.pos,
                                keepType ? node.tags : parser.tags, keepType ? node.type : type),
