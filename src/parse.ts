@@ -345,7 +345,7 @@ export class ParseContext {
         // This is a nested parse—add its result to the parent stack and
         // continue with that one.
         let parentParser = parent.cx.parser, info = parentParser.nested[parentParser.startNested(parent.state)]
-        let keepType = info.type < 0
+        let keepType = tree.type & 1
         let node = new Tree(tree.children, tree.positions.map(p => p - parent!.pos), stack.pos - parent.pos,
                             keepType ? tree.tags : parentParser.tags, keepType ? tree.type : info.type)
         parent.useNode(node, parentParser.getGoto(parent.state, info.placeholder, true))
