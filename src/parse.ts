@@ -27,6 +27,8 @@ export interface NestedGrammarSpec {
   /// Alternatively, `parseNode` may hold a function which will be made
   /// responsible for parsing the region.
   parseNode?: (input: InputStream, start: number) => Tree
+  /// An optional extra type to tag the resulting tree with.
+  wrapType?: number,
   /// When a `filterEnd` property is present, that should hold a
   /// function that determines whether a given end token (which matches
   /// the end token specified in the grammar) should be used (true) or
@@ -188,7 +190,8 @@ export class StackContext {
   constructor(readonly parser: Parser,
               readonly maxBufferLength: number,
               readonly input: InputStream,
-              readonly parent: Stack | null = null) {}
+              readonly parent: Stack | null = null, 
+              readonly wrapType: number = -1) {}
 }
 
 /// A parse context can be used for step-by-step parsing. After
@@ -289,12 +292,12 @@ export class ParseContext {
 
     let nest = parser.startNested(stack.state)
     maybeNest: if (nest > -1) {
-      let {grammar, end: endToken, type, placeholder} = parser.nested[nest]
-      let filterEnd = undefined, parseNode = null, nested
+      let {grammar, end: endToken, placeholder} = parser.nested[nest]
+      let filterEnd = undefined, parseNode = null, nested, wrapType = undefined
       if (typeof grammar == "function") {
         let query = grammar(input, stack)
         if (query.stay) break maybeNest
-        ;({parseNode, parser: nested, filterEnd} = query)
+        ;({parseNode, parser: nested, filterEnd, wrapType} = query)
       } else {
         nested = grammar
       }
@@ -302,13 +305,12 @@ export class ParseContext {
       let clippedInput = stack.cx.input.clip(end)
       if (parseNode || !nested) {
         let node = parseNode ? parseNode(clippedInput, stack.pos) : Tree.empty
-        let keepType = (node.type & Term.Tagged) || type < 0
-        stack.useNode(new Tree(node.children, node.positions, end - stack.pos,
-                               keepType ? node.tags : parser.tags, keepType ? node.type : type),
-                      parser.getGoto(stack.state, placeholder, true))
+        if (node.length != end - stack.pos) node = new Tree(node.children, node.positions, end - stack.pos, node.tags, node.type)
+        if (wrapType != null) node = new Tree([node], [0], node.length, parser.tags, wrapType)
+        stack.useNode(node, parser.getGoto(stack.state, placeholder, true))
         this.putStack(stack)
       } else {
-        let newStack = Stack.start(new StackContext(nested, stack.cx.maxBufferLength, clippedInput, stack), stack.pos)
+        let newStack = Stack.start(new StackContext(nested, stack.cx.maxBufferLength, clippedInput, stack, wrapType), stack.pos)
         if (verbose) console.log(newStack + ` (nested)`)
         this.putStack(newStack)
       }
@@ -345,11 +347,11 @@ export class ParseContext {
         // This is a nested parse—add its result to the parent stack and
         // continue with that one.
         let parentParser = parent.cx.parser, info = parentParser.nested[parentParser.startNested(parent.state)]
-        let keepType = tree.type & 1
-        let node = new Tree(tree.children, tree.positions.map(p => p - parent!.pos), stack.pos - parent.pos,
-                            keepType ? tree.tags : parentParser.tags, keepType ? tree.type : info.type)
-        parent.useNode(node, parentParser.getGoto(parent.state, info.placeholder, true))
-        if (verbose) console.log(parent + ` (via unnest ${parentParser.getName(info.type)})`)
+        tree = new Tree(tree.children, tree.positions.map(p => p - parent!.pos), stack.pos - parent.pos,
+                        tree.tags, tree.type)
+        if (stack.cx.wrapType > -1) tree = new Tree([tree], [0], tree.length, parentParser.tags, stack.cx.wrapType)
+        parent.useNode(tree, parentParser.getGoto(parent.state, info.placeholder, true))
+        if (verbose) console.log(parent + ` (via unnest${tree.type & Term.Tagged ? " " + tree.tag.tag : ""})`)
         this.putStack(parent)
         return null
       } else {
@@ -431,9 +433,6 @@ export class Parser {
       grammar: NestedGrammar,
       /// A token-recognizing automaton for the end of the nesting
       end: TokenGroup,
-      /// The node type to assign to subtrees parsed with this grammar,
-      /// or -1 if no type should be added.
-      type: number,
       /// The id of the placeholder term that appears in the grammar at
       /// the position of this nesting
       placeholder: number
@@ -556,7 +555,7 @@ export class Parser {
     return new Parser(this.states, this.data, this.goto, this.tags, this.tokenizers,
                       this.nested.map(obj => {
                         if (!Object.prototype.hasOwnProperty.call(spec, obj.name)) return obj
-                        return {name: obj.name, grammar: spec[obj.name], end: obj.end, type: obj.type, placeholder: obj.placeholder}
+                        return {name: obj.name, grammar: spec[obj.name], end: obj.end, placeholder: obj.placeholder}
                       }),
                       this.specializeTable, this.specializations, this.tokenPrecTable, this.skippedNodes, this.termNames)
   }
