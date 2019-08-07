@@ -357,7 +357,7 @@ export class Stack {
   // Convert the stack's buffer to a syntax tree.
   /// @internal
   toTree(): Tree {
-    return Tree.build(StackBufferCursor.create(this), this.cx.parser.tags, this.cx.maxBufferLength, this.cx.reused)
+    return Tree.build(StackBufferCursor.create(this), this.cx.parser.tags, Term.Top, this.cx.maxBufferLength, this.cx.reused)
   }
 }
 
