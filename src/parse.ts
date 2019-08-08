@@ -1,7 +1,7 @@
 import {Stack, Badness} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState} from "./constants"
 import {InputStream, Token, StringStream, Tokenizer, TokenGroup} from "./token"
-import {DefaultBufferLength, Tree, TreeBuffer, Tag} from "lezer-tree"
+import {DefaultBufferLength, Tag, Tree, TreeBuffer} from "lezer-tree"
 import {decodeArray} from "./decode"
 
 // Environment variable used to control console output
@@ -609,13 +609,13 @@ function withoutPrototype(obj: {}) {
 // case we shouldn't reuse it.
 function isFragile(node: Tree) {
   let doneStart = false, doneEnd = false, fragile = node.type == Term.Err
-  if (!fragile) node.iterate(0, node.length, tag => {
-    return doneStart || (tag.tag == "⚠" ? fragile = doneStart = true : undefined)
+  if (!fragile) node.iterate(0, node.length, (_tag, _start, _end, type) => {
+    return doneStart || (type == Term.Err ? fragile = doneStart = true : undefined)
   }, type => {
     doneStart = true
   })
-  if (!fragile) node.iterate(node.length, 0, tag => {
-    return doneEnd || (tag.tag == "⚠" ? fragile = doneEnd = true : undefined)
+  if (!fragile) node.iterate(node.length, 0, (_tag, _start, _end, type) => {
+    return doneEnd || (type == Term.Err ? fragile = doneEnd = true : undefined)
   }, type => {
     doneEnd = true
   })
