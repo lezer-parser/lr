@@ -128,7 +128,7 @@ export class Stack {
         this.buffer.push(type, start, pos, count + 4)
       } else { // There may be skipped nodes that have to be moved forward
         let index = this.buffer.length
-        while (index > 0 && this.buffer[index - 2] > pos) {
+        if (index > 0 && this.buffer[index - 4] != Term.Err) while (index > 0 && this.buffer[index - 2] > pos) {
           // Move this record forward
           this.buffer[index] = this.buffer[index - 4]
           this.buffer[index + 1] = this.buffer[index - 3]
