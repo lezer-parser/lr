@@ -74,8 +74,8 @@ export const enum Term {
   // The values of the error and end-of-file terms are hard coded, the
   // others are allocated per grammar.
   Eof = 0,
-  Top = 1,
-  Err = 3
+  Err = 1,
+  Top = 3
 }
 
 export const enum Seq {
