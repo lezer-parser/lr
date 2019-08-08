@@ -340,23 +340,25 @@ export class ParseContext {
 
     // If we're here, the stack failed to advance normally
 
-    if (start == input.length && (parser.stateFlag(stack.state, StateFlag.Accepting) || this.stacks.length == 0)) {
-      while (!parser.stateFlag(stack.state, StateFlag.Accepting) && stack.forceReduce()) {}
-      let tree = stack.toTree(), {parent} = stack.cx
-      if (parent) {
-        // This is a nested parse—add its result to the parent stack and
-        // continue with that one.
-        let parentParser = parent.cx.parser, info = parentParser.nested[parentParser.startNested(parent.state)]
-        tree = new Tree(tree.children, tree.positions.map(p => p - parent!.pos), stack.pos - parent.pos,
-                        tree.tags, tree.type)
-        if (stack.cx.wrapType > -1) tree = new Tree([tree], [0], tree.length, parentParser.tags, stack.cx.wrapType)
-        parent.useNode(tree, parentParser.getGoto(parent.state, info.placeholder, true))
-        if (verbose) console.log(parent + ` (via unnest${tree.type & Term.Tagged ? " " + tree.tag.tag : ""})`)
-        this.putStack(parent)
-        return null
-      } else {
-        // Actual end of parse
-        return stack.toTree()
+    if (start == input.length) {
+      let accept = parser.stateFlag(stack.state, StateFlag.Accepting)
+      if (!accept && this.stacks.length == 0) {
+        accept = !stack.forceReduce()
+        if (!accept) {
+          this.putStack(stack)
+          return null
+        }
+      }
+      if (accept) {
+        if (stack.cx.parent) {
+          // This is a nested parse—add its result to the parent stack and
+          // continue with that one.
+          this.putStack(this.finishNested(stack))
+          return null
+        } else {
+          // Actual end of parse
+          return stack.toTree()
+        }
       }
     }
 
@@ -404,6 +406,17 @@ export class ParseContext {
       if (dummyToken.value > -1 && (!filter || filter(input.read(pos, dummyToken.end)))) return pos
     }
     return input.length
+  }
+
+  private finishNested(stack: Stack) {
+    let parent = stack.cx.parent!, tree = stack.toTree()
+    let parentParser = parent.cx.parser, info = parentParser.nested[parentParser.startNested(parent.state)]
+    tree = new Tree(tree.children, tree.positions.map(p => p - parent!.pos), stack.pos - parent.pos,
+                    tree.tags, tree.type)
+    if (stack.cx.wrapType > -1) tree = new Tree([tree], [0], tree.length, parentParser.tags, stack.cx.wrapType)
+    parent.useNode(tree, parentParser.getGoto(parent.state, info.placeholder, true))
+    if (verbose) console.log(parent + ` (via unnest${tree.type & Term.Tagged ? " " + tree.tag.tag : ""})`)
+    return parent
   }
 }
 
