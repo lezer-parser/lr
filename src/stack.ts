@@ -110,6 +110,7 @@ export class Stack {
     if (depth == 0) {
       // Zero-depth reductions are a special case—they add stuff to
       // the stack without popping anything off.
+      if (type & Term.Tagged) this.storeNode(type, this.reducePos, this.reducePos, 4, true)
       this.pushState(this.cx.parser.getGoto(this.state, type, true), this.reducePos)
       return
     }
@@ -124,24 +125,7 @@ export class Stack {
     let bufferBase = this.stack[base - 1], count = this.bufferBase + this.buffer.length - bufferBase
     if ((type & Term.Tagged) || (action & Action.RepeatFlag)) {
       let pos = this.cx.parser.stateFlag(this.state, StateFlag.Skipped) ? this.pos : this.reducePos
-      if (this.pos == pos) { // Simple case, just append
-        this.buffer.push(type, start, pos, count + 4)
-      } else { // There may be skipped nodes that have to be moved forward
-        let index = this.buffer.length
-        if (index > 0 && this.buffer[index - 4] != Term.Err) while (index > 0 && this.buffer[index - 2] > pos) {
-          // Move this record forward
-          this.buffer[index] = this.buffer[index - 4]
-          this.buffer[index + 1] = this.buffer[index - 3]
-          this.buffer[index + 2] = this.buffer[index - 2]
-          this.buffer[index + 3] = this.buffer[index - 1]
-          index -= 4
-          count -= 4
-        }
-        this.buffer[index] = type
-        this.buffer[index + 1] = start
-        this.buffer[index + 2] = pos
-        this.buffer[index + 3] = count + 4
-      }
+      this.storeNode(type, start, pos, count + 4, true)
     }
     if (action & Action.StayFlag) {
       this.state = this.stack[base]
@@ -154,7 +138,7 @@ export class Stack {
 
   // Shift a value into the buffer
   /// @internal
-  shiftValue(term: number, start: number, end: number, childCount = 4) {
+  storeNode(term: number, start: number, end: number, size = 4, isReduce = false) {
     if (term == Term.Err) { // Try to omit superfluous error nodes
       let cur: Stack | null = this, top = this.buffer.length
       if (top == 0 && cur.parent) {
@@ -164,7 +148,25 @@ export class Stack {
       if (top > 0 && cur.buffer[top - 4] == Term.Err &&
           (start == end || cur.buffer[top - 2] >= start)) return
     }
-    this.buffer.push(term, start, end, childCount)
+
+    if (!isReduce || this.pos == end) { // Simple case, just append
+      this.buffer.push(term, start, end, size)
+    } else { // There may be skipped nodes that have to be moved forward
+      let index = this.buffer.length
+      if (index > 0 && this.buffer[index - 4] != Term.Err) while (index > 0 && this.buffer[index - 2] > end) {
+        // Move this record forward
+        this.buffer[index] = this.buffer[index - 4]
+        this.buffer[index + 1] = this.buffer[index - 3]
+        this.buffer[index + 2] = this.buffer[index - 2]
+        this.buffer[index + 3] = this.buffer[index - 1]
+        index -= 4
+        size -= 4
+      }
+      this.buffer[index] = term
+      this.buffer[index + 1] = start
+      this.buffer[index + 2] = end
+      this.buffer[index + 3] = size
+    }
   }
 
   // Apply a shift action
@@ -232,8 +234,8 @@ export class Stack {
   // Try to recover from an error by 'deleting' (ignoring) one token.
   /// @internal
   recoverByDelete(next: number, nextEnd: number) {
-    if (next & Term.Tagged) this.shiftValue(next, this.pos, nextEnd)
-    this.shiftValue(Term.Err, this.pos, nextEnd, (next & Term.Tagged) ? 8 : 4)
+    if (next & Term.Tagged) this.storeNode(next, this.pos, nextEnd)
+    this.storeNode(Term.Err, this.pos, nextEnd, (next & Term.Tagged) ? 8 : 4)
     this.pos = nextEnd
     this.badness += Badness.Unit
   }
@@ -325,7 +327,7 @@ export class Stack {
         let recover = parser.getRecover(result.state, next)
         if (!recover) break
         result.pushState(recover, result.pos)
-        result.shiftValue(Term.Err, result.pos, result.pos)
+        result.storeNode(Term.Err, result.reducePos, result.reducePos, 4, true)
       }
 
       result.forceReduce()
@@ -340,7 +342,7 @@ export class Stack {
     if (reduce == 0) {
       reduce = this.cx.parser.stateSlot(this.state, ParseState.ForcedReduce)
       if ((reduce & Action.ReduceFlag) == 0) return false
-      this.shiftValue(Term.Err, this.pos, this.pos)
+      this.storeNode(Term.Err, this.reducePos, this.reducePos, 4, true)
     }
     this.reduce(reduce)
     return true
