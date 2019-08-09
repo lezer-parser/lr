@@ -133,7 +133,7 @@ export class Stack {
       let baseStateID = this.stack[base - 3]
       this.state = this.cx.parser.getGoto(baseStateID, type, true)
     }
-    if (base < this.stack.length) this.stack.length = base
+    while (this.stack.length > base) this.stack.pop()
   }
 
   // Shift a value into the buffer
