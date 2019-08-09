@@ -1,6 +1,6 @@
 import {Action, Term, StateFlag, ParseState} from "./constants"
 import {StackContext} from "./parse"
-import {Tree, BufferCursor} from "lezer-tree"
+import {Tree, BufferCursor, TypeFlag} from "lezer-tree"
 
 export const enum Badness {
   // Amount to add for a single recover action
@@ -107,11 +107,12 @@ export class Stack {
   /// @internal
   reduce(action: number) {
     let depth = action >> Action.ReduceDepthShift, type = action & Action.ValueMask
+    let {parser} = this.cx
     if (depth == 0) {
       // Zero-depth reductions are a special case—they add stuff to
       // the stack without popping anything off.
-      if (type & Term.Tagged) this.storeNode(type, this.reducePos, this.reducePos, 4, true)
-      this.pushState(this.cx.parser.getGoto(this.state, type, true), this.reducePos)
+      if (type <= parser.maxNode) this.storeNode(type, this.reducePos, this.reducePos, 4, true)
+      this.pushState(parser.getGoto(this.state, type, true), this.reducePos)
       return
     }
 
@@ -123,15 +124,15 @@ export class Stack {
     let base = this.stack.length - ((depth - 1) * 3) - (action & Action.StayFlag ? 6 : 0)
     let start = this.stack[base - 2]
     let bufferBase = this.stack[base - 1], count = this.bufferBase + this.buffer.length - bufferBase
-    if ((type & Term.Tagged) || (action & Action.RepeatFlag)) {
-      let pos = this.cx.parser.stateFlag(this.state, StateFlag.Skipped) ? this.pos : this.reducePos
+    if (type <= parser.maxNode && ((action & Action.RepeatFlag) || !(parser.group.types[type].flags & TypeFlag.Repeat))) {
+      let pos = parser.stateFlag(this.state, StateFlag.Skipped) ? this.pos : this.reducePos
       this.storeNode(type, start, pos, count + 4, true)
     }
     if (action & Action.StayFlag) {
       this.state = this.stack[base]
     } else {
       let baseStateID = this.stack[base - 3]
-      this.state = this.cx.parser.getGoto(baseStateID, type, true)
+      this.state = parser.getGoto(baseStateID, type, true)
     }
     while (this.stack.length > base) this.stack.pop()
   }
@@ -175,16 +176,16 @@ export class Stack {
     if (action & Action.GotoFlag) {
       this.pushState(action & Action.ValueMask, this.pos)
     } else if ((action & Action.StayFlag) == 0) { // Regular shift
-      let start = this.pos, nextState = action
-      if (nextEnd > this.pos || (next & Term.Tagged)) {
+      let start = this.pos, nextState = action, {parser} = this.cx
+      if (nextEnd > this.pos || next <= parser.maxNode) {
         this.pos = nextEnd
-        if (!this.cx.parser.stateFlag(nextState, StateFlag.Skipped)) this.reducePos = nextEnd
+        if (!parser.stateFlag(nextState, StateFlag.Skipped)) this.reducePos = nextEnd
       }
       this.pushState(nextState, start)
-      if (next & Term.Tagged) this.buffer.push(next, start, nextEnd, 4)
+      if (next <= parser.maxNode) this.buffer.push(next, start, nextEnd, 4)
       this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
     } else { // Shift-and-stay, which means this is skipped token
-      if (next & Term.Tagged) this.buffer.push(next, this.pos, nextEnd, 4)
+      if (next <= this.cx.parser.maxNode) this.buffer.push(next, this.pos, nextEnd, 4)
       this.pos = nextEnd
     }
   }
@@ -234,8 +235,9 @@ export class Stack {
   // Try to recover from an error by 'deleting' (ignoring) one token.
   /// @internal
   recoverByDelete(next: number, nextEnd: number) {
-    if (next & Term.Tagged) this.storeNode(next, this.pos, nextEnd)
-    this.storeNode(Term.Err, this.pos, nextEnd, (next & Term.Tagged) ? 8 : 4)
+    let isNode = next <= this.cx.parser.maxNode
+    if (isNode) this.storeNode(next, this.pos, nextEnd)
+    this.storeNode(Term.Err, this.pos, nextEnd, isNode ? 8 : 4)
     this.pos = nextEnd
     this.badness += Badness.Unit
   }
@@ -359,7 +361,7 @@ export class Stack {
   // Convert the stack's buffer to a syntax tree.
   /// @internal
   toTree(): Tree {
-    return Tree.build(StackBufferCursor.create(this), this.cx.parser.tags, Term.Top, this.cx.maxBufferLength, this.cx.reused)
+    return Tree.build(StackBufferCursor.create(this), this.cx.parser.group.types[Term.Top], this.cx.maxBufferLength, this.cx.reused)
   }
 }
 
@@ -413,7 +415,7 @@ class StackBufferCursor implements BufferCursor {
     }
   }
 
-  get type() { return this.buffer[this.index - 4] }
+  get id() { return this.buffer[this.index - 4] }
   get start() { return this.buffer[this.index - 3] }
   get end() { return this.buffer[this.index - 2] }
   get size() { return this.buffer[this.index - 1] }

@@ -68,14 +68,10 @@ export const enum Specialize {
 
 // Terms are 16-bit numbers
 export const enum Term {
-  // Odd numbers are used for terms that must show up in the
-  // (user-visible) tree.
-  Tagged = 1,
-  // The values of the error and end-of-file terms are hard coded, the
-  // others are allocated per grammar.
-  Eof = 0,
-  Err = 1,
-  Top = 3
+  // The values of the error and top terms are hard coded, the others
+  // are allocated per grammar.
+  Err = 0,
+  Top = 1
 }
 
 export const enum Seq {

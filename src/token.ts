@@ -1,4 +1,3 @@
-import {Term} from "./constants"
 import {Stack} from "./stack"
 
 /// Tokenizers write the tokens they read into instances of this class.
@@ -18,19 +17,6 @@ export class Token {
   accept(value: number, end: number) {
     this.value = value
     this.end = end
-  }
-
-  /// @internal
-  asError(start: number, eof: number) {
-    this.start = start
-    if (start == eof) {
-      this.value = Term.Eof
-      this.end = start
-    } else {
-      this.value = Term.Err
-      this.end = start + 1
-    }
-    return this
   }
 }
 

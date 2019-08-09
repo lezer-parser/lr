@@ -1,7 +1,7 @@
 import {Stack, Badness} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState} from "./constants"
 import {InputStream, Token, StringStream, Tokenizer, TokenGroup} from "./token"
-import {DefaultBufferLength, Tag, Tree, TreeBuffer} from "lezer-tree"
+import {DefaultBufferLength, Tag, Tree, TreeBuffer, NodeGroup} from "lezer-tree"
 import {decodeArray} from "./decode"
 
 // Environment variable used to control console output
@@ -102,7 +102,7 @@ class TokenCache {
 
   getActions(stack: Stack, input: InputStream) {
     let actionIndex = 0
-    let main: CachedToken | null = null
+    let main: Token | null = null
     let {parser} = stack.cx, {tokenizers} = parser
 
     for (let i = 0; i < tokenizers.length; i++) {
@@ -123,7 +123,13 @@ class TokenCache {
     }
 
     while (this.actions.length > actionIndex) this.actions.pop()
-    this.mainToken = main || dummyToken.asError(stack.pos, input.length)
+    if (!main) {
+      main = dummyToken
+      main.start = stack.pos
+      if (stack.pos == input.length) main.accept(stack.cx.parser.eofTerm, stack.pos)
+      else main.accept(Term.Err, stack.pos + 1)
+    }
+    this.mainToken = main
     return this.actions
   }
 
@@ -140,8 +146,10 @@ class TokenCache {
           else token.extended = found >> 1
         }
       }
+    } else if (stack.pos == input.length) {
+      token.accept(stack.cx.parser.eofTerm, stack.pos)
     } else {
-      token.asError(stack.pos, input.length)
+      token.accept(Term.Err, stack.pos + 1)
     }
   }
 
@@ -275,11 +283,11 @@ export class ParseContext {
 
     if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
-        if (!cached.isPartOf(parser.tags)) continue
-        let match = parser.getGoto(stack.state, cached.type)
+        if (cached.type.group != parser.group) continue
+        let match = parser.getGoto(stack.state, cached.type.id)
         if (match > -1 && !isFragile(cached)) {
           stack.useNode(cached, match)
-          if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.type)})`)
+          if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.type.id)})`)
           this.putStack(stack)
           return null
         }
@@ -305,8 +313,8 @@ export class ParseContext {
       let clippedInput = stack.cx.input.clip(end)
       if (parseNode || !nested) {
         let node = parseNode ? parseNode(clippedInput, stack.pos) : Tree.empty
-        if (node.length != end - stack.pos) node = new Tree(node.children, node.positions, end - stack.pos, node.tags, node.type)
-        if (wrapType != null) node = new Tree([node], [0], node.length, parser.tags, wrapType)
+        if (node.length != end - stack.pos) node = new Tree(node.type, node.children, node.positions, end - stack.pos)
+        if (wrapType != null) node = new Tree(parser.group.types[wrapType], [node], [0], node.length)
         stack.useNode(node, parser.getGoto(stack.state, placeholder, true))
         this.putStack(stack)
       } else {
@@ -411,11 +419,10 @@ export class ParseContext {
   private finishNested(stack: Stack) {
     let parent = stack.cx.parent!, tree = stack.toTree()
     let parentParser = parent.cx.parser, info = parentParser.nested[parentParser.startNested(parent.state)]
-    tree = new Tree(tree.children, tree.positions.map(p => p - parent!.pos), stack.pos - parent.pos,
-                    tree.tags, tree.type)
-    if (stack.cx.wrapType > -1) tree = new Tree([tree], [0], tree.length, parentParser.tags, stack.cx.wrapType)
+    tree = new Tree(tree.type, tree.children, tree.positions.map(p => p - parent!.pos), stack.pos - parent.pos)
+    if (stack.cx.wrapType > -1) tree = new Tree(parentParser.group.types[stack.cx.wrapType], [tree], [0], tree.length)
     parent.useNode(tree, parentParser.getGoto(parent.state, info.placeholder, true))
-    if (verbose) console.log(parent + ` (via unnest${tree.type & Term.Tagged ? " " + tree.tag.tag : ""})`)
+    if (verbose) console.log(parent + ` (via unnest ${stack.cx.wrapType > -1 ? parentParser.getName(stack.cx.wrapType) : tree.type.tag})`)
     return parent
   }
 }
@@ -423,6 +430,9 @@ export class ParseContext {
 /// A parser holds the parse tables for a given grammar, as generated
 /// by `lezer-generator`.
 export class Parser {
+  /// @internal
+  maxNode: number
+
   /// @internal
   constructor(
     /// The parse states for this grammar @internal
@@ -435,7 +445,7 @@ export class Parser {
     readonly goto: Readonly<Uint16Array>,
     /// A `TagMap` mapping the node types in this grammar to their tag
     /// names.
-    readonly tags: readonly Tag[],
+    readonly group: NodeGroup,
     /// The tokenizer objects used by the grammar @internal
     readonly tokenizers: readonly Tokenizer[],
     /// Metadata about nested grammars used in this grammar @internal
@@ -462,12 +472,11 @@ export class Parser {
     /// precedence order (higher precedence first) for ambiguous
     /// tokens @internal
     readonly tokenPrecTable: number,
-    /// Points at an array of node types that are part of
-    /// skip rules @internal
-    readonly skippedNodes: number,
     /// An optional object mapping term ids to name strings @internal
     readonly termNames: null | {[id: number]: string} = null
-  ) {}
+  ) {
+    this.maxNode = this.group.types.length - 1
+  }
 
   /// Parse a given string or stream.
   parse(input: InputStream | string, options?: ParseOptions) {
@@ -546,14 +555,6 @@ export class Parser {
     }
   }
 
-  /// Tells you whether a given term is part of the skip rules for the
-  /// grammar.
-  isSkipped(term: number) {
-    for (let i = this.skippedNodes, cur; (cur = this.data[i]) != Seq.End; i++)
-      if (cur == term) return true
-    return false
-  }
-
   /// @internal
   overrides(token: number, prev: number) {
     let iPrev = findOffset(this.data, this.tokenPrecTable, prev)
@@ -565,12 +566,12 @@ export class Parser {
   /// in a different language for a nested grammar or fill in a nested
   /// grammar that was left blank by the original grammar.
   withNested(spec: {[name: string]: NestedGrammar | null}) {
-    return new Parser(this.states, this.data, this.goto, this.tags, this.tokenizers,
+    return new Parser(this.states, this.data, this.goto, this.group, this.tokenizers,
                       this.nested.map(obj => {
                         if (!Object.prototype.hasOwnProperty.call(spec, obj.name)) return obj
                         return {name: obj.name, grammar: spec[obj.name], end: obj.end, placeholder: obj.placeholder}
                       }),
-                      this.specializeTable, this.specializations, this.tokenPrecTable, this.skippedNodes, this.termNames)
+                      this.specializeTable, this.specializations, this.tokenPrecTable, this.termNames)
   }
 
   /// Returns the name associated with a given term. This will only
@@ -578,28 +579,37 @@ export class Parser {
   /// `--names` option. By default, only the names of tagged terms are
   /// stored.
   getName(term: number): string {
-    return this.termNames ? this.termNames[term] : (term & Term.Tagged) && this.tags[term >> 1].tag || String(term)
+    return this.termNames ? this.termNames[term] : String(term <= this.maxNode ? this.group.types[term].tag : term)
   }
+
+  /// The eof term id is always allocated directly after the node
+  /// types. @internal
+  get eofTerm() { return this.maxNode + 1 }
 
   /// (Used by the output of the parser generator) @internal
   static deserialize(states: string,
                      stateData: string,
                      goto: string,
-                     tags: readonly string[],
+                     nodeTypes: readonly (string | number)[],
                      tokenData: string, tokenizers: (Tokenizer | number)[],
-                     nested: [string, null | NestedGrammar, string, number, number][],
+                     nested: [string, null | NestedGrammar, string, number][],
                      specializeTable: number, specializations: readonly {[term: string]: number}[],
                      tokenPrec: number,
-                     skippedNodes: number,
                      termNames?: {[id: number]: string}) {
     let tokenArray = decodeArray(tokenData)
+    let group = new NodeGroup
+    for (let i = 0; i < nodeTypes.length;) {
+      let flags = nodeTypes[i++], tag = Tag.none
+      if (typeof flags == "string") { tag = new Tag(flags); flags = nodeTypes[i++] as number }
+      group.define(tag, flags)
+    }
     return new Parser(decodeArray(states, Uint32Array), decodeArray(stateData),
-                      decodeArray(goto), tags.map(tag => new Tag(tag)),
+                      decodeArray(goto), group,
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
-                      nested.map(([name, grammar, endToken, type, placeholder]) =>
-                                   ({name, grammar, end: new TokenGroup(decodeArray(endToken), 0), type, placeholder})),
+                      nested.map(([name, grammar, endToken, placeholder]) =>
+                                   ({name, grammar, end: new TokenGroup(decodeArray(endToken), 0), placeholder})),
                       specializeTable, specializations.map(withoutPrototype),
-                      tokenPrec, skippedNodes, termNames)
+                      tokenPrec, termNames)
   }
 }
 
@@ -621,14 +631,14 @@ function withoutPrototype(obj: {}) {
 // Checks whether a node starts or ends with an error node, in which
 // case we shouldn't reuse it.
 function isFragile(node: Tree) {
-  let doneStart = false, doneEnd = false, fragile = node.type == Term.Err
-  if (!fragile) node.iterate(0, node.length, (_tag, _start, _end, type) => {
-    return doneStart || (type == Term.Err ? fragile = doneStart = true : undefined)
+  let doneStart = false, doneEnd = false, fragile = node.type.id == Term.Err
+  if (!fragile) node.iterate(0, node.length, type => {
+    return doneStart || (type.id == Term.Err ? fragile = doneStart = true : undefined)
   }, type => {
     doneStart = true
   })
-  if (!fragile) node.iterate(node.length, 0, (_tag, _start, _end, type) => {
-    return doneEnd || (type == Term.Err ? fragile = doneEnd = true : undefined)
+  if (!fragile) node.iterate(node.length, 0, type => {
+    return doneEnd || (type.id == Term.Err ? fragile = doneEnd = true : undefined)
   }, type => {
     doneEnd = true
   })
