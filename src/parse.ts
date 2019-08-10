@@ -590,7 +590,7 @@ export class Parser {
   static deserialize(states: string,
                      stateData: string,
                      goto: string,
-                     nodeTypes: readonly (string | number)[],
+                     nodeTypes: readonly string[],
                      tokenData: string, tokenizers: (Tokenizer | number)[],
                      nested: [string, null | NestedGrammar, string, number][],
                      specializeTable: number, specializations: readonly {[term: string]: number}[],
@@ -598,10 +598,10 @@ export class Parser {
                      termNames?: {[id: number]: string}) {
     let tokenArray = decodeArray(tokenData)
     let group = new NodeGroup
-    for (let i = 0; i < nodeTypes.length;) {
-      let flags = nodeTypes[i++], tag = Tag.none
-      if (typeof flags == "string") { tag = new Tag(flags); flags = nodeTypes[i++] as number }
-      group.define(tag, flags)
+    for (let type of nodeTypes) {
+      let first = type.charCodeAt(0), repeated = first == 43 /* '+' */, skipped = first == 126 /* '~' */
+      group.define(repeated ? Tag.none : new Tag(skipped ? type.slice(1) : type),
+                   group.types.length == 0 ? errorFlag : repeated ? repeatFlag : skipped ? skipFlag : undefined)
     }
     return new Parser(decodeArray(states, Uint32Array), decodeArray(stateData),
                       decodeArray(goto), group,
@@ -612,6 +612,8 @@ export class Parser {
                       tokenPrec, termNames)
   }
 }
+
+const repeatFlag = {repeated: true}, errorFlag = {error: true}, skipFlag = {skipped: true}
 
 function findOffset(data: Readonly<Uint16Array>, start: number, term: number) {
   for (let i = start, next; (next = data[i]) != Seq.End; i++)
