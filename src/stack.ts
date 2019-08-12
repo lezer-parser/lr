@@ -146,7 +146,7 @@ export class Stack {
         top = cur.bufferBase - cur.parent.bufferBase
         cur = cur.parent
       }
-      if (top > 0 && cur.buffer[top - 4] == Term.Err &&
+      if (top > 0 && cur.buffer[top - 4] == Term.Err && cur.buffer[top - 1] > -1 &&
           (start == end || cur.buffer[top - 2] >= start)) return
     }
 
