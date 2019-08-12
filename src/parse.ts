@@ -348,24 +348,19 @@ export class ParseContext {
     // If we're here, the stack failed to advance normally
 
     if (start == input.length) {
-      let accept = parser.stateFlag(stack.state, StateFlag.Accepting)
-      if (!accept && this.stacks.length == 0) {
-        accept = !stack.forceReduce()
-        if (!accept) {
-          this.putStack(stack)
-          return null
-        }
+      if (!parser.stateFlag(stack.state, StateFlag.Accepting) && stack.forceReduce()) {
+        if (verbose) console.log(stack + " (via forced reduction at eof)")
+        this.putStack(stack)
+        return null
       }
-      if (accept) {
-        if (stack.cx.parent) {
-          // This is a nested parse—add its result to the parent stack and
-          // continue with that one.
-          this.putStack(this.finishNested(stack))
-          return null
-        } else {
-          // Actual end of parse
-          return stack.toTree()
-        }
+      if (stack.cx.parent) {
+        // This is a nested parse—add its result to the parent stack and
+        // continue with that one.
+        this.putStack(this.finishNested(stack))
+        return null
+      } else {
+        // Actual end of parse
+        return stack.toTree()
       }
     }
 

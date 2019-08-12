@@ -341,7 +341,7 @@ export class Stack {
   /// @internal
   forceReduce() {
     let reduce = this.cx.parser.anyReduce(this.state)
-    if (reduce == 0 || (reduce >> Action.ReduceDepthShift) == 0) {
+    if (reduce == 0) {
       reduce = this.cx.parser.stateSlot(this.state, ParseState.ForcedReduce)
       if ((reduce & Action.ReduceFlag) == 0) return false
       this.storeNode(Term.Err, this.reducePos, this.reducePos, 4, true)
