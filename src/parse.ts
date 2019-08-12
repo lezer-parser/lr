@@ -283,7 +283,7 @@ export class ParseContext {
 
     if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
-        let match = cached.type.group != parser.group ? parser.getGoto(stack.state, cached.type.id) : -1
+        let match = cached.type.group == parser.group ? parser.getGoto(stack.state, cached.type.id) : -1
         if (match > -1 && !isFragile(cached)) {
           stack.useNode(cached, match)
           if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.type.id)})`)
