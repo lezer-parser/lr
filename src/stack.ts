@@ -332,19 +332,20 @@ export class Stack {
         result.storeNode(Term.Err, result.reducePos, result.reducePos, 4, true)
       }
 
-      result.forceReduce()
+      result.forceReduce(false)
     }
   }
 
   // Force a reduce, if possible. Return false if that can't
   // be done.
   /// @internal
-  forceReduce() {
+  forceReduce(countBadness = true) {
     let reduce = this.cx.parser.anyReduce(this.state)
     if (reduce == 0) {
       reduce = this.cx.parser.stateSlot(this.state, ParseState.ForcedReduce)
       if ((reduce & Action.ReduceFlag) == 0) return false
       this.storeNode(Term.Err, this.reducePos, this.reducePos, 4, true)
+      this.badness += Badness.Unit
     }
     this.reduce(reduce)
     return true
