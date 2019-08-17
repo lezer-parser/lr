@@ -1,6 +1,6 @@
 import {Action, Term, StateFlag, ParseState} from "./constants"
 import {StackContext} from "./parse"
-import {Tree, BufferCursor} from "lezer-tree"
+import {Tree, BufferCursor, NodeProp} from "lezer-tree"
 
 export const enum Badness {
   // Amount to add for a single recover action
@@ -124,7 +124,7 @@ export class Stack {
     let base = this.stack.length - ((depth - 1) * 3) - (action & Action.StayFlag ? 6 : 0)
     let start = this.stack[base - 2]
     let bufferBase = this.stack[base - 1], count = this.bufferBase + this.buffer.length - bufferBase
-    if (type <= parser.maxNode && ((action & Action.RepeatFlag) || !parser.group.types[type].repeated)) {
+    if (type <= parser.maxNode && ((action & Action.RepeatFlag) || !parser.group.types[type].prop(NodeProp.repeated))) {
       let pos = parser.stateFlag(this.state, StateFlag.Skipped) ? this.pos : this.reducePos
       this.storeNode(type, start, pos, count + 4, true)
     }
@@ -362,7 +362,7 @@ export class Stack {
   // Convert the stack's buffer to a syntax tree.
   /// @internal
   toTree(): Tree {
-    return Tree.build(StackBufferCursor.create(this), this.cx.parser.group.types[Term.Top], this.cx.maxBufferLength, this.cx.reused)
+    return Tree.build(StackBufferCursor.create(this), this.cx.parser.group, Term.Top, this.cx.maxBufferLength, this.cx.reused)
   }
 }
 

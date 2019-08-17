@@ -1,7 +1,7 @@
 import {Stack, Badness} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState} from "./constants"
 import {InputStream, Token, StringStream, Tokenizer, TokenGroup} from "./token"
-import {DefaultBufferLength, Tag, Tree, TreeBuffer, NodeGroup} from "lezer-tree"
+import {DefaultBufferLength, Tree, TreeBuffer, NodeGroup, NodeType, NodeProp} from "lezer-tree"
 import {decodeArray} from "./decode"
 
 // Environment variable used to control console output
@@ -283,7 +283,7 @@ export class ParseContext {
 
     if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
-        let match = cached.type.group == parser.group ? parser.getGoto(stack.state, cached.type.id) : -1
+        let match = parser.group.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
         if (match > -1 && !isFragile(cached)) {
           stack.useNode(cached, match)
           if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.type.id)})`)
@@ -416,7 +416,7 @@ export class ParseContext {
     tree = new Tree(tree.type, tree.children, tree.positions.map(p => p - parent!.pos), stack.pos - parent.pos)
     if (stack.cx.wrapType > -1) tree = new Tree(parentParser.group.types[stack.cx.wrapType], [tree], [0], tree.length)
     parent.useNode(tree, parentParser.getGoto(parent.state, info.placeholder, true))
-    if (verbose) console.log(parent + ` (via unnest ${stack.cx.wrapType > -1 ? parentParser.getName(stack.cx.wrapType) : tree.type.tag})`)
+    if (verbose) console.log(parent + ` (via unnest ${stack.cx.wrapType > -1 ? parentParser.getName(stack.cx.wrapType) : tree.type.name})`)
     return parent
   }
 }
@@ -573,7 +573,7 @@ export class Parser {
   /// `--names` option. By default, only the names of tagged terms are
   /// stored.
   getName(term: number): string {
-    return this.termNames ? this.termNames[term] : String(term <= this.maxNode ? this.group.types[term].tag : term)
+    return this.termNames ? this.termNames[term] : String(term <= this.maxNode && this.group.types[term].name || term)
   }
 
   /// The eof term id is always allocated directly after the node
@@ -584,19 +584,24 @@ export class Parser {
   static deserialize(states: string,
                      stateData: string,
                      goto: string,
-                     nodeTypes: readonly string[],
+                     nodeTypeData: readonly (string | NodeProp<any>)[],
                      tokenData: string, tokenizers: (Tokenizer | number)[],
                      nested: [string, null | NestedGrammar, string, number][],
                      specializeTable: number, specializations: readonly {[term: string]: number}[],
                      tokenPrec: number,
                      termNames?: {[id: number]: string}) {
     let tokenArray = decodeArray(tokenData)
-    let group = new NodeGroup
-    for (let type of nodeTypes) {
-      let first = type.charCodeAt(0), repeated = first == 43 /* '+' */, skipped = first == 126 /* '~' */
-      group.define(repeated ? Tag.none : new Tag(skipped ? type.slice(1) : type),
-                   group.types.length == 0 ? errorFlag : repeated ? repeatFlag : skipped ? skipFlag : undefined)
+    let nodeTypes: NodeType[] = []
+    for (let i = 0; i < nodeTypeData.length;) {
+      let name = nodeTypeData[i++] as string, props = noProps
+      while (i < nodeTypeData.length && nodeTypeData[i] instanceof NodeProp) {
+        if (props == noProps) props = Object.create(null)
+        let type = nodeTypeData[i++] as NodeProp<any>, value = nodeTypeData[i++] as string
+        props[type.id] = type.fromString(value)
+      }
+      nodeTypes.push(new NodeType(name, props, nodeTypes.length))
     }
+    let group = new NodeGroup(nodeTypes)
     return new Parser(decodeArray(states, Uint32Array), decodeArray(stateData),
                       decodeArray(goto), group,
                       tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
@@ -607,7 +612,7 @@ export class Parser {
   }
 }
 
-const repeatFlag = {repeated: true}, errorFlag = {error: true}, skipFlag = {skipped: true}
+const noProps: {[propID: number]: any} = Object.create(null)
 
 function findOffset(data: Readonly<Uint16Array>, start: number, term: number) {
   for (let i = start, next; (next = data[i]) != Seq.End; i++)
