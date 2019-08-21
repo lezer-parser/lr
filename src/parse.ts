@@ -1,7 +1,7 @@
 import {Stack, Badness} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState} from "./constants"
 import {InputStream, Token, StringStream, Tokenizer, TokenGroup} from "./token"
-import {DefaultBufferLength, Tree, TreeBuffer, NodeGroup, NodeType, NodeProp} from "lezer-tree"
+import {DefaultBufferLength, Tree, TreeBuffer, NodeGroup, NodeType, NodeProp, NodePropSource} from "lezer-tree"
 import {decodeArray} from "./decode"
 
 // Environment variable used to control console output
@@ -565,6 +565,11 @@ export class Parser {
                         if (!Object.prototype.hasOwnProperty.call(spec, obj.name)) return obj
                         return {name: obj.name, grammar: spec[obj.name], end: obj.end, placeholder: obj.placeholder}
                       }),
+                      this.specializeTable, this.specializations, this.tokenPrecTable, this.termNames)
+  }
+
+  withProps(...props: NodePropSource[]) {
+    return new Parser(this.states, this.data, this.goto, this.group.extend(...props), this.tokenizers, this.nested,
                       this.specializeTable, this.specializations, this.tokenPrecTable, this.termNames)
   }
 
