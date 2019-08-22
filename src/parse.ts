@@ -591,6 +591,7 @@ export class Parser {
     stateData: string,
     goto: string,
     nodeNames: string,
+    repeatNodeCount: number,
     nodeProps?: [NodeProp<any>, ...(string | number)[]][],
     tokenData: string,
     tokenizers: (Tokenizer | number)[],
@@ -601,13 +602,16 @@ export class Parser {
     termNames?: {[id: number]: string}
   }) {
     let tokenArray = decodeArray(spec.tokenData)
-    let nodeNames = spec.nodeNames.split(" "), nodeProps: {[id: number]: any}[] = []
+    let nodeNames = spec.nodeNames.split(" ")
+    for (let i = 0; i < spec.repeatNodeCount; i++) nodeNames.push("")
+    let nodeProps: {[id: number]: any}[] = []
     for (let i = 0; i < nodeNames.length; i++) nodeProps.push(noProps)
     function setProp(nodeID: number, prop: NodeProp<any>, value: string) {
       if (nodeProps[nodeID] == noProps) nodeProps[nodeID] = Object.create(null)
-      nodeProps[nodeID][prop.id] = prop.fromString(value)
+      nodeProps[nodeID][prop.id] = prop.deserialize(value)
     }
     setProp(0, NodeProp.error, "")
+    for (let i = nodeProps.length - spec.repeatNodeCount; i < nodeProps.length; i++) setProp(i, NodeProp.repeated, "")
     if (spec.nodeProps) for (let propSpec of spec.nodeProps) {
       let prop = propSpec[0]
       for (let i = 1; i < propSpec.length; i += 2)
