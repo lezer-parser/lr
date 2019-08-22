@@ -1,3 +1,25 @@
+## 0.3.0 (2019-08-22)
+
+### Bug fixes
+
+Don't treat reused nodes as if they are error terms when merging errors.
+
+Add badness penalty for forced reductions at end of input.
+
+Fix several infinite loops around forced reductions.
+
+Don't move error nodes out of reduces.
+
+### New features
+
+Add a `Parser.withProps` method for extending a parser with new node props.
+
+### Breaking changes
+
+Emits lezer-tree 0.3.0 style trees with `NodeType` type objects.
+
+`Parser.deserialize`'s interface changed (now taking an object rather than a long list of parameters).
+
 ## 0.2.0 (2019-08-02)
 
 ### Bug fixes
