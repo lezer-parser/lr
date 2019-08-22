@@ -586,34 +586,38 @@ export class Parser {
   get eofTerm() { return this.maxNode + 1 }
 
   /// (Used by the output of the parser generator) @internal
-  static deserialize(states: string,
-                     stateData: string,
-                     goto: string,
-                     nodeTypeData: readonly (string | NodeProp<any>)[],
-                     tokenData: string, tokenizers: (Tokenizer | number)[],
-                     nested: [string, null | NestedGrammar, string, number][],
-                     specializeTable: number, specializations: readonly {[term: string]: number}[],
-                     tokenPrec: number,
-                     termNames?: {[id: number]: string}) {
-    let tokenArray = decodeArray(tokenData)
+  static deserialize(spec: {
+    states: string,
+    stateData: string,
+    goto: string,
+    nodeTypeData: readonly (string | NodeProp<any>)[],
+    tokenData: string,
+    tokenizers: (Tokenizer | number)[],
+    nested?: [string, null | NestedGrammar, string, number][],
+    specializeTable: number,
+    specializations?: readonly {[term: string]: number}[],
+    tokenPrec: number,
+    termNames?: {[id: number]: string}
+  }) {
+    let tokenArray = decodeArray(spec.tokenData)
     let nodeTypes: NodeType[] = []
-    for (let i = 0; i < nodeTypeData.length;) {
-      let name = nodeTypeData[i++] as string, props = noProps
-      while (i < nodeTypeData.length && nodeTypeData[i] instanceof NodeProp) {
+    for (let i = 0; i < spec.nodeTypeData.length;) {
+      let name = spec.nodeTypeData[i++] as string, props = noProps
+      while (i < spec.nodeTypeData.length && spec.nodeTypeData[i] instanceof NodeProp) {
         if (props == noProps) props = Object.create(null)
-        let type = nodeTypeData[i++] as NodeProp<any>, value = nodeTypeData[i++] as string
+        let type = spec.nodeTypeData[i++] as NodeProp<any>, value = spec.nodeTypeData[i++] as string
         props[type.id] = type.fromString(value)
       }
       nodeTypes.push(new NodeType(name, props, nodeTypes.length))
     }
     let group = new NodeGroup(nodeTypes)
-    return new Parser(decodeArray(states, Uint32Array), decodeArray(stateData),
-                      decodeArray(goto), group,
-                      tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
-                      nested.map(([name, grammar, endToken, placeholder]) =>
-                                   ({name, grammar, end: new TokenGroup(decodeArray(endToken), 0), placeholder})),
-                      specializeTable, specializations.map(withoutPrototype),
-                      tokenPrec, termNames)
+    return new Parser(decodeArray(spec.states, Uint32Array), decodeArray(spec.stateData),
+                      decodeArray(spec.goto), group,
+                      spec.tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
+                      (spec.nested || []).map(([name, grammar, endToken, placeholder]) =>
+                                              ({name, grammar, end: new TokenGroup(decodeArray(endToken), 0), placeholder})),
+                      spec.specializeTable, (spec.specializations || []).map(withoutPrototype),
+                      spec.tokenPrec, spec.termNames)
   }
 }
 
