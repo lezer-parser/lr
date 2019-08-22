@@ -590,7 +590,8 @@ export class Parser {
     states: string,
     stateData: string,
     goto: string,
-    nodeTypeData: readonly (string | NodeProp<any>)[],
+    nodeNames: string,
+    nodeProps?: [NodeProp<any>, ...(string | number)[]][],
     tokenData: string,
     tokenizers: (Tokenizer | number)[],
     nested?: [string, null | NestedGrammar, string, number][],
@@ -600,17 +601,20 @@ export class Parser {
     termNames?: {[id: number]: string}
   }) {
     let tokenArray = decodeArray(spec.tokenData)
-    let nodeTypes: NodeType[] = []
-    for (let i = 0; i < spec.nodeTypeData.length;) {
-      let name = spec.nodeTypeData[i++] as string, props = noProps
-      while (i < spec.nodeTypeData.length && spec.nodeTypeData[i] instanceof NodeProp) {
-        if (props == noProps) props = Object.create(null)
-        let type = spec.nodeTypeData[i++] as NodeProp<any>, value = spec.nodeTypeData[i++] as string
-        props[type.id] = type.fromString(value)
-      }
-      nodeTypes.push(new NodeType(name, props, nodeTypes.length))
+    let nodeNames = spec.nodeNames.split(" "), nodeProps: {[id: number]: any}[] = []
+    for (let i = 0; i < nodeNames.length; i++) nodeProps.push(noProps)
+    function setProp(nodeID: number, prop: NodeProp<any>, value: string) {
+      if (nodeProps[nodeID] == noProps) nodeProps[nodeID] = Object.create(null)
+      nodeProps[nodeID][prop.id] = prop.fromString(value)
     }
-    let group = new NodeGroup(nodeTypes)
+    setProp(0, NodeProp.error, "")
+    if (spec.nodeProps) for (let propSpec of spec.nodeProps) {
+      let prop = propSpec[0]
+      for (let i = 1; i < propSpec.length; i += 2)
+        setProp(propSpec[i] as number, prop, propSpec[i + 1] as string)
+    }
+    let group = new NodeGroup(nodeNames.map((name, i) => new NodeType(name, nodeProps[i], i)))
+
     return new Parser(decodeArray(spec.states, Uint32Array), decodeArray(spec.stateData),
                       decodeArray(spec.goto), group,
                       spec.tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
