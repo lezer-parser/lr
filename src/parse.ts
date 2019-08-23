@@ -568,6 +568,9 @@ export class Parser {
                       this.specializeTable, this.specializations, this.tokenPrecTable, this.termNames)
   }
 
+  /// Create a new `Parser` instance whose node types have the given
+  /// props added. You should use [`NodeProp.add`](#tree.NodeProp.add)
+  /// to create the arguments to this method.
   withProps(...props: NodePropSource[]) {
     return new Parser(this.states, this.data, this.goto, this.group.extend(...props), this.tokenizers, this.nested,
                       this.specializeTable, this.specializations, this.tokenPrecTable, this.termNames)
@@ -608,7 +611,7 @@ export class Parser {
     for (let i = 0; i < nodeNames.length; i++) nodeProps.push(noProps)
     function setProp(nodeID: number, prop: NodeProp<any>, value: string) {
       if (nodeProps[nodeID] == noProps) nodeProps[nodeID] = Object.create(null)
-      nodeProps[nodeID][prop.id] = prop.deserialize(value)
+      prop.set(nodeProps[nodeID], prop.deserialize(value))
     }
     setProp(0, NodeProp.error, "")
     for (let i = nodeProps.length - spec.repeatNodeCount; i < nodeProps.length; i++) setProp(i, NodeProp.repeated, "")

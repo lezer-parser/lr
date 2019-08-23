@@ -29,4 +29,8 @@ well for convenience.
 
 @Subtree
 
-@Tag
+@NodeType
+
+@NodeGroup
+
+@NodeProp
