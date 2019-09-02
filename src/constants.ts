@@ -86,13 +86,11 @@ export const enum ParseState {
   Flags = 0,
   Actions = 1,
   Skip = 2,
-  Recover = 3,
-  TokenizerMask = 4,
-  DefaultReduce = 5,
-  ForcedReduce = 6,
+  TokenizerMask = 3,
+  DefaultReduce = 4,
+  ForcedReduce = 5,
   // Total size of a state record
-  Size = 8,
-  Shift = 3
+  Size = 6
 }
 
 export const enum Encode {

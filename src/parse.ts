@@ -513,18 +513,9 @@ export class Parser {
     return 0
   }
 
-  // Get a recovery action for a given state and terminal, or 0 when
-  // none
-  ///@internal
-  getRecover(state: number, terminal: number) {
-    for (let i = this.stateSlot(state, ParseState.Recover), next; (next = this.data[i]) != Seq.End; i += 2)
-      if (next == terminal) return this.data[i + 1]
-    return 0
-  }
-
   /// @internal
   stateSlot(state: number, slot: number) {
-    return this.states[(state << ParseState.Shift) + slot]
+    return this.states[(state * ParseState.Size) + slot]
   }
 
   /// @internal

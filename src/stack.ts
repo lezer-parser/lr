@@ -324,15 +324,14 @@ export class Stack {
     result.reducePos = result.pos
     result.badness += Badness.Unit
     for (;;) {
-      for (;;) {
-        if (parser.hasAction(result.state, next)) return result
-        let recover = parser.getRecover(result.state, next)
-        if (!recover) break
+      if (parser.hasAction(result.state, next)) return result
+      let recover = parser.getRecover(result.state, next)
+      if (recover) {
         result.pushState(recover, result.pos)
         result.storeNode(Term.Err, result.reducePos, result.reducePos, 4, true)
+      } else {
+        result.forceReduce(false)
       }
-
-      result.forceReduce(false)
     }
   }
 
@@ -345,7 +344,7 @@ export class Stack {
       reduce = this.cx.parser.stateSlot(this.state, ParseState.ForcedReduce)
       if ((reduce & Action.ReduceFlag) == 0) return false
       this.storeNode(Term.Err, this.reducePos, this.reducePos, 4, true)
-      this.badness += Badness.Unit
+      if (countBadness) this.badness += Badness.Unit
     }
     this.reduce(reduce)
     return true
