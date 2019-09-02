@@ -153,14 +153,16 @@ export class Stack {
   // Shift a value into the buffer
   /// @internal
   storeNode(term: number, start: number, end: number, size = 4, isReduce = false) {
-    if (term == Term.Err) { // Try to omit superfluous error nodes
+    if (term == Term.Err) { // Try to omit/merge adjacent error nodes
       let cur: Stack | null = this, top = this.buffer.length
       if (top == 0 && cur.parent) {
         top = cur.bufferBase - cur.parent.bufferBase
         cur = cur.parent
       }
-      if (top > 0 && cur.buffer[top - 4] == Term.Err && cur.buffer[top - 1] > -1 &&
-          (start == end || cur.buffer[top - 2] >= start)) return
+      if (top > 0 && cur.buffer[top - 4] == Term.Err && cur.buffer[top - 1] > -1) {
+        if (start == end) return
+        if (cur.buffer[top - 2] >= start) { cur.buffer[top - 2] = end; return }
+      }
     }
 
     if (!isReduce || this.pos == end) { // Simple case, just append
