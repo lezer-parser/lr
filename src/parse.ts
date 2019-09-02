@@ -243,24 +243,23 @@ export class ParseContext {
     return elt
   }
 
-  private putStack(stack: Stack, strict = stack.badness < Badness.Stabilizing || stack.badness > Badness.Wild): boolean {
-    let stacks = this.stacks
-    for (let i = 0; i < stacks.length; i++) {
-      let other = stacks[i]
-      if ((strict || other.state == stack.state) && other.pos == stack.pos) {
-        let diff = stack.badness - other.badness || (stack.badness < Badness.Stabilizing ? 0 : stack.stack.length - other.stack.length)
-        if (diff < 0) { stacks[i] = stack; return true }
-        else if (diff > 0) return false
+  private putStack(stack: Stack): boolean {
+    if (stack.badness >= Badness.Deduplicate) for (let i = 0; i < this.stacks.length; i++) {
+      let other = this.stacks[i]
+      if (other.state == stack.state && other.pos == stack.pos) {
+        let diff = stack.badness - other.badness || stack.stack.length - other.stack.length
+        if (diff < 0) { this.stacks[i] = stack; return true }
+        else if (diff >= 0) return false
       }
     }
 
     // Binary heap add
-    let index = stacks.push(stack) - 1
+    let index = this.stacks.push(stack) - 1
     while (index > 0) {
-      let parentIndex = index >> 1, parent = stacks[parentIndex]
+      let parentIndex = index >> 1, parent = this.stacks[parentIndex]
       if (stack.compare(parent) >= 0) break
-      stacks[index] = parent
-      stacks[parentIndex] = stack
+      this.stacks[index] = parent
+      this.stacks[parentIndex] = stack
       index = parentIndex
     }
     return true
@@ -347,7 +346,7 @@ export class ParseContext {
 
     // If we're here, the stack failed to advance normally
 
-    if (start == input.length) {
+    if (start == input.length) { // End of file
       if (!parser.stateFlag(stack.state, StateFlag.Accepting) && stack.forceReduce()) {
         if (verbose) console.log(stack + " (via forced reduction at eof)")
         this.putStack(stack)
@@ -364,27 +363,35 @@ export class ParseContext {
       }
     }
 
-    let {end, value: term} = stack.cx.tokens.mainToken
-    if (!this.strict &&
-        !(stack.badness > Badness.Wild && this.stacks.some(s => s.pos >= stack.pos && s.badness <= stack.badness))) {
-      let inserted = stack.recoverByInsert(term)
-      if (inserted) {
-        if (verbose) console.log(inserted + " (via recover-insert)")
-        this.putStack(inserted)
-      }
+    // Not end of file. See if we should recover.
+    if (this.stacks.length >= Badness.MaxRecoverStacks) return null
+    let minBad = this.stacks.reduce((m, s) => Math.min(m, s.badness), 1e9)
+    if (minBad != 1e9 && stack.badness > Math.min(Badness.TooBadToRecover, minBad * Badness.RecoverSiblingFactor))
+      return null
 
-      if (end == start) {
-        if (start == input.length) return null
-        end++
-        term = Term.Err
-      }
-      stack.recoverByDelete(term, end)
-      if (verbose) console.log(stack + ` (via recover-delete ${parser.getName(term)})`)
-      this.putStack(stack)
-    } else if (!this.stacks.length) {
-      // Only happens in strict mode
+    let {end, value: term} = stack.cx.tokens.mainToken
+    if (this.strict) {
+      if (this.stacks.length) return null
       throw new SyntaxError("No parse at " + start + " with " + parser.getName(term) + " (stack is " + stack + ")")
     }
+
+    for (let insert of stack.recoverByInsert(term)) {
+      if (verbose) console.log(insert + " (via recover-insert)")
+      this.putStack(insert)
+    }
+    let reduce = stack.split()
+    if (reduce.forceReduce()) {
+      if (verbose) console.log(reduce + " (via force-reduce)")
+      this.putStack(reduce)
+    }
+    if (end == start) {
+      if (start == input.length) return null
+      end++
+      term = Term.Err
+    }
+    stack.recoverByDelete(term, end)
+    if (verbose) console.log(stack + ` (via recover-delete ${parser.getName(term)})`)
+    this.putStack(stack)
     return null
   }
 
@@ -426,6 +433,7 @@ export class ParseContext {
 export class Parser {
   /// @internal
   maxNode: number
+  private nextStateCache: (readonly number[] | null)[] = []
 
   /// @internal
   constructor(
@@ -470,6 +478,7 @@ export class Parser {
     readonly termNames: null | {[id: number]: string} = null
   ) {
     this.maxNode = this.group.types.length - 1
+    for (let i = 0, l = this.states.length / ParseState.Size; i < l; i++) this.nextStateCache[i] = null
   }
 
   /// Parse a given string or stream.
@@ -535,9 +544,31 @@ export class Parser {
     if (defaultReduce > 0) return defaultReduce
     for (let i = this.stateSlot(state, ParseState.Actions);; i += 3) {
       if (this.data[i] == Seq.End) return 0
-      let isReduce = this.data[i + 2]
+      let isReduce = this.data[i + 2] & Action.ReduceFlag
       if (isReduce) return this.data[i + 1] | (isReduce << 16)
     }
+  }
+
+  /// Get the states that can follow this one through shift actions or
+  /// goto jumps. @internal
+  nextStates(state: number): readonly number[] {
+    let cached = this.nextStateCache[state]
+    if (cached) return cached
+    let result: number[] = []
+    for (let i = this.stateSlot(state, ParseState.Actions);; i += 3) {
+      if ((this.data[i + 2] & Action.ReduceFlag) == 0 && !result.includes(this.data[i + 1]))
+        result.push(this.data[i + 1])
+    }
+    let table = this.goto, max = table[0]
+    for (let term = 0; term < max; term++) {
+      for (let pos = table[term + 1];;) {
+        let groupTag = table[pos++], target = table[pos++]
+        for (let end = pos + (groupTag >> 1); pos < end; pos++)
+          if (table[pos] == state && !result.includes(target)) result.push(target)
+        if (groupTag & 1) break
+      }
+    }
+    return this.nextStateCache[state] = result
   }
 
   /// @internal

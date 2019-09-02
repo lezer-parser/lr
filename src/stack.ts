@@ -5,9 +5,22 @@ import {Tree, BufferCursor, NodeProp} from "lezer-tree"
 export const enum Badness {
   // Amount to add for a single recover action
   Unit = 100,
-  // Limits in between which stacks are less agressively pruned
-  Stabilizing = 50,
-  Wild = 150
+
+  // Badness at which we disallow adding a stack if another stack
+  // shares its top state and position.
+  Deduplicate = 200,
+
+  // The maximum amount of active stacks at which recovery actions are
+  // applied
+  MaxRecoverStacks = 25,
+
+  // If badness reaches this level (and there are sibling stacks),
+  // don't recover.
+  TooBadToRecover = 500,
+
+  // If the best sibling is this amount better than the current stack,
+  // don't apply recovery.
+  RecoverSiblingFactor = 3
 }
 
 // Badness is a measure of how off-the-rails a given parse is. It is
@@ -290,49 +303,25 @@ export class Stack {
     return -1
   }
 
-  // Scan for a state that has either a direct action or a recovery
-  // action for next, without actually building up a new stack
+  // Apply up to Recover.MaxNext recovery actions that conceptually
+  // inserts some missing token or rule.
   /// @internal
-  canRecover(next: number) {
-    let visited: number[] | null = null, parser = this.cx.parser
-    for (let sim = new SimulatedStack(this), i = 0;; i++) {
-      if (parser.hasAction(sim.top, next) || parser.getRecover(sim.top, next) != 0) return true
-      // Find a way to reduce from here
-      let reduce = parser.anyReduce(sim.top)
-      if (reduce == 0 && ((reduce = this.cx.parser.stateSlot(sim.top, ParseState.ForcedReduce)) & Action.ReduceFlag) == 0) return false
-      sim.reduce(reduce)
-      if (i > 10) {
-        // Guard against getting stuck in a cycle
-        if (!visited) visited = []
-        else if (i == 100 || visited.includes(sim.top)) return false
-        visited.push(sim.top)
-      }
+  recoverByInsert(next: number): Stack[] {
+    let nextStates = this.cx.parser.nextStates(this.state)
+    if (nextStates.length > Recover.MaxNext) {
+      let best = nextStates.filter(s => this.cx.parser.hasAction(s, next))
+      for (let i = 0; best.length < Recover.MaxNext && i < nextStates.length; i++)
+        if (!best.includes(nextStates[i])) best.push(nextStates[i])
+      nextStates = best
     }
-  }
-
-  // Try to apply a recovery action that conceptually
-  // inserts some missing content and syncs back to a state that will
-  // match `next`. If it finds one, it'll return a new stack with the
-  // insertion applied. If not, it'll return null.
-  /// @internal
-  recoverByInsert(next: number): Stack | null {
-    if (!this.canRecover(next)) return null
-
-    // Now that we know there's a recovery to be found, run the
-    // reduces again, the expensive way, updating the stack
-    let result = this.split(), parser = this.cx.parser
-    result.reducePos = result.pos
-    result.badness += Badness.Unit
-    for (;;) {
-      if (parser.hasAction(result.state, next)) return result
-      let recover = parser.getRecover(result.state, next)
-      if (recover) {
-        result.pushState(recover, result.pos)
-        result.storeNode(Term.Err, result.reducePos, result.reducePos, 4, true)
-      } else {
-        result.forceReduce(false)
-      }
+    let result: Stack[] = []
+    for (let i = 0; i < nextStates.length && i < Recover.MaxNext; i++) {
+      let stack = this.split()
+      stack.storeNode(Term.Err, stack.reducePos, stack.reducePos, 4, true)
+      stack.pushState(nextStates[i], this.pos)
+      result.push(stack)
     }
+    return result
   }
 
   // Force a reduce, if possible. Return false if that can't
@@ -363,6 +352,10 @@ export class Stack {
   toTree(): Tree {
     return Tree.build(StackBufferCursor.create(this), this.cx.parser.group, Term.Top, this.cx.maxBufferLength, this.cx.reused)
   }
+}
+
+const enum Recover {
+  MaxNext = 4
 }
 
 // Used to cheaply run some reductions to scan ahead without mutating
