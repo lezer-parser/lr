@@ -309,16 +309,18 @@ export class Stack {
   recoverByInsert(next: number): Stack[] {
     let nextStates = this.cx.parser.nextStates(this.state)
     if (nextStates.length > Recover.MaxNext) {
-      let best = nextStates.filter(s => this.cx.parser.hasAction(s, next))
+      let best = nextStates.filter(s => s != this.state && this.cx.parser.hasAction(s, next))
       for (let i = 0; best.length < Recover.MaxNext && i < nextStates.length; i++)
         if (!best.includes(nextStates[i])) best.push(nextStates[i])
       nextStates = best
     }
     let result: Stack[] = []
-    for (let i = 0; i < nextStates.length && i < Recover.MaxNext; i++) {
+    for (let i = 0; i < nextStates.length && result.length < Recover.MaxNext; i++) {
+      if (nextStates[i] == this.state) continue
       let stack = this.split()
       stack.storeNode(Term.Err, stack.reducePos, stack.reducePos, 4, true)
       stack.pushState(nextStates[i], this.pos)
+      stack.badness += Badness.Unit
       result.push(stack)
     }
     return result
@@ -327,13 +329,13 @@ export class Stack {
   // Force a reduce, if possible. Return false if that can't
   // be done.
   /// @internal
-  forceReduce(countBadness = true) {
+  forceReduce() {
     let reduce = this.cx.parser.anyReduce(this.state)
-    if (reduce == 0) {
+    if ((reduce >> Action.ReduceDepthShift) == 0) { // Don't use 0 or a zero-depth reduction
       reduce = this.cx.parser.stateSlot(this.state, ParseState.ForcedReduce)
       if ((reduce & Action.ReduceFlag) == 0) return false
       this.storeNode(Term.Err, this.reducePos, this.reducePos, 4, true)
-      if (countBadness) this.badness += Badness.Unit
+      this.badness += Badness.Unit
     }
     this.reduce(reduce)
     return true

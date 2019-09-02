@@ -279,13 +279,14 @@ export class ParseContext {
   /// not, it returns `null`.
   advance() {
     let stack = this.takeStack(), start = stack.pos, {input, parser} = stack.cx
+    let base = verbose ? stack + " -> " : ""
 
     if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
         let match = parser.group.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
         if (match > -1 && !isFragile(cached)) {
           stack.useNode(cached, match)
-          if (verbose) console.log(stack + ` (via reuse of ${parser.getName(cached.type.id)})`)
+          if (verbose) console.log(base + stack + ` (via reuse of ${parser.getName(cached.type.id)})`)
           this.putStack(stack)
           return null
         }
@@ -317,7 +318,7 @@ export class ParseContext {
         this.putStack(stack)
       } else {
         let newStack = Stack.start(new StackContext(nested, stack.cx.maxBufferLength, clippedInput, stack, wrapType), stack.pos)
-        if (verbose) console.log(newStack + ` (nested)`)
+        if (verbose) console.log(base + newStack + ` (nested)`)
         this.putStack(newStack)
       }
       return null
@@ -327,7 +328,7 @@ export class ParseContext {
     if (defaultReduce > 0) {
       stack.reduce(defaultReduce)
       this.putStack(stack)
-      if (verbose) console.log(stack + ` (via always-reduce ${parser.getName(defaultReduce & Action.ValueMask)})`)
+      if (verbose) console.log(base + stack + ` (via always-reduce ${parser.getName(defaultReduce & Action.ValueMask)})`)
       return null
     }
 
@@ -337,10 +338,10 @@ export class ParseContext {
       let localStack = i == actions.length ? stack : stack.split()
       localStack.apply(action, term, end)
       if (verbose)
-        console.log(localStack + ` (via ${(action & Action.ReduceFlag) == 0 ? "shift"
+        console.log(base + localStack + ` (via ${(action & Action.ReduceFlag) == 0 ? "shift"
                      : `reduce of ${parser.getName(action & Action.ValueMask)}`} for ${
         parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
-      this.putStack(localStack, (action & Action.ReduceFlag) != 0)
+      this.putStack(localStack)
     }
     if (actions.length > 0) return null
 
@@ -348,7 +349,7 @@ export class ParseContext {
 
     if (start == input.length) { // End of file
       if (!parser.stateFlag(stack.state, StateFlag.Accepting) && stack.forceReduce()) {
-        if (verbose) console.log(stack + " (via forced reduction at eof)")
+        if (verbose) console.log(base + stack + " (via forced reduction at eof)")
         this.putStack(stack)
         return null
       }
@@ -376,12 +377,12 @@ export class ParseContext {
     }
 
     for (let insert of stack.recoverByInsert(term)) {
-      if (verbose) console.log(insert + " (via recover-insert)")
+      if (verbose) console.log(base + insert + " (via recover-insert)")
       this.putStack(insert)
     }
     let reduce = stack.split()
     if (reduce.forceReduce()) {
-      if (verbose) console.log(reduce + " (via force-reduce)")
+      if (verbose) console.log(base + reduce + " (via force-reduce)")
       this.putStack(reduce)
     }
     if (end == start) {
@@ -390,7 +391,7 @@ export class ParseContext {
       term = Term.Err
     }
     stack.recoverByDelete(term, end)
-    if (verbose) console.log(stack + ` (via recover-delete ${parser.getName(term)})`)
+    if (verbose) console.log(base + stack + ` (via recover-delete ${parser.getName(term)})`)
     this.putStack(stack)
     return null
   }
@@ -544,8 +545,8 @@ export class Parser {
     if (defaultReduce > 0) return defaultReduce
     for (let i = this.stateSlot(state, ParseState.Actions);; i += 3) {
       if (this.data[i] == Seq.End) return 0
-      let isReduce = this.data[i + 2] & Action.ReduceFlag
-      if (isReduce) return this.data[i + 1] | (isReduce << 16)
+      let top = this.data[i + 2]
+      if (top & (Action.ReduceFlag >> 16)) return this.data[i + 1] | (top << 16)
     }
   }
 
@@ -555,8 +556,8 @@ export class Parser {
     let cached = this.nextStateCache[state]
     if (cached) return cached
     let result: number[] = []
-    for (let i = this.stateSlot(state, ParseState.Actions);; i += 3) {
-      if ((this.data[i + 2] & Action.ReduceFlag) == 0 && !result.includes(this.data[i + 1]))
+    for (let i = this.stateSlot(state, ParseState.Actions); this.data[i] != Seq.End; i += 3) {
+      if ((this.data[i + 2] & (Action.ReduceFlag >> 16)) == 0 && !result.includes(this.data[i + 1]))
         result.push(this.data[i + 1])
     }
     let table = this.goto, max = table[0]
