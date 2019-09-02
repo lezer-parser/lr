@@ -20,7 +20,11 @@ export const enum Badness {
 
   // If the best sibling is this amount better than the current stack,
   // don't apply recovery.
-  RecoverSiblingFactor = 3
+  RecoverSiblingFactor = 3,
+
+  // Constant used to prune stacks that run error-free alongside each
+  // other for too long
+  MaxParallelBufferLength = 800
 }
 
 // Badness is a measure of how off-the-rails a given parse is. It is

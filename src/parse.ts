@@ -244,13 +244,22 @@ export class ParseContext {
   }
 
   private putStack(stack: Stack): boolean {
-    if (stack.badness >= Badness.Deduplicate) for (let i = 0; i < this.stacks.length; i++) {
-      let other = this.stacks[i]
-      if (other.state == stack.state && other.pos == stack.pos) {
-        let diff = stack.badness - other.badness || stack.stack.length - other.stack.length
-        if (diff < 0) { this.stacks[i] = stack; return true }
-        else if (diff >= 0) return false
+    if (stack.badness >= Badness.Deduplicate) {
+      for (let i = 0; i < this.stacks.length; i++) {
+        let other = this.stacks[i]
+        if (other.state == stack.state && other.pos == stack.pos) {
+          let diff = stack.badness - other.badness || stack.stack.length - other.stack.length
+          if (diff < 0) { this.stacks[i] = stack; return true }
+          else if (diff >= 0) return false
+        }
       }
+    } else if (stack.badness == 0 && this.stacks.length && stack.buffer.length > Badness.MaxParallelBufferLength) {
+      // If a stack looks error-free, but isn't the only active one
+      // _and_ has a buffer that is long but not the longest, prune
+      // it, since this might be a situation where two stacks can
+      // continue indefinitely.
+      let maxOther = this.stacks.reduce((m, s) => Math.max(m, s.buffer.length), 0)
+      if (maxOther > stack.buffer.length) return false
     }
 
     // Binary heap add
