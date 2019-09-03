@@ -83,6 +83,7 @@ class CacheCursor {
 
 class CachedToken extends Token {
   extended = -1
+  mask = 0
 
   constructor(readonly tokenizer: Tokenizer) { super() }
 
@@ -110,7 +111,11 @@ class TokenCache {
       let tokenizer = tokenizers[i], token
       for (let t of this.tokens) if (t.tokenizer == tokenizer) { token = t; break }
       if (!token) this.tokens.push(token = new CachedToken(tokenizer))
-      if (tokenizer.contextual || token.start != stack.pos) this.updateCachedToken(token, stack, input)
+      let mask = parser.stateSlot(stack.state, ParseState.TokenizerMask)
+      if (tokenizer.contextual || token.start != stack.pos || token.mask != mask) {
+        this.updateCachedToken(token, stack, input)
+        token.mask = mask
+      }
 
       let startIndex = actionIndex
       if (token.extended > -1) actionIndex = this.addActions(stack, token.extended, token.end, actionIndex)
