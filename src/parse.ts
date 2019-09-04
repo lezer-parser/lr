@@ -381,7 +381,10 @@ export class ParseContext {
     // Not end of file. See if we should recover.
     if (this.stacks.length >= Badness.MaxRecoverStacks) return null
     let minBad = this.stacks.reduce((m, s) => Math.min(m, s.badness), 1e9)
-    if (minBad != 1e9 && stack.badness > Math.min(Badness.TooBadToRecover, minBad * Badness.RecoverSiblingFactor))
+    // If this is not the best stack and its badness is above the
+    // TooBadToRecover ceiling or RecoverToSibling times the best
+    // stack, don't continue it.
+    if (minBad <= stack.badness && stack.badness > Math.min(Badness.TooBadToRecover, minBad * Badness.RecoverSiblingFactor))
       return null
 
     let {end, value: term} = stack.cx.tokens.mainToken
