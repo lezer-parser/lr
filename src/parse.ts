@@ -695,15 +695,19 @@ function withoutPrototype(obj: {}) {
 // case we shouldn't reuse it.
 function isFragile(node: Tree) {
   let doneStart = false, doneEnd = false, fragile = node.type.id == Term.Err
-  if (!fragile) node.iterate(0, node.length, type => {
-    return doneStart || (type.id == Term.Err ? fragile = doneStart = true : undefined)
-  }, type => {
-    doneStart = true
+  if (!fragile) node.iterate({
+    enter(type) {
+      return doneStart || (type.id == Term.Err ? fragile = doneStart = true : undefined)
+    },
+    leave(type) { doneStart = true }
   })
-  if (!fragile) node.iterate(node.length, 0, type => {
-    return doneEnd || (type.id == Term.Err ? fragile = doneEnd = true : undefined)
-  }, type => {
-    doneEnd = true
+  if (!fragile) node.iterate({
+    from: node.length,
+    to: 0,
+    enter(type) {
+      return doneEnd || (type.id == Term.Err ? fragile = doneEnd = true : undefined)
+    },
+    leave(type) { doneEnd = true }
   })
   return fragile
 }
