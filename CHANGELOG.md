@@ -1,3 +1,19 @@
+## 0.4.0 (2019-09-10)
+
+### Bug fixes
+
+Don't rely on additional data stored in the parse table during recovery (shrinking the parse tables).
+
+Fix a crash that could occur when starting a nested parse when there were multiple active stacks.
+
+Fix an issue where error nodes would sometimes not be merged.
+
+Don't reuse cached tokens for states that have a different token group.
+
+### Breaking changes
+
+The on-disk parse table format changed again.
+
 ## 0.3.0 (2019-08-22)
 
 ### Bug fixes
