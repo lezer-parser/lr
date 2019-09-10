@@ -180,7 +180,7 @@ export class Stack {
         this.buffer[index + 2] = this.buffer[index - 2]
         this.buffer[index + 3] = this.buffer[index - 1]
         index -= 4
-        size -= 4
+        if (size > 4) size -= 4
       }
       this.buffer[index] = term
       this.buffer[index + 1] = start
@@ -257,7 +257,7 @@ export class Stack {
     let isNode = next <= this.cx.parser.maxNode
     if (isNode) this.storeNode(next, this.pos, nextEnd)
     this.storeNode(Term.Err, this.pos, nextEnd, isNode ? 8 : 4)
-    this.pos = nextEnd
+    this.pos = this.reducePos = nextEnd
     this.badness += Badness.Unit
   }
 
@@ -324,7 +324,7 @@ export class Stack {
     for (let i = 0; i < nextStates.length && result.length < Recover.MaxNext; i++) {
       if (nextStates[i] == this.state) continue
       let stack = this.split()
-      stack.storeNode(Term.Err, stack.reducePos, stack.reducePos, 4, true)
+      stack.storeNode(Term.Err, stack.pos, stack.pos, 4, true)
       stack.pushState(nextStates[i], this.pos)
       stack.badness += Badness.Unit
       result.push(stack)
