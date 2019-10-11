@@ -196,14 +196,15 @@ export class Stack {
       this.pushState(action & Action.ValueMask, this.pos)
     } else if ((action & Action.StayFlag) == 0) { // Regular shift
       let start = this.pos, nextState = action, {parser} = this.cx
+      if (nextEnd > this.pos)
+        this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
       if (nextEnd > this.pos || next <= parser.maxNode) {
         this.pos = nextEnd
         if (!parser.stateFlag(nextState, StateFlag.Skipped)) this.reducePos = nextEnd
       }
       this.pushState(nextState, start)
       if (next <= parser.maxNode) this.buffer.push(next, start, nextEnd, 4)
-      this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
-    } else { // Shift-and-stay, which means this is skipped token
+    } else { // Shift-and-stay, which means this is a skipped token
       if (next <= this.cx.parser.maxNode) this.buffer.push(next, this.pos, nextEnd, 4)
       this.pos = nextEnd
     }
