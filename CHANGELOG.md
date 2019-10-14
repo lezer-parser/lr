@@ -1,3 +1,9 @@
+## 0.4.1 (2019-10-14)
+
+### Bug fixes
+
+Fix an infinite loop where error recovery keeps finding zero-length tokens and imagining it's making progress.
+
 ## 0.4.0 (2019-09-10)
 
 ### Bug fixes
