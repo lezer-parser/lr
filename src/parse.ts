@@ -469,8 +469,7 @@ export class Parser {
     /// The goto table. See `computeGotoTable` in
     /// lezer-generator for details on the format @internal
     readonly goto: Readonly<Uint16Array>,
-    /// A `TagMap` mapping the node types in this grammar to their tag
-    /// names.
+    /// A node group with the node types used by this parser.
     readonly group: NodeGroup,
     /// The tokenizer objects used by the grammar @internal
     readonly tokenizers: readonly Tokenizer[],
@@ -633,6 +632,9 @@ export class Parser {
   /// The eof term id is always allocated directly after the node
   /// types. @internal
   get eofTerm() { return this.maxNode + 1 }
+
+  /// Tells you whether this grammar has any nested grammars.
+  get hasNested() { return this.nested.length > 0 }
 
   /// (Used by the output of the parser generator) @internal
   static deserialize(spec: {
