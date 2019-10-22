@@ -1,3 +1,9 @@
+## 0.5.0 (2019-10-22)
+
+### New features
+
+Parser instances now have a `hasNested` property that tells you whether they nest grammars.
+
 ## 0.4.1 (2019-10-14)
 
 ### Bug fixes
