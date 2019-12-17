@@ -227,12 +227,12 @@ export class ParseContext {
     this.cache = cache ? new CacheCursor(cache) : null
   }
 
-  private takeStack(at = 0) {
+  private takeStack() {
     // Binary heap pop
-    let {stacks} = this, elt = stacks[at], replacement = stacks.pop()!
+    let {stacks} = this, elt = stacks[0], replacement = stacks.pop()!
     if (stacks.length == 0) return elt
-    stacks[at] = replacement
-    for (let index = at;;) {
+    stacks[0] = replacement
+    for (let index = 0;;) {
       let childIndex = (index << 1) + 1
       if (childIndex >= stacks.length) break
       let child = stacks[childIndex]
@@ -444,10 +444,8 @@ export class ParseContext {
     parent.useNode(tree, parentParser.getGoto(parent.state, info.placeholder, true))
     if (verbose) console.log(parent + ` (via unnest ${stack.cx.wrapType > -1 ? parentParser.getName(stack.cx.wrapType) : tree.type.name})`)
     // Drop any other stack that has the same parent
-    for (let i = 0; i < this.stacks.length;) {
-      if (this.stacks[i].cx.parent == parent) this.takeStack(i)
-      else i++
-    }
+    if (this.stacks.some(s => s.cx.parent == parent))
+      this.stacks = this.stacks.filter(s => s.cx.parent != parent).sort((a, b) => a.compare(b))
     return parent
   }
 }
