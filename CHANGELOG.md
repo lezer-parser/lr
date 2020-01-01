@@ -1,3 +1,11 @@
+## 0.5.1 (2020-01-01)
+
+### Bug fixes
+
+Fix an issue where the parser would loop infinitely when leaving a nested parse in some circumstances.
+
+Fix an infinite loop on incomplete input at end of file that occurred for some types of mutually recursive rules.
+
 ## 0.5.0 (2019-10-22)
 
 ### New features
