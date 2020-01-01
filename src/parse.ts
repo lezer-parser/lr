@@ -203,7 +203,7 @@ export class StackContext {
   constructor(readonly parser: Parser,
               readonly maxBufferLength: number,
               readonly input: InputStream,
-              readonly parent: Stack | null = null, 
+              readonly parent: Stack | null = null,
               readonly wrapType: number = -1) {}
 }
 
@@ -361,22 +361,8 @@ export class ParseContext {
 
     // If we're here, the stack failed to advance normally
 
-    if (start == input.length) { // End of file
-      if (!parser.stateFlag(stack.state, StateFlag.Accepting) && stack.forceReduce()) {
-        if (verbose) console.log(base + stack + " (via forced reduction at eof)")
-        this.putStack(stack)
-        return null
-      }
-      if (stack.cx.parent) {
-        // This is a nested parse—add its result to the parent stack and
-        // continue with that one.
-        this.putStack(this.finishNested(stack))
-        return null
-      } else {
-        // Actual end of parse
-        return stack.toTree()
-      }
-    }
+    if (start == input.length && parser.stateFlag(stack.state, StateFlag.Accepting)) // End of file
+      return this.finishStack(stack)
 
     // Not end of file. See if we should recover.
     let minBad = this.stacks.reduce((m, s) => Math.min(m, s.badness), 1e9)
@@ -402,7 +388,10 @@ export class ParseContext {
     if (reduce.forceReduce()) {
       if (verbose) console.log(base + reduce + " (via force-reduce)")
       this.putStack(reduce)
+    } else if (start == input.length) {
+      return this.finishStack(stack)
     }
+
     if (end == start) {
       if (start == input.length) return null
       end++
@@ -412,6 +401,18 @@ export class ParseContext {
     if (verbose) console.log(base + stack + ` (via recover-delete ${parser.getName(term)})`)
     this.putStack(stack)
     return null
+  }
+
+  private finishStack(stack: Stack) {
+    if (stack.cx.parent) {
+      // This is a nested parse—add its result to the parent stack and
+      // continue with that one.
+      this.putStack(this.finishNested(stack))
+      return null
+    } else {
+      // Actual end of parse
+      return stack.toTree()
+    }
   }
 
   /// The position to which the parse has advanced.
