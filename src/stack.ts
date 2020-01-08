@@ -4,11 +4,11 @@ import {Tree, BufferCursor, NodeProp} from "lezer-tree"
 
 export const enum Badness {
   // Amount to add for a single recover action
-  Unit = 100,
+  Unit = 1e6,
 
   // Badness at which we disallow adding a stack if another stack
   // shares its top state and position.
-  Deduplicate = 200,
+  Deduplicate = 2e6,
 
   // The maximum amount of active stacks at which recovery actions are
   // applied
@@ -16,7 +16,7 @@ export const enum Badness {
 
   // If badness reaches this level (and there are sibling stacks),
   // don't recover.
-  TooBadToRecover = 500,
+  TooBadToRecover = 5e6,
 
   // If the best sibling is this amount better than the current stack,
   // don't apply recovery.

@@ -369,7 +369,7 @@ export class ParseContext {
     // If this is not the best stack and its badness is above the
     // TooBadToRecover ceiling or RecoverToSibling times the best
     // stack, don't continue it.
-    if (minBad <= stack.badness &&
+    if (this.stacks.length && minBad <= stack.badness &&
         (this.stacks.length >= Badness.MaxRecoverStacks ||
          stack.badness > Math.min(Badness.TooBadToRecover, minBad * Badness.RecoverSiblingFactor)))
       return null
