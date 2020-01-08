@@ -270,7 +270,7 @@ export class ParseContext {
     // Binary heap add
     let index = this.stacks.push(stack) - 1
     while (index > 0) {
-      let parentIndex = index >> 1, parent = this.stacks[parentIndex]
+      let parentIndex = (index - 1) >> 1, parent = this.stacks[parentIndex]
       if (stack.compare(parent) >= 0) break
       this.stacks[index] = parent
       this.stacks[parentIndex] = stack
