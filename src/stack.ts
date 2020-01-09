@@ -300,8 +300,9 @@ export class Stack {
   /// for either of those two rules (assuming that `a` isn't part of
   /// some rule that includes other things starting with `"x"`).
   startOf(types: readonly number[]) {
-    for (let frame = this.stack.length - 3; frame >= 0; frame -= 3) {
-      let force = this.cx.parser.stateSlot(this.stack[frame], ParseState.ForcedReduce)
+    for (let frame = this.stack.length; frame >= 0; frame -= 3) {
+      let state = frame == this.stack.length ? this.state : this.stack[frame]
+      let force = this.cx.parser.stateSlot(state, ParseState.ForcedReduce)
       if (types.includes(force & Action.ValueMask)) {
         let base = frame - (3 * (force >> Action.ReduceDepthShift))
         return this.stack[base + 1]
