@@ -1,6 +1,6 @@
 {
   "name": "lezer",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Incremental parser",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -1,3 +1,13 @@
+## 0.5.2 (2020-01-09)
+
+### Bug fixes
+
+Fix an issue where the parser will sometimes continue, and even pick as result, a parse with error recovery even though there are error-free parses available.
+
+Fix a mistake in our binary heap implementation that would cause stacks to be ordered incorrectly.
+
+Fix an issue where the `Stack.startOf` method would ignore the top frame of the stack.
+
 ## 0.5.1 (2020-01-01)
 
 ### Bug fixes
