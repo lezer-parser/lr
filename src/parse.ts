@@ -227,35 +227,14 @@ export class ParseContext {
     this.cache = cache ? new CacheCursor(cache) : null
   }
 
-  private takeStack() {
-    // Binary heap pop
-    let {stacks} = this, elt = stacks[0], replacement = stacks.pop()!
-    if (stacks.length == 0) return elt
-    stacks[0] = replacement
-    for (let index = 0;;) {
-      let childIndex = (index << 1) + 1
-      if (childIndex >= stacks.length) break
-      let child = stacks[childIndex]
-      if (childIndex + 1 < stacks.length && child.compare(stacks[childIndex + 1]) >= 0) {
-        child = stacks[childIndex + 1]
-        childIndex++
-      }
-      if (replacement.compare(child) < 0) break
-      stacks[childIndex] = replacement
-      stacks[index] = child
-      index = childIndex
-    }
-    return elt
-  }
-
-  private putStack(stack: Stack): boolean {
+  private putStack(stack: Stack) {
     if (stack.badness >= Badness.Deduplicate) {
       for (let i = 0; i < this.stacks.length; i++) {
         let other = this.stacks[i]
         if (other.state == stack.state && other.pos == stack.pos) {
           let diff = stack.badness - other.badness || stack.stack.length - other.stack.length
-          if (diff < 0) { this.stacks[i] = stack; return true }
-          else if (diff >= 0) return false
+          if (diff < 0) this.stacks[i] = stack
+          return
         }
       }
     } else if (stack.badness == 0 && this.stacks.length && stack.buffer.length > Badness.MaxParallelBufferLength) {
@@ -264,19 +243,10 @@ export class ParseContext {
       // it, since this might be a situation where two stacks can
       // continue indefinitely.
       let maxOther = this.stacks.reduce((m, s) => Math.max(m, s.buffer.length), 0)
-      if (maxOther > stack.buffer.length) return false
+      if (maxOther > stack.buffer.length) return
     }
 
-    // Binary heap add
-    let index = this.stacks.push(stack) - 1
-    while (index > 0) {
-      let parentIndex = (index - 1) >> 1, parent = this.stacks[parentIndex]
-      if (stack.compare(parent) >= 0) break
-      this.stacks[index] = parent
-      this.stacks[parentIndex] = stack
-      index = parentIndex
-    }
-    return true
+    putOnHeap(this.stacks, stack)
   }
 
   /// Execute one parse step. This picks the parse stack that's
@@ -292,7 +262,7 @@ export class ParseContext {
   /// When the parse is finished, this will return a syntax tree. When
   /// not, it returns `null`.
   advance() {
-    let stack = this.takeStack(), start = stack.pos, {input, parser} = stack.cx
+    let stack = takeFromHeap(this.stacks), start = stack.pos, {input, parser} = stack.cx
     let base = verbose ? stack + " -> " : ""
 
     if (this.cache) {
@@ -369,7 +339,7 @@ export class ParseContext {
     // If this is not the best stack and its badness is above the
     // TooBadToRecover ceiling or RecoverToSibling times the best
     // stack, don't continue it.
-    if (this.stacks.length && minBad <= stack.badness &&
+    if (this.stacks.length && minBad < stack.badness &&
         (this.stacks.length >= Badness.MaxRecoverStacks ||
          stack.badness > Math.min(Badness.TooBadToRecover, minBad * Badness.RecoverSiblingFactor)))
       return null
@@ -715,4 +685,37 @@ function isFragile(node: Tree) {
     leave(type) { doneEnd = true }
   })
   return fragile
+}
+
+// Binary heap add
+function putOnHeap(stacks: Stack[], stack: Stack) {
+  let index = stacks.push(stack) - 1
+  while (index > 0) {
+    let parentIndex = (index - 1) >> 1, parent = stacks[parentIndex]
+    if (stack.compare(parent) >= 0) break
+    stacks[index] = parent
+    stacks[parentIndex] = stack
+    index = parentIndex
+  }
+}
+
+function takeFromHeap(stacks: Stack[]) {
+  // Binary heap pop
+  let elt = stacks[0], replacement = stacks.pop()!
+  if (stacks.length == 0) return elt
+  stacks[0] = replacement
+  for (let index = 0;;) {
+    let childIndex = (index << 1) + 1
+    if (childIndex >= stacks.length) break
+    let child = stacks[childIndex]
+    if (childIndex + 1 < stacks.length && child.compare(stacks[childIndex + 1]) >= 0) {
+      child = stacks[childIndex + 1]
+      childIndex++
+    }
+    if (replacement.compare(child) < 0) break
+    stacks[childIndex] = replacement
+    stacks[index] = child
+    index = childIndex
+  }
+  return elt
 }
