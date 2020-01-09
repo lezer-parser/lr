@@ -211,12 +211,13 @@ export class StackContext {
 /// creating it, you repeatedly call `.advance()` until it returns a
 /// tree to indicate it has reached the end of the parse.
 export class ParseContext {
-  /// @internal
-  stacks: Stack[]
-  /// @internal
-  cache: CacheCursor | null
-  /// @internal
-  strict: boolean
+  // Active parse stacks.
+  private stacks: Stack[]
+  // Active stacks that can't progress normally. A non-finished parse
+  // always has at least one stack either here or in this.stacks.
+  private stoppedStacks: Stack[] = []
+  private cache: CacheCursor | null
+  private strict: boolean
 
   /// @internal
   constructor(parser: Parser,
@@ -262,7 +263,19 @@ export class ParseContext {
   /// When the parse is finished, this will return a syntax tree. When
   /// not, it returns `null`.
   advance() {
-    let stack = takeFromHeap(this.stacks), start = stack.pos, {input, parser} = stack.cx
+    // Stopped stacks get advanced (or discarded, or finished) when
+    // there are no regular stacks with a lower position left. This
+    // makes sure error recovery only happens when all non-recovering
+    // advances have been made, which helps prune out unneccesary
+    // error recovery.
+    if (this.stoppedStacks.length > 0 && (!this.stacks.length || this.stacks[0].pos > this.stoppedStacks[0].pos))
+      return this.advanceStoppedStack(takeFromHeap(this.stoppedStacks))
+    this.advanceStack(takeFromHeap(this.stacks))
+    return null
+  }
+
+  private advanceStack(stack: Stack) {
+    let start = stack.pos, {input, parser} = stack.cx
     let base = verbose ? stack + " -> " : ""
 
     if (this.cache) {
@@ -272,7 +285,7 @@ export class ParseContext {
           stack.useNode(cached, match)
           if (verbose) console.log(base + stack + ` (via reuse of ${parser.getName(cached.type.id)})`)
           this.putStack(stack)
-          return null
+          return
         }
         if (cached.children.length == 0 || cached.positions[0] > 0) break
         let inner = cached.children[0]
@@ -305,7 +318,7 @@ export class ParseContext {
         if (verbose) console.log(base + newStack + ` (nested)`)
         this.putStack(newStack)
       }
-      return null
+      return
     }
 
     let defaultReduce = parser.stateSlot(stack.state, ParseState.DefaultReduce)
@@ -313,7 +326,7 @@ export class ParseContext {
       stack.reduce(defaultReduce)
       this.putStack(stack)
       if (verbose) console.log(base + stack + ` (via always-reduce ${parser.getName(defaultReduce & Action.ValueMask)})`)
-      return null
+      return
     }
 
     let actions = stack.cx.tokens.getActions(stack, input)
@@ -327,11 +340,13 @@ export class ParseContext {
         parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
       this.putStack(localStack)
     }
-    if (actions.length > 0) return null
 
-    // If we're here, the stack failed to advance normally
+    if (actions.length == 0) putOnHeap(this.stoppedStacks, stack)
+  }
 
-    if (start == input.length && parser.stateFlag(stack.state, StateFlag.Accepting)) // End of file
+  private advanceStoppedStack(stack: Stack) {
+    let {input, parser} = stack.cx
+    if (stack.pos == input.length && parser.stateFlag(stack.state, StateFlag.Accepting)) // End of file
       return this.finishStack(stack)
 
     // Not end of file. See if we should recover.
@@ -339,17 +354,18 @@ export class ParseContext {
     // If this is not the best stack and its badness is above the
     // TooBadToRecover ceiling or RecoverToSibling times the best
     // stack, don't continue it.
-    if (this.stacks.length && minBad < stack.badness &&
+    if (this.stacks.length && minBad <= stack.badness &&
         (this.stacks.length >= Badness.MaxRecoverStacks ||
          stack.badness > Math.min(Badness.TooBadToRecover, minBad * Badness.RecoverSiblingFactor)))
       return null
 
     let {end, value: term} = stack.cx.tokens.mainToken
     if (this.strict) {
-      if (this.stacks.length) return null
-      throw new SyntaxError("No parse at " + start + " with " + parser.getName(term) + " (stack is " + stack + ")")
+      if (this.stacks.length || this.stoppedStacks.length) return null
+      throw new SyntaxError("No parse at " + stack.pos + " with " + parser.getName(term) + " (stack is " + stack + ")")
     }
 
+    let base = verbose ? stack + " -> " : ""
     for (let insert of stack.recoverByInsert(term)) {
       if (verbose) console.log(base + insert + " (via recover-insert)")
       this.putStack(insert)
@@ -358,12 +374,12 @@ export class ParseContext {
     if (reduce.forceReduce()) {
       if (verbose) console.log(base + reduce + " (via force-reduce)")
       this.putStack(reduce)
-    } else if (start == input.length) {
+    } else if (stack.pos == input.length) {
       return this.finishStack(stack)
     }
 
-    if (end == start) {
-      if (start == input.length) return null
+    if (end == stack.pos) {
+      if (stack.pos == input.length) return null
       end++
       term = Term.Err
     }
@@ -386,12 +402,12 @@ export class ParseContext {
   }
 
   /// The position to which the parse has advanced.
-  get pos() { return this.stacks[0].pos }
+  get pos() { return (this.stacks[0] || this.stoppedStacks[0]).pos }
 
   /// Force the parse to finish, generating a tree containing the nodes
   /// parsed so far.
   forceFinish() {
-    let stack = this.stacks[0].split()
+    let stack = (this.stacks[0] || this.stoppedStacks[0]).split()
     while (!stack.cx.parser.stateFlag(stack.state, StateFlag.Accepting) && stack.forceReduce()) {}
     return stack.toTree()
   }
@@ -415,8 +431,8 @@ export class ParseContext {
     parent.useNode(tree, parentParser.getGoto(parent.state, info.placeholder, true))
     if (verbose) console.log(parent + ` (via unnest ${stack.cx.wrapType > -1 ? parentParser.getName(stack.cx.wrapType) : tree.type.name})`)
     // Drop any other stack that has the same parent
-    if (this.stacks.some(s => s.cx.parent == parent))
-      this.stacks = this.stacks.filter(s => s.cx.parent != parent).sort((a, b) => a.compare(b))
+    this.stacks = dropParent(this.stacks, parent)
+    this.stoppedStacks = dropParent(this.stoppedStacks, parent)
     return parent
   }
 }
@@ -718,4 +734,10 @@ function takeFromHeap(stacks: Stack[]) {
     index = childIndex
   }
   return elt
+}
+
+function dropParent(stacks: Stack[], parent: Stack) {
+  return stacks.some(s => s.cx.parent == parent)
+    ? stacks.filter(s => s.cx.parent != parent).sort((a, b) => a.compare(b))
+    : stacks
 }
