@@ -6,10 +6,6 @@ export const enum Badness {
   // Amount to add for a single recover action
   Unit = 1e6,
 
-  // Badness at which we disallow adding a stack if another stack
-  // shares its top state and position.
-  Deduplicate = 2e6,
-
   // When the best stack has a score below this, prune all worse
   // stacks.
   Dampen = 1e4,
@@ -24,7 +20,7 @@ export const enum Badness {
 
   // If the best sibling is this amount better than the current stack,
   // don't apply recovery.
-  RecoverSiblingFactor = 3,
+  RecoverSiblingFactor = 2,
 
   // Constant used to prune stacks that run error-free alongside each
   // other for too long

@@ -229,16 +229,7 @@ export class ParseContext {
   }
 
   private putStack(stack: Stack) {
-    if (stack.badness >= Badness.Deduplicate) {
-      for (let i = 0; i < this.stacks.length; i++) {
-        let other = this.stacks[i]
-        if (other.state == stack.state && other.pos == stack.pos) {
-          let diff = stack.badness - other.badness || stack.stack.length - other.stack.length
-          if (diff < 0) this.stacks[i] = stack
-          return
-        }
-      }
-    } else if (stack.badness == 0 && this.stacks.length && stack.buffer.length > Badness.MaxParallelBufferLength) {
+    if (stack.badness == 0 && this.stacks.length && stack.buffer.length > Badness.MaxParallelBufferLength) {
       // If a stack looks error-free, but isn't the only active one
       // _and_ has a buffer that is long but not the longest, prune
       // it, since this might be a situation where two stacks can
@@ -248,6 +239,19 @@ export class ParseContext {
     }
 
     putOnHeap(this.stacks, stack)
+  }
+
+  private putStoppedStack(stack: Stack) {
+    // FIXME find some cheaper way to do this check?
+    for (let i = 0; i < this.stoppedStacks.length; i++) {
+      let other = this.stoppedStacks[i]
+      if (other.state == stack.state && other.pos == stack.pos) {
+        let diff = stack.badness - other.badness || stack.stack.length - other.stack.length
+        if (diff < 0) this.stoppedStacks[i] = stack
+        return
+      }
+    }
+    putOnHeap(this.stoppedStacks, stack)
   }
 
   /// Execute one parse step. This picks the parse stack that's
@@ -343,7 +347,7 @@ export class ParseContext {
     if (actions.length == 0) {
       if (stack.pos == input.length && parser.stateFlag(stack.state, StateFlag.Accepting)) // End of file
         return this.finishStack(stack)
-      putOnHeap(this.stoppedStacks, stack)
+      this.putStoppedStack(stack)
     }
     return null
   }
@@ -359,7 +363,7 @@ export class ParseContext {
     if (this.stacks.length && minBad <= stack.badness &&
         (this.stacks.length >= Badness.MaxRecoverStacks ||
          minBad < Badness.Dampen ||
-         stack.badness >= Math.min(Badness.TooBadToRecover, minBad * Badness.RecoverSiblingFactor)))
+         stack.badness > Math.min(Badness.TooBadToRecover, minBad * Badness.RecoverSiblingFactor)))
       return null
 
     let {end, value: term} = stack.cx.tokens.mainToken
