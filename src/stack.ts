@@ -10,6 +10,10 @@ export const enum Badness {
   // shares its top state and position.
   Deduplicate = 2e6,
 
+  // When the best stack has a score below this, prune all worse
+  // stacks.
+  Dampen = 1e4,
+
   // The maximum amount of active stacks at which recovery actions are
   // applied
   MaxRecoverStacks = 25,

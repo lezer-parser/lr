@@ -358,7 +358,8 @@ export class ParseContext {
     // stack, don't continue it.
     if (this.stacks.length && minBad <= stack.badness &&
         (this.stacks.length >= Badness.MaxRecoverStacks ||
-         stack.badness > Math.min(Badness.TooBadToRecover, minBad * Badness.RecoverSiblingFactor)))
+         minBad < Badness.Dampen ||
+         stack.badness >= Math.min(Badness.TooBadToRecover, minBad * Badness.RecoverSiblingFactor)))
       return null
 
     let {end, value: term} = stack.cx.tokens.mainToken
