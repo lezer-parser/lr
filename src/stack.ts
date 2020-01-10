@@ -107,7 +107,7 @@ export class Stack {
 
   /// @internal
   toString() {
-    return "[" + this.stack.filter((_, i) => i % 3 == 0).concat(this.state).join(",") + "]"
+    return `[${this.stack.filter((_, i) => i % 3 == 0).concat(this.state)}]@${this.pos}${this.badness ? "!" + this.badness : ""}`
   }
 
   // Start an empty stack
