@@ -415,7 +415,7 @@ export class ParseContext {
   /// parsed so far.
   forceFinish() {
     let stack = (this.stacks[0] || this.stoppedStacks[0]).split()
-    while (!stack.cx.parser.stateFlag(stack.state, StateFlag.Accepting) && stack.forceReduce()) {}
+    for (let i = 0; i < 100 && !stack.cx.parser.stateFlag(stack.state, StateFlag.Accepting) && stack.forceReduce(); i++) {}
     return stack.toTree()
   }
 
