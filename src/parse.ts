@@ -270,8 +270,7 @@ export class ParseContext {
     // error recovery.
     if (this.stoppedStacks.length > 0 && (!this.stacks.length || this.stacks[0].pos > this.stoppedStacks[0].pos))
       return this.advanceStoppedStack(takeFromHeap(this.stoppedStacks))
-    this.advanceStack(takeFromHeap(this.stacks))
-    return null
+    return this.advanceStack(takeFromHeap(this.stacks))
   }
 
   private advanceStack(stack: Stack) {
@@ -285,7 +284,7 @@ export class ParseContext {
           stack.useNode(cached, match)
           if (verbose) console.log(base + stack + ` (via reuse of ${parser.getName(cached.type.id)})`)
           this.putStack(stack)
-          return
+          return null
         }
         if (cached.children.length == 0 || cached.positions[0] > 0) break
         let inner = cached.children[0]
@@ -318,7 +317,7 @@ export class ParseContext {
         if (verbose) console.log(base + newStack + ` (nested)`)
         this.putStack(newStack)
       }
-      return
+      return null
     }
 
     let defaultReduce = parser.stateSlot(stack.state, ParseState.DefaultReduce)
@@ -326,7 +325,7 @@ export class ParseContext {
       stack.reduce(defaultReduce)
       this.putStack(stack)
       if (verbose) console.log(base + stack + ` (via always-reduce ${parser.getName(defaultReduce & Action.ValueMask)})`)
-      return
+      return null
     }
 
     let actions = stack.cx.tokens.getActions(stack, input)
@@ -341,13 +340,16 @@ export class ParseContext {
       this.putStack(localStack)
     }
 
-    if (actions.length == 0) putOnHeap(this.stoppedStacks, stack)
+    if (actions.length == 0) {
+      if (stack.pos == input.length && parser.stateFlag(stack.state, StateFlag.Accepting)) // End of file
+        return this.finishStack(stack)
+      putOnHeap(this.stoppedStacks, stack)
+    }
+    return null
   }
 
   private advanceStoppedStack(stack: Stack) {
     let {input, parser} = stack.cx
-    if (stack.pos == input.length && parser.stateFlag(stack.state, StateFlag.Accepting)) // End of file
-      return this.finishStack(stack)
 
     // Not end of file. See if we should recover.
     let minBad = this.stacks.reduce((m, s) => Math.min(m, s.badness), 1e9)
