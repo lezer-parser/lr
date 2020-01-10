@@ -31,25 +31,6 @@ export const enum Badness {
 // bumped when a recovery strategy is applied, and then reduced (by
 // multiplication with a constant < 1) for every successful (real)
 // token shifted.
-//
-// Stacks with a low badness are relatively credible parses that have
-// shifts matching the input in their recent history. Stacks with a
-// high badness are deeply in the weeds and likely wrong. In either of
-// these situations, we prune agressively by dropping stacks when
-// another stack at the same position is looking better.
-//
-// For those in the `Badness.Stabilizing` to `Badness.Wild` range, we
-// assume that they are in the process of trying to recover and allow
-// a bunch of them to continue alongside each other to see which one
-// works out better.
-//
-// Stacks with the same low badness score are likely to be valid GLR
-// parsing branches, so in that case it's often a good idea to let
-// both continue.
-//
-// When a stack fails to find an advancing action, recovery is only
-// applied when its badness is < `Badness.Wild`, or no better parse
-// exists at that point.
 
 /// A parse stack. These are used internally by the parser to track
 /// parsing progress. They also provide some properties and methods
