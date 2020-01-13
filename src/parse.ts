@@ -507,7 +507,8 @@ export class Parser {
   }
 
   /// Create a `ParseContext`.
-  startParse(input: InputStream, options?: ParseOptions) {
+  startParse(input: InputStream | string, options?: ParseOptions) {
+    if (typeof input == "string") input = new StringStream(input)
     return new ParseContext(this, input, options)
   }
 
