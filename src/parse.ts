@@ -209,7 +209,7 @@ export class StackContext {
   ) {}
 }
 
-const recoverDist = 5, maxRemainingPerStep = 3, minBufferLengthPrune = 200
+const recoverDist = 5, maxRemainingPerStep = 3, minBufferLengthPrune = 200, forceReduceLimit = 10
 
 /// A parse context can be used for step-by-step parsing. After
 /// creating it, you repeatedly call `.advance()` until it returns a
@@ -236,15 +236,9 @@ export class ParseContext {
     if (this.pos < 0 || stack.pos < this.pos) this.pos = stack.pos
   }
 
-  /// Execute one parse step. This picks the parse stack that's
-  /// currently the least far along, and does the next thing that can
-  /// be done with it. This may be:
-  ///
-  /// - Add a cached node, if a matching one is found.
-  /// - Enter a nested grammar.
-  /// - Perform all shift or reduce actions that match the current
-  ///   token (if there are more than one, this will split the stack)
-  /// - Finish the parse
+  /// Move the parser forward. This will process all parse stacks at
+  /// `this.pos` and try to advance them to a further position. If no
+  /// stack for such a position is found, it'll start error-recovery.
   ///
   /// When the parse is finished, this will return a syntax tree. When
   /// not, it returns `null`.
@@ -314,6 +308,10 @@ export class ParseContext {
     return null
   }
 
+  // Returns an updated version of the given stack, or null if the
+  // stack can't advance normally. When `split` is given, stacks split
+  // off by ambiguous operations will be pushed to that, or given to
+  // `putStack` if they move `pos` forward.
   private advanceStack(stack: Stack, split: null | Stack[]) {
     let start = stack.pos, {input, parser} = stack.cx
     let base = verbose ? stack + " -> " : ""
@@ -385,6 +383,9 @@ export class ParseContext {
     return null
   }
 
+  // Advance a given stack forward as far as it will go. Returns the
+  // (possibly updated) stack if it got stuck, or null if it moved
+  // forward and was given to `putStack`.
   private advanceFully(stack: Stack) {
     let pos = stack.pos
     for (;;) {
@@ -405,7 +406,7 @@ export class ParseContext {
       let base = verbose ? stack + " -> " : ""
 
       let force = stack.split(), forceBase = base
-      while (force.forceReduce()) {
+      for (let j = 0; force.forceReduce() && j < forceReduceLimit; j++) {
         if (verbose) console.log(forceBase + force + " (via force-reduce)")
         let stopped = this.advanceFully(force)
         if (!stopped) break
