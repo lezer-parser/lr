@@ -217,8 +217,10 @@ const recoverDist = 5, maxRemainingPerStep = 3, minBufferLengthPrune = 200, forc
 export class ParseContext {
   // Active parse stacks.
   private stacks: Stack[]
-  private pos = 0
+  // The position to which the parse has advanced.
+  public pos = 0
   private recovering = 0
+  private tokenCount = 0
   private cache: CacheCursor | null
   private strict: boolean
 
@@ -305,6 +307,8 @@ export class ParseContext {
       }
       if (minLen > minBufferLengthPrune) this.stacks.splice(minI, 1)
     }
+
+    this.tokenCount++
     return null
   }
 
@@ -438,6 +442,14 @@ export class ParseContext {
   /// parsed so far.
   forceFinish() {
     return this.stacks[0].split().forceAll().toTree()
+  }
+
+  /// A value that indicates how successful the parse is so far, as
+  /// the number of error-recovery steps taken divided by the number
+  /// of tokens parsed. Could be used to decide to abort a parse when
+  /// the input doesn't appear to match the grammar at all.
+  get badness() {
+    return this.stacks[0].recovered / this.tokenCount
   }
 
   private scanForNestEnd(stack: Stack, endToken: TokenGroup, filter?: ((token: string) => boolean)) {
