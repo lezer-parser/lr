@@ -552,14 +552,13 @@ export class Parser {
   }
 
   /// @internal
-  anyReduce(state: number) {
-    let defaultReduce = this.stateSlot(state, ParseState.DefaultReduce)
-    if (defaultReduce > 0) return defaultReduce
+  validAction(state: number, action: number) {
+    if (action == this.stateSlot(state, ParseState.DefaultReduce)) return true
     for (let i = this.stateSlot(state, ParseState.Actions);; i += 3) {
       if (this.data[i] == Seq.End) return 0
-      let top = this.data[i + 2]
-      if (top & (Action.ReduceFlag >> 16)) return this.data[i + 1] | (top << 16)
+      if (action == (this.data[i + 1] | (this.data[i + 2] << 16))) return true
     }
+    return false
   }
 
   /// Get the states that can follow this one through shift actions or
