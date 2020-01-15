@@ -250,10 +250,15 @@ export class ParseContext {
   /// not, it returns `null`.
   advance() {
     let stacks = this.stacks, pos = this.pos
+    // This will now hold stacks beyond `pos`.
     this.stacks = []
+    // Will be reset to the next position by `putStack`.
     this.pos = -1
-    let stopped: Stack[] | null = null
+    let stopped: Stack[] | null = null, stoppedTokens: number[] | null = null
 
+    // Keep advancing any stacks at `pos` until they either move
+    // forward or can't be advanced. Gather stacks that can't be
+    // advanced further in `stopped`.
     for (let i = 0; i < stacks.length; i++) {
       let stack = stacks[i]
       for (;;) {
@@ -265,24 +270,26 @@ export class ParseContext {
             stack = result
             continue
           } else {
-            if (!stopped) stopped = []
+            if (!stopped) { stopped = []; stoppedTokens = [] }
             stopped.push(stack)
+            let tok = stack.cx.tokens.mainToken
+            stoppedTokens!.push(tok.value, tok.end)
           }
         }
         break
       }
     }
 
-    if (this.recovering == 0 && this.stacks.length == 0) {
+    if (!this.stacks.length) {
       let finished = stopped && findFinished(stopped)
       if (finished) return finished.toTree()
 
       if (this.strict) throw new SyntaxError("No parse at " + pos)
-      this.recovering = recoverDist
+      if (!this.recovering) this.recovering = recoverDist
     }
 
     if (this.recovering && stopped) {
-      let finished = this.runRecovery(stopped)
+      let finished = this.runRecovery(stopped, stoppedTokens!)
       if (finished) return finished.forceAll().toTree()
     }
 
@@ -381,10 +388,10 @@ export class ParseContext {
     }
   }
 
-  private runRecovery(stacks: Stack[]) {
+  private runRecovery(stacks: Stack[], tokens: number[]) {
     let finished: Stack | null = null
-    for (let stack of stacks) {
-      let {end, value: term} = stack.cx.tokens.mainToken
+    for (let i = 0; i < stacks.length; i++) {
+      let stack = stacks[i], token = tokens[i << 1], tokenEnd = tokens[(i << 1) + 1]
       let base = verbose ? stack + " -> " : ""
 
       let force = stack.split(), forceBase = base
@@ -396,18 +403,18 @@ export class ParseContext {
         if (verbose) forceBase = stopped + " -> "
       }
 
-      for (let insert of stack.recoverByInsert(term)) {
+      for (let insert of stack.recoverByInsert(token)) {
         if (verbose) console.log(base + insert + " (via recover-insert)")
         this.advanceFully(insert)
       }
 
       if (stack.cx.input.length > stack.pos) {
-        if (end == stack.pos) {
-          end++
-          term = Term.Err
+        if (tokenEnd == stack.pos) {
+          tokenEnd++
+          token = Term.Err
         }
-        stack.recoverByDelete(term, end)
-        if (verbose) console.log(base + ` (via recover-delete ${stack.cx.parser.getName(term)})`)
+        stack.recoverByDelete(token, tokenEnd)
+        if (verbose) console.log(base + ` (via recover-delete ${stack.cx.parser.getName(token)})`)
         this.putStack(stack)
       } else if (!finished || finished.recovered > stack.recovered) {
         finished = stack
@@ -700,11 +707,11 @@ function isFragile(node: Tree) {
   return fragile
 }
 
-function findFinished(stacks: Stack[], strict = true) {
+function findFinished(stacks: Stack[]) {
   let best: Stack | null = null
   for (let stack of stacks) {
     if (stack.pos == stack.cx.input.length &&
-        (!strict || stack.cx.parser.stateFlag(stack.state, StateFlag.Accepting)) &&
+        stack.cx.parser.stateFlag(stack.state, StateFlag.Accepting) &&
         (!best || best.recovered > stack.recovered))
       best = stack
   }
