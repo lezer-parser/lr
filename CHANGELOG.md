@@ -1,3 +1,13 @@
+## 0.6.0 (2020-01-15)
+
+### Bug fixes
+
+Rewrite the way the parser advances and recovers from errors, to more rigorously address a number of infinite loops and poor recovery behaviors.
+
+### New features
+
+Parse context objects now have a `badness` property that you can use to estimate just how poorly the input matches the grammar.
+
 ## 0.5.2 (2020-01-09)
 
 ### Bug fixes
