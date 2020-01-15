@@ -209,7 +209,7 @@ export class StackContext {
   ) {}
 }
 
-const recoverDist = 5, maxRemainingPerStep = 3
+const recoverDist = 5, maxRemainingPerStep = 3, minBufferLengthPrune = 200
 
 /// A parse context can be used for step-by-step parsing. After
 /// creating it, you repeatedly call `.advance()` until it returns a
@@ -293,13 +293,23 @@ export class ParseContext {
       if (finished) return finished.forceAll().toTree()
     }
 
-    let maxRemaining = this.recovering == 0 ? 1e9 : this.recovering == 1 ? 1 : this.recovering * maxRemainingPerStep
-    if (this.recovering && this.stacks.some(s => s.reducePos > pos)) this.recovering--
-
-    // FIXME do some kind of pruning of surviving stacks after a given length of error-free parsing
-    if (this.stacks.length > maxRemaining) {
-      this.stacks.sort((a, b) => a.recovered - b.recovered)
-      this.stacks.length = maxRemaining
+    if (this.recovering) {
+      let maxRemaining = this.recovering == 1 ? 1 : this.recovering * maxRemainingPerStep
+      if (this.stacks.length > maxRemaining) {
+        this.stacks.sort((a, b) => a.recovered - b.recovered)
+        this.stacks.length = maxRemaining
+      }
+      if (this.stacks.some(s => s.reducePos > pos)) this.recovering--
+    } else if (this.stacks.length > 1 && this.stacks[0].buffer.length > minBufferLengthPrune) {
+      // Prune stacks that have been running without splitting for a
+      // while, to avoid getting stuck with multiple successful stacks
+      // running endlessly on.
+      let minLen = 1e9, minI = -1
+      for (let i = 0; i < this.stacks.length; i++) {
+        let stack = this.stacks[i]
+        if (stack.buffer.length < minLen) { minLen = stack.buffer.length; minI = i }
+      }
+      if (minLen > minBufferLengthPrune) this.stacks.splice(minI, 1)
     }
     return null
   }
