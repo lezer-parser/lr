@@ -296,13 +296,6 @@ export class Stack {
   }
 
   /// @internal
-  sameStack(other: Stack) {
-    if (this.state != other.state || this.stack.length != other.stack.length) return false
-    for (let i = 0; i < this.stack.length; i += 3) if (this.stack[i] != other.stack[i]) return false
-    return true
-  }
-
-  /// @internal
   forceAll() {
     while (!this.cx.parser.stateFlag(this.state, StateFlag.Accepting) && this.forceReduce()) {}
     return this

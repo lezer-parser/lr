@@ -97,6 +97,7 @@ const dummyToken = new Token
 
 class TokenCache {
   tokens: CachedToken[] = []
+  // FIXME make into a getter that takes input/pos
   mainToken: Token = dummyToken
 
   actions: number[] = []
@@ -207,7 +208,7 @@ export class StackContext {
               readonly wrapType: number = -1) {}
 }
 
-const RecoverDist = 5, MaxStopped = 5, MaxRemaining = 3
+const RecoverDist = 5, MaxRemaining = 3
 
 /// A parse context can be used for step-by-step parsing. After
 /// creating it, you repeatedly call `.advance()` until it returns a
@@ -267,7 +268,7 @@ export class ParseContext {
           if (result) {
             stack = result
             continue
-          } else if (!stopped.some(s => s.sameStack(stack))) {
+          } else {
             stopped.push(stack)
           }
         }
@@ -283,29 +284,15 @@ export class ParseContext {
       this.recovering = RecoverDist
     }
 
-    if (this.recovering >= 0 && stopped.length) {
-      let maxStopped = this.recovering * MaxStopped, initialCount = stopped.length
-      for (let i = 0; i < stopped.length; i++) {
-        let stack = stopped[i]
-        if (i < initialCount) {
-          if (stack.cx.input.length > pos)
-            this.putStack(this.recoverByDelete(stack))
-        } else {
-          for (;;) {
-            let result = this.advanceStack(stack, null)
-            if (!result) break
-            if (result.pos > pos) { this.putStack(result); break }
-            stack = stopped[i] = result
-          }
-        }
-        this.recoverStack(stack, stopped, maxStopped)
-      }
-      if (this.stacks.length == 0) return findFinished(stopped, false)!.forceAll().toTree()
+    if (this.recovering && stopped.length) {
+      let finished = this.runRecovery(stopped)
+      if (finished) return finished.forceAll().toTree()
     }
 
     let maxRemaining = this.recovering == 0 ? 1e9 : this.recovering == 1 ? 1 : this.recovering * MaxRemaining
     if (this.recovering && this.stacks.some(s => s.reducePos > pos)) this.recovering--
 
+    // FIXME do some kind of pruning of surviving stacks after a given length of error-free parsing
     if (this.stacks.length > maxRemaining) {
       this.stacks.sort((a, b) => a.recovered - b.recovered)
       this.stacks.length = maxRemaining
@@ -383,31 +370,58 @@ export class ParseContext {
     return null
   }
 
-  private recoverStack(stack: Stack, put: Stack[], max: number) {
-    if (put.length == max) return
-
-    let base = verbose ? stack + " -> " : ""
-    let inserts = stack.recoverByInsert(stack.cx.tokens.mainToken.value)
-    if (stack.forceReduce()) {
-      if (verbose) console.log(base + stack + " (via force-reduce)")
-      put.push(stack)
-    }
-    for (let insert of inserts) if (put.length < max) {
-      if (verbose) console.log(base + insert + " (via recover-insert)")
-      put.push(insert)
+  private advanceFully(stack: Stack) {
+    let pos = stack.pos
+    for (;;) {
+      let result = this.advanceStack(stack, null)
+      if (!result) return stack
+      if (result.pos > pos) {
+        this.putStack(result)
+        return null
+      }
+      stack = result
     }
   }
 
-  private recoverByDelete(stack: Stack) {
-    let {end, value: term} = stack.cx.tokens.mainToken
-    if (end == stack.pos) {
-      end++
-      term = Term.Err
+  private runRecovery(stacks: Stack[]) {
+    let byInsert = (stacks: Stack[], base: string, fuel: number) => {
+      for (let stack of stacks) {
+        if (verbose) console.log(base + stack + " (via recover-insert)")
+        let stopped = this.advanceFully(stack)
+        if (stopped && fuel > 1)
+          byInsert(stopped.recoverByInsert(stack.cx.tokens.mainToken.value), verbose ? stopped + " -> " : "", fuel - 1)
+      }
     }
-    let recover = stack.split()
-    recover.recoverByDelete(term, end)
-    if (verbose) console.log(stack + " -> " + recover + ` (via recover-delete ${stack.cx.parser.getName(term)})`)
-    return recover
+
+    let finished: Stack | null = null
+    for (let stack of stacks) {
+      let {end, value: term} = stack.cx.tokens.mainToken
+      let base = verbose ? stack + " -> " : ""
+
+      byInsert(stack.recoverByInsert(term), base, this.recovering == RecoverDist ? 2 : 1)
+
+      let force = stack.split(), forceBase = base
+      while (force.forceReduce()) {
+        if (verbose) console.log(forceBase + force + " (via force-reduce)")
+        let stopped = this.advanceFully(force)
+        if (!stopped) break
+        force = stopped
+        if (verbose) forceBase = stopped + " -> "
+      }
+
+      if (stack.cx.input.length > stack.pos) {
+        if (end == stack.pos) {
+          end++
+          term = Term.Err
+        }
+        stack.recoverByDelete(term, end)
+        if (verbose) console.log(base + ` (via recover-delete ${stack.cx.parser.getName(term)})`)
+        this.putStack(stack)
+      } else if (!finished || finished.recovered > stack.recovered) {
+        finished = stack
+      }
+    }
+    return finished
   }
 
   /// Force the parse to finish, generating a tree containing the nodes
