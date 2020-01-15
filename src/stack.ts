@@ -2,41 +2,6 @@ import {Action, Term, StateFlag, ParseState} from "./constants"
 import {StackContext} from "./parse"
 import {Tree, BufferCursor, NodeProp} from "lezer-tree"
 
-export const enum Badness {
-  // The lowest bit in a badness score indicates whether this stack
-  // has been stopped (found to not be able to advance normally)
-  Stopped = 1,
-
-  // Amount to add for a single recover action
-  Unit = 1e5,
-
-  // When the best stack has a score below this, prune all worse
-  // stacks.
-  Dampen = 5e3,
-
-  // The maximum amount of active stacks at which recovery actions are
-  // applied
-  MaxRecoverStacks = 25,
-
-  // If badness reaches this level (and there are sibling stacks),
-  // don't try to recover.
-  TooBad = 5e5,
-
-  // If the best sibling is this amount better than the current stack,
-  // don't apply recovery.
-  RecoverSiblingFactor = 3,
-
-  // Constants used to prune stacks that run error-free alongside each
-  // other for too long
-  PruneByBufferLength = 1e3,
-  MaxParallelBufferLength = 400
-}
-
-// Badness is a measure of how off-the-rails a given parse is. It is
-// bumped when a recovery strategy is applied, and then reduced (by
-// multiplication with a constant < 1) for every successful (real)
-// token shifted.
-
 /// A parse stack. These are used internally by the parser to track
 /// parsing progress. They also provide some properties and methods
 /// that external code such as a tokenizer can use to get information
@@ -63,10 +28,9 @@ export class Stack {
     public reducePos: number,
     // The input position up to which this stack has parsed.
     public pos: number,
-    // A measure of the amount of error-recovery that recently
-    // happened on this stack
+    // The amount of error-recovery that happened on this stack
     /// @internal
-    public badness: number,
+    public recovered: number,
     // The output buffer. Holds (type, start, end, size) quads
     // representing nodes created by the parser, where `size` is
     // amount of buffer array entries covered by this node.
@@ -89,7 +53,7 @@ export class Stack {
 
   /// @internal
   toString() {
-    return `[${this.stack.filter((_, i) => i % 3 == 0).concat(this.state)}]@${this.pos}${this.badness ? "!" + this.badness : ""}`
+    return `[${this.stack.filter((_, i) => i % 3 == 0).concat(this.state)}]@${this.pos}${this.recovered ? "!" + this.recovered : ""}`
   }
 
   // Start an empty stack
@@ -182,8 +146,6 @@ export class Stack {
       this.pushState(action & Action.ValueMask, this.pos)
     } else if ((action & Action.StayFlag) == 0) { // Regular shift
       let start = this.pos, nextState = action, {parser} = this.cx
-      if (nextEnd > this.pos)
-        this.badness = ((this.badness >> 1) + (this.badness >> 2)) & ~Badness.Stopped // (* 0.75)
       if (nextEnd > this.pos || next <= parser.maxNode) {
         this.pos = nextEnd
         if (!parser.stateFlag(nextState, StateFlag.Skipped)) this.reducePos = nextEnd
@@ -215,7 +177,6 @@ export class Stack {
     let start = this.pos
     this.reducePos = this.pos = start + value.length
     this.pushState(next, start)
-    this.badness = (this.badness >> 2) & ~Badness.Stopped // (* 0.25)
     this.buffer.push(index, start, this.reducePos, -1 /* size < 0 means this is a reused value */)
   }
 
@@ -235,16 +196,7 @@ export class Stack {
     // Make sure parent points to an actual parent with content, if there is such a parent.
     while (parent && base == parent.bufferBase) parent = parent.parent
     return new Stack(this.cx, this.stack.slice(), this.state, this.reducePos, this.pos,
-                     this.badness, buffer, base, parent)
-  }
-
-  stop() {
-    this.badness |= Badness.Stopped
-    return this
-  }
-
-  get isStopped() {
-    return (this.badness & Badness.Stopped) > 0
+                     this.recovered, buffer, base, parent)
   }
 
   // Try to recover from an error by 'deleting' (ignoring) one token.
@@ -254,7 +206,7 @@ export class Stack {
     if (isNode) this.storeNode(next, this.pos, nextEnd)
     this.storeNode(Term.Err, this.pos, nextEnd, isNode ? 8 : 4)
     this.pos = this.reducePos = nextEnd
-    this.badness = (this.badness + Badness.Unit) & ~Badness.Stopped
+    this.recovered++
   }
 
   /// Check if the given term would be able to be shifted (optionally
@@ -323,7 +275,7 @@ export class Stack {
       let stack = this.split()
       stack.storeNode(Term.Err, stack.pos, stack.pos, 4, true)
       stack.pushState(nextStates[i], this.pos)
-      stack.badness = (stack.badness + Badness.Unit) & ~Badness.Stopped
+      stack.recovered++
       result.push(stack)
     }
     return result
@@ -338,18 +290,24 @@ export class Stack {
       reduce = this.cx.parser.stateSlot(this.state, ParseState.ForcedReduce)
       if ((reduce & Action.ReduceFlag) == 0) return false
       this.storeNode(Term.Err, this.reducePos, this.reducePos, 4, true)
-      this.badness = (this.badness + Badness.Unit) & ~Badness.Stopped
+      this.recovered++
     }
+
     this.reduce(reduce)
     return true
   }
 
-  // Compare two stacks to get a number that indicates which one is
-  // behind or, if they are at the same position, which one has less
-  // badness.
   /// @internal
-  compare(other: Stack) {
-    return this.pos - other.pos || this.badness - other.badness || this.stack.length - other.stack.length
+  sameStack(other: Stack) {
+    if (this.state != other.state || this.stack.length != other.stack.length) return false
+    for (let i = 0; i < this.stack.length; i += 3) if (this.stack[i] != other.stack[i]) return false
+    return true
+  }
+
+  /// @internal
+  forceAll() {
+    while (!this.cx.parser.stateFlag(this.state, StateFlag.Accepting) && this.forceReduce()) {}
+    return this
   }
 
   // Convert the stack's buffer to a syntax tree.

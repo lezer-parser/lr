@@ -1,4 +1,4 @@
-import {Stack, Badness} from "./stack"
+import {Stack} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState} from "./constants"
 import {InputStream, Token, StringStream, Tokenizer, TokenGroup} from "./token"
 import {DefaultBufferLength, Tree, TreeBuffer, NodeGroup, NodeType, NodeProp, NodePropSource} from "lezer-tree"
@@ -207,13 +207,16 @@ export class StackContext {
               readonly wrapType: number = -1) {}
 }
 
+const RecoverDist = 5, MaxStopped = 5, MaxRemaining = 3
+
 /// A parse context can be used for step-by-step parsing. After
 /// creating it, you repeatedly call `.advance()` until it returns a
 /// tree to indicate it has reached the end of the parse.
 export class ParseContext {
   // Active parse stacks.
   private stacks: Stack[]
-  private maxPos = 0
+  private pos = 0
+  private recovering = 0
   private cache: CacheCursor | null
   private strict: boolean
 
@@ -226,30 +229,9 @@ export class ParseContext {
     this.cache = cache ? new CacheCursor(cache) : null
   }
 
-  private putStack(stack: Stack, recovering = false) {
-    // For recovered stacks, drop them if there's another, better
-    // one in the same state at the same position. FIXME not very efficient
-    for (let i = 0; i < this.stacks.length; i++) {
-      let other = this.stacks[i]
-      if (other.state == stack.state && other.pos == stack.pos) {
-        let diff = stack.badness - other.badness || stack.stack.length - other.stack.length
-        console.log("throw away " + (diff < 0 ? this.stacks[i] : stack) + " vs " + (diff >= 0 ? this.stacks[i] : stack))
-        if (diff < 0) this.stacks[i] = stack
-        return
-      }
-    }
-    if (stack.badness <= Badness.PruneByBufferLength && this.stacks.length &&
-        stack.buffer.length > Badness.MaxParallelBufferLength) {
-      // If a stack looks error-free, but isn't the only active one
-      // _and_ has a buffer that is long but not the longest, prune
-      // it, since this might be a situation where two stacks can
-      // continue indefinitely.
-      let maxOther = this.stacks.reduce((m, s) => Math.max(m, s.buffer.length), 0)
-      if (maxOther > stack.buffer.length) return
-    }
-
-    if (stack.pos > this.maxPos) this.maxPos = stack.pos
-    putOnHeap(this.stacks, stack)
+  putStack(stack: Stack) {
+    this.stacks.push(stack)
+    this.pos = Math.min(this.pos, stack.pos)
   }
 
   /// Execute one parse step. This picks the parse stack that's
@@ -265,16 +247,73 @@ export class ParseContext {
   /// When the parse is finished, this will return a syntax tree. When
   /// not, it returns `null`.
   advance() {
-    // Stopped stacks get advanced (or discarded, or finished) when
-    // there are no regular stacks with a lower position left. This
-    // makes sure error recovery only happens when all non-recovering
-    // advances have been made, which helps prune out unneccesary
-    // error recovery.
-    let stack = takeFromHeap(this.stacks)
-    return stack.isStopped ? this.advanceStoppedStack(stack) : this.advanceStack(stack)
+    let stacks = this.stacks, pos = this.pos
+    this.stacks = []
+    this.pos = 1e9
+    let stopped = [] // FIXME
+
+    let put = (stack: Stack) => {
+      if (stack.pos > pos) this.putStack(stack)
+      else stacks.push(stack)
+    }
+
+    for (let i = 0; i < stacks.length; i++) {
+      let stack = stacks[i]
+      for (;;) {
+        if (stack.pos > pos) {
+          this.putStack(stack)
+        } else {
+          let result = this.advanceStack(stack, put)
+          if (result) {
+            stack = result
+            continue
+          } else if (!stopped.some(s => s.sameStack(stack))) {
+            stopped.push(stack)
+          }
+        }
+        break
+      }
+    }
+
+    if (this.recovering == 0 && this.stacks.length == 0) {
+      let finished = findFinished(stopped)
+      if (finished) return finished.toTree()
+
+      if (this.strict) throw new SyntaxError("No parse at " + pos)
+      this.recovering = RecoverDist
+    }
+
+    if (this.recovering >= 0 && stopped.length) {
+      let maxStopped = this.recovering * MaxStopped, initialCount = stopped.length
+      for (let i = 0; i < stopped.length; i++) {
+        let stack = stopped[i]
+        if (i < initialCount) {
+          if (stack.cx.input.length > pos)
+            this.putStack(this.recoverByDelete(stack))
+        } else {
+          for (;;) {
+            let result = this.advanceStack(stack, null)
+            if (!result) break
+            if (result.pos > pos) { this.putStack(result); break }
+            stack = stopped[i] = result
+          }
+        }
+        this.recoverStack(stack, stopped, maxStopped)
+      }
+      if (this.stacks.length == 0) return findFinished(stopped, false)!.forceAll().toTree()
+    }
+
+    let maxRemaining = this.recovering == 0 ? 1e9 : this.recovering == 1 ? 1 : this.recovering * MaxRemaining
+    if (this.recovering && this.stacks.some(s => s.reducePos > pos)) this.recovering--
+
+    if (this.stacks.length > maxRemaining) {
+      this.stacks.sort((a, b) => a.recovered - b.recovered)
+      this.stacks.length = maxRemaining
+    }
+    return null
   }
 
-  private advanceStack(stack: Stack) {
+  private advanceStack(stack: Stack, split: null | ((stack: Stack) => void)) {
     let start = stack.pos, {input, parser} = stack.cx
     let base = verbose ? stack + " -> " : ""
 
@@ -284,8 +323,7 @@ export class ParseContext {
         if (match > -1 && !isFragile(cached)) {
           stack.useNode(cached, match)
           if (verbose) console.log(base + stack + ` (via reuse of ${parser.getName(cached.type.id)})`)
-          this.putStack(stack)
-          return null
+          return stack
         }
         if (cached.children.length == 0 || cached.positions[0] > 0) break
         let inner = cached.children[0]
@@ -312,110 +350,70 @@ export class ParseContext {
         if (node.length != end - stack.pos) node = new Tree(node.type, node.children, node.positions, end - stack.pos)
         if (wrapType != null) node = new Tree(parser.group.types[wrapType], [node], [0], node.length)
         stack.useNode(node, parser.getGoto(stack.state, placeholder, true))
-        this.putStack(stack)
+        return stack
       } else {
         let newStack = Stack.start(new StackContext(nested, stack.cx.maxBufferLength, clippedInput, stack, wrapType), stack.pos)
         if (verbose) console.log(base + newStack + ` (nested)`)
-        this.putStack(newStack)
+        return newStack
       }
-      return null
     }
 
     let defaultReduce = parser.stateSlot(stack.state, ParseState.DefaultReduce)
     if (defaultReduce > 0) {
       stack.reduce(defaultReduce)
-      this.putStack(stack)
       if (verbose) console.log(base + stack + ` (via always-reduce ${parser.getName(defaultReduce & Action.ValueMask)})`)
-      return null
+      return stack
     }
 
     let actions = stack.cx.tokens.getActions(stack, input)
     for (let i = 0; i < actions.length;) {
       let action = actions[i++], term = actions[i++], end = actions[i++]
-      let localStack = i == actions.length ? stack : stack.split()
+      let last = i == actions.length || !split
+      let localStack = last ? stack : stack.split()
       localStack.apply(action, term, end)
       if (verbose)
         console.log(base + localStack + ` (via ${(action & Action.ReduceFlag) == 0 ? "shift"
                      : `reduce of ${parser.getName(action & Action.ValueMask)}`} for ${
         parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
-      this.putStack(localStack)
+      if (last) return localStack
+      else split!(localStack)
     }
 
-    if (actions.length == 0) {
-      if (stack.pos == input.length && parser.stateFlag(stack.state, StateFlag.Accepting)) // End of file
-        return this.finishStack(stack)
-      if (verbose) console.log(base + "(stopped)")
-      this.putStack(stack.stop())
-    }
+    if (stack.cx.parent && stack.pos == input.length) return this.finishNested(stack)
     return null
   }
 
-  private advanceStoppedStack(stack: Stack) {
-    let {input, parser} = stack.cx
-
-    // Not end of file. See if we should recover.
-    let minBad = this.stacks.reduce((m, s) => Math.min(m, s.badness), 1e9)
-    // If this is not the best stack and its badness is above the
-    // TooBad ceiling or RecoverToSibling times the best
-    // stack, don't continue it.
-    if (this.stacks.length && minBad <= stack.badness &&
-        (this.stacks.length >= Badness.MaxRecoverStacks ||
-         minBad < Badness.Dampen ||
-         stack.badness > Math.min(Badness.TooBad, minBad * Badness.RecoverSiblingFactor)))
-      return null
-
-    let {end, value: term} = stack.cx.tokens.mainToken
-    if (this.strict) {
-      if (this.stacks.length) return null
-      throw new SyntaxError("No parse at " + stack.pos + " with " + parser.getName(term) + " (stack is " + stack + ")")
-    }
+  private recoverStack(stack: Stack, put: Stack[], max: number) {
+    if (put.length == max) return
 
     let base = verbose ? stack + " -> " : ""
-    for (let insert of stack.recoverByInsert(term)) {
+    let inserts = stack.recoverByInsert(stack.cx.tokens.mainToken.value)
+    if (stack.forceReduce()) {
+      if (verbose) console.log(base + stack + " (via force-reduce)")
+      put.push(stack)
+    }
+    for (let insert of inserts) if (put.length < max) {
       if (verbose) console.log(base + insert + " (via recover-insert)")
-      this.putStack(insert, true)
+      put.push(insert)
     }
-    let reduce = stack.split(), forced = reduce.forceReduce()
-    if (forced) {
-      if (verbose) console.log(base + reduce + " (via force-reduce)")
-      this.putStack(reduce, true)
-    }
-    if ((!forced || stack.badness > Badness.TooBad) && stack.pos == input.length)
-      return this.finishStack(stack)
+  }
 
-    if (this.maxPos > stack.pos) return null
+  private recoverByDelete(stack: Stack) {
+    let {end, value: term} = stack.cx.tokens.mainToken
     if (end == stack.pos) {
-      if (stack.pos == input.length) return null
       end++
       term = Term.Err
     }
-    stack.recoverByDelete(term, end)
-    if (verbose) console.log(base + stack + ` (via recover-delete ${parser.getName(term)})`)
-    this.putStack(stack, true)
-    return null
+    let recover = stack.split()
+    recover.recoverByDelete(term, end)
+    if (verbose) console.log(stack + " -> " + recover + ` (via recover-delete ${stack.cx.parser.getName(term)})`)
+    return recover
   }
-
-  private finishStack(stack: Stack) {
-    if (stack.cx.parent) {
-      // This is a nested parse—add its result to the parent stack and
-      // continue with that one.
-      this.putStack(this.finishNested(stack))
-      return null
-    } else {
-      // Actual end of parse
-      return stack.toTree()
-    }
-  }
-
-  /// The position to which the parse has advanced.
-  get pos() { return this.stacks[0].pos }
 
   /// Force the parse to finish, generating a tree containing the nodes
   /// parsed so far.
   forceFinish() {
-    let stack = this.stacks[0].split()
-    for (let i = 0; i < 100 && !stack.cx.parser.stateFlag(stack.state, StateFlag.Accepting) && stack.forceReduce(); i++) {}
-    return stack.toTree()
+    return this.stacks[0].split().forceAll().toTree()
   }
 
   private scanForNestEnd(stack: Stack, endToken: TokenGroup, filter?: ((token: string) => boolean)) {
@@ -430,13 +428,14 @@ export class ParseContext {
   }
 
   private finishNested(stack: Stack) {
-    let parent = stack.cx.parent!, tree = stack.toTree()
+    let parent = stack.cx.parent!, tree = stack.forceAll().toTree()
     let parentParser = parent.cx.parser, info = parentParser.nested[parentParser.startNested(parent.state)]
     tree = new Tree(tree.type, tree.children, tree.positions.map(p => p - parent!.pos), stack.pos - parent.pos)
     if (stack.cx.wrapType > -1) tree = new Tree(parentParser.group.types[stack.cx.wrapType], [tree], [0], tree.length)
     parent.useNode(tree, parentParser.getGoto(parent.state, info.placeholder, true))
     if (verbose) console.log(parent + ` (via unnest ${stack.cx.wrapType > -1 ? parentParser.getName(stack.cx.wrapType) : tree.type.name})`)
     // Drop any other stack that has the same parent
+    // FIXME should be happening local `stacks` in `advance` I suppose
     this.stacks = dropParent(this.stacks, parent)
     return parent
   }
@@ -709,41 +708,19 @@ function isFragile(node: Tree) {
   return fragile
 }
 
-// Binary heap add
-function putOnHeap(stacks: Stack[], stack: Stack) {
-  let index = stacks.push(stack) - 1
-  while (index > 0) {
-    let parentIndex = (index - 1) >> 1, parent = stacks[parentIndex]
-    if (stack.compare(parent) >= 0) break
-    stacks[index] = parent
-    stacks[parentIndex] = stack
-    index = parentIndex
-  }
-}
-
-function takeFromHeap(stacks: Stack[]) {
-  // Binary heap pop
-  let elt = stacks[0], replacement = stacks.pop()!
-  if (stacks.length == 0) return elt
-  stacks[0] = replacement
-  for (let index = 0;;) {
-    let childIndex = (index << 1) + 1
-    if (childIndex >= stacks.length) break
-    let child = stacks[childIndex]
-    if (childIndex + 1 < stacks.length && child.compare(stacks[childIndex + 1]) >= 0) {
-      child = stacks[childIndex + 1]
-      childIndex++
-    }
-    if (replacement.compare(child) < 0) break
-    stacks[childIndex] = replacement
-    stacks[index] = child
-    index = childIndex
-  }
-  return elt
-}
-
 function dropParent(stacks: Stack[], parent: Stack) {
   return stacks.some(s => s.cx.parent == parent)
-    ? stacks.filter(s => s.cx.parent != parent).sort((a, b) => a.compare(b))
+    ? stacks.filter(s => s.cx.parent != parent)
     : stacks
+}
+
+function findFinished(stacks: Stack[], strict = true) {
+  let best: Stack | null = null
+  for (let stack of stacks) {
+    if (stack.pos == stack.cx.input.length &&
+        (!strict || stack.cx.parser.stateFlag(stack.state, StateFlag.Accepting)) &&
+        (!best || best.recovered > stack.recovered))
+      best = stack
+  }
+  return best
 }
