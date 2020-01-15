@@ -97,7 +97,6 @@ const dummyToken = new Token
 
 class TokenCache {
   tokens: CachedToken[] = []
-  // FIXME make into a getter that takes input/pos
   mainToken: Token = dummyToken
 
   actions: number[] = []
@@ -383,21 +382,10 @@ export class ParseContext {
   }
 
   private runRecovery(stacks: Stack[]) {
-    let byInsert = (stacks: Stack[], base: string, fuel: number) => {
-      for (let stack of stacks) {
-        if (verbose) console.log(base + stack + " (via recover-insert)")
-        let stopped = this.advanceFully(stack)
-        if (stopped && fuel > 1)
-          byInsert(stopped.recoverByInsert(stack.cx.tokens.mainToken.value), verbose ? stopped + " -> " : "", fuel - 1)
-      }
-    }
-
     let finished: Stack | null = null
     for (let stack of stacks) {
       let {end, value: term} = stack.cx.tokens.mainToken
       let base = verbose ? stack + " -> " : ""
-
-      byInsert(stack.recoverByInsert(term), base, this.recovering == recoverDist ? 2 : 1)
 
       let force = stack.split(), forceBase = base
       while (force.forceReduce()) {
@@ -406,6 +394,11 @@ export class ParseContext {
         if (!stopped) break
         force = stopped
         if (verbose) forceBase = stopped + " -> "
+      }
+
+      for (let insert of stack.recoverByInsert(term)) {
+        if (verbose) console.log(base + insert + " (via recover-insert)")
+        this.advanceFully(insert)
       }
 
       if (stack.cx.input.length > stack.pos) {
