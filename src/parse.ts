@@ -578,10 +578,9 @@ export class Parser {
   validAction(state: number, action: number) {
     if (action == this.stateSlot(state, ParseState.DefaultReduce)) return true
     for (let i = this.stateSlot(state, ParseState.Actions);; i += 3) {
-      if (this.data[i] == Seq.End) return 0
+      if (this.data[i] == Seq.End) return false
       if (action == (this.data[i + 1] | (this.data[i + 2] << 16))) return true
     }
-    return false
   }
 
   /// Get the states that can follow this one through shift actions or
