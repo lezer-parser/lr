@@ -469,6 +469,8 @@ export class ParseContext {
 export class Parser {
   /// @internal
   maxNode: number
+  /// @internal
+  maxRepeatWrap: number
   private nextStateCache: (readonly number[] | null)[] = []
 
   /// @internal
@@ -515,6 +517,7 @@ export class Parser {
     readonly termNames: null | {[id: number]: string} = null
   ) {
     this.maxNode = this.group.types.length - 1
+    this.maxRepeatWrap = this.group.types.length + (this.group.types.length - minRepeatTerm) - 1
     for (let i = 0, l = this.states.length / ParseState.Size; i < l; i++) this.nextStateCache[i] = null
   }
 
@@ -645,7 +648,7 @@ export class Parser {
 
   /// The eof term id is always allocated directly after the node
   /// types. @internal
-  get eofTerm() { return this.maxNode + 1 }
+  get eofTerm() { return this.maxRepeatWrap + 1 }
 
   /// Tells you whether this grammar has any nested grammars.
   get hasNested() { return this.nested.length > 0 }
