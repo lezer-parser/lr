@@ -91,7 +91,9 @@ export class Stack {
     let base = this.stack.length - ((depth - 1) * 3) - (action & Action.StayFlag ? 6 : 0)
     let start = this.stack[base - 2]
     let bufferBase = this.stack[base - 1], count = this.bufferBase + this.buffer.length - bufferBase
-    if (type < parser.minRepeatTerm || (action & Action.RepeatFlag)) {
+    if (type < parser.minRepeatTerm || // Normal term
+        (action & Action.RepeatFlag) || // Inner repeat marker
+        ((type & Term.Repeated) == 0 && type <= parser.maxNode)) { // Repeat wrapper
       let pos = parser.stateFlag(this.state, StateFlag.Skipped) ? this.pos : this.reducePos
       this.storeNode(type, start, pos, count + 4, true)
     }
