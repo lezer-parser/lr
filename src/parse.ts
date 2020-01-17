@@ -106,12 +106,12 @@ class TokenCache {
     let main: Token | null = null
     let {parser} = stack.cx, {tokenizers} = parser
 
+    let mask = parser.stateSlot(stack.state, ParseState.TokenizerMask)
     for (let i = 0; i < tokenizers.length; i++) {
-      if (((1 << i) & parser.stateSlot(stack.state, ParseState.TokenizerMask)) == 0) continue
+      if (((1 << i) & mask) == 0) continue
       let tokenizer = tokenizers[i], token
       for (let t of this.tokens) if (t.tokenizer == tokenizer) { token = t; break }
       if (!token) this.tokens.push(token = new CachedToken(tokenizer))
-      let mask = parser.stateSlot(stack.state, ParseState.TokenizerMask)
       if (tokenizer.contextual || token.start != stack.pos || token.mask != mask) {
         this.updateCachedToken(token, stack, input)
         token.mask = mask
