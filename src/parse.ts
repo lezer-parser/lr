@@ -483,6 +483,8 @@ export class Parser {
     readonly goto: Readonly<Uint16Array>,
     /// A node group with the node types used by this parser.
     readonly group: NodeGroup,
+    /// The first repeat-related term id @internal
+    readonly minRepeatTerm: number,
     /// The tokenizer objects used by the grammar @internal
     readonly tokenizers: readonly Tokenizer[],
     /// Metadata about nested grammars used in this grammar @internal
@@ -616,7 +618,7 @@ export class Parser {
   /// in a different language for a nested grammar or fill in a nested
   /// grammar that was left blank by the original grammar.
   withNested(spec: {[name: string]: NestedGrammar | null}) {
-    return new Parser(this.states, this.data, this.goto, this.group, this.tokenizers,
+    return new Parser(this.states, this.data, this.goto, this.group, this.minRepeatTerm, this.tokenizers,
                       this.nested.map(obj => {
                         if (!Object.prototype.hasOwnProperty.call(spec, obj.name)) return obj
                         return {name: obj.name, grammar: spec[obj.name], end: obj.end, placeholder: obj.placeholder}
@@ -628,7 +630,8 @@ export class Parser {
   /// props added. You should use [`NodeProp.add`](#tree.NodeProp.add)
   /// to create the arguments to this method.
   withProps(...props: NodePropSource[]) {
-    return new Parser(this.states, this.data, this.goto, this.group.extend(...props), this.tokenizers, this.nested,
+    return new Parser(this.states, this.data, this.goto, this.group.extend(...props), this.minRepeatTerm,
+                      this.tokenizers, this.nested,
                       this.specializeTable, this.specializations, this.tokenPrecTable, this.termNames)
   }
 
@@ -664,7 +667,7 @@ export class Parser {
     termNames?: {[id: number]: string}
   }) {
     let tokenArray = decodeArray(spec.tokenData)
-    let nodeNames = spec.nodeNames.split(" ")
+    let nodeNames = spec.nodeNames.split(" "), minRepeatTerm = nodeNames.length
     for (let i = 0; i < spec.repeatNodeCount; i++) nodeNames.push("")
     let nodeProps: {[id: number]: any}[] = []
     for (let i = 0; i < nodeNames.length; i++) nodeProps.push(noProps)
@@ -673,7 +676,6 @@ export class Parser {
       prop.set(nodeProps[nodeID], prop.deserialize(value))
     }
     setProp(0, NodeProp.error, "")
-    for (let i = nodeProps.length - spec.repeatNodeCount; i < nodeProps.length; i++) setProp(i, NodeProp.repeated, "")
     if (spec.nodeProps) for (let propSpec of spec.nodeProps) {
       let prop = propSpec[0]
       for (let i = 1; i < propSpec.length; i += 2)
@@ -682,7 +684,7 @@ export class Parser {
     let group = new NodeGroup(nodeNames.map((name, i) => new NodeType(name, nodeProps[i], i)))
 
     return new Parser(decodeArray(spec.states, Uint32Array), decodeArray(spec.stateData),
-                      decodeArray(spec.goto), group,
+                      decodeArray(spec.goto), group, minRepeatTerm,
                       spec.tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
                       (spec.nested || []).map(([name, grammar, endToken, placeholder]) =>
                                               ({name, grammar, end: new TokenGroup(decodeArray(endToken), 0), placeholder})),

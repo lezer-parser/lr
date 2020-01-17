@@ -1,6 +1,6 @@
 import {Action, Term, StateFlag, ParseState} from "./constants"
 import {StackContext} from "./parse"
-import {Tree, BufferCursor, NodeProp} from "lezer-tree"
+import {Tree, BufferCursor} from "lezer-tree"
 
 /// A parse stack. These are used internally by the parser to track
 /// parsing progress. They also provide some properties and methods
@@ -78,7 +78,7 @@ export class Stack {
     if (depth == 0) {
       // Zero-depth reductions are a special case—they add stuff to
       // the stack without popping anything off.
-      if (type <= parser.maxNode) this.storeNode(type, this.reducePos, this.reducePos, 4, true)
+      if (type < parser.minRepeatTerm) this.storeNode(type, this.reducePos, this.reducePos, 4, true)
       this.pushState(parser.getGoto(this.state, type, true), this.reducePos)
       return
     }
@@ -91,7 +91,7 @@ export class Stack {
     let base = this.stack.length - ((depth - 1) * 3) - (action & Action.StayFlag ? 6 : 0)
     let start = this.stack[base - 2]
     let bufferBase = this.stack[base - 1], count = this.bufferBase + this.buffer.length - bufferBase
-    if (type <= parser.maxNode && ((action & Action.RepeatFlag) || !parser.group.types[type].prop(NodeProp.repeated))) {
+    if (type < parser.minRepeatTerm || (action & Action.RepeatFlag)) {
       let pos = parser.stateFlag(this.state, StateFlag.Skipped) ? this.pos : this.reducePos
       this.storeNode(type, start, pos, count + 4, true)
     }
@@ -304,7 +304,12 @@ export class Stack {
   // Convert the stack's buffer to a syntax tree.
   /// @internal
   toTree(): Tree {
-    return Tree.build(StackBufferCursor.create(this), this.cx.parser.group, Term.Top, this.cx.maxBufferLength, this.cx.reused)
+    return Tree.build({buffer: StackBufferCursor.create(this),
+                       group: this.cx.parser.group,
+                       topID: Term.Top,
+                       maxBufferLength: this.cx.maxBufferLength,
+                       reused: this.cx.reused,
+                       minRepeatType: this.cx.parser.minRepeatTerm})
   }
 }
 

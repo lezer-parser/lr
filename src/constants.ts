@@ -71,7 +71,10 @@ export const enum Term {
   // The values of the error and top terms are hard coded, the others
   // are allocated per grammar.
   Err = 0,
-  Top = 1
+  Top = 1,
+  // Any term >= the parser's min repeat id with this bit set is an
+  // inner repeated term. If it is 0, it's a repeat wrapper.
+  Repeated = 1
 }
 
 export const enum Seq {
