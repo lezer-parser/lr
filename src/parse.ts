@@ -64,12 +64,10 @@ class CacheCursor {
       }
       let next = top.children[index]
       let start = this.start[last] + top.positions[index]
+      if (start >= pos) return start == pos ? next : null
       if (next instanceof TreeBuffer) {
-        if (start == pos) return next
         this.index[last]++
         this.nextStart = start + next.length
-      } else if (start >= pos) {
-        return start == pos ? next : null
       } else {
         this.index[last]++
         if (start + next.length >= pos) { // Enter this node

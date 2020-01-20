@@ -1,3 +1,9 @@
+## 0.7.0 (2020-01-20)
+
+### Breaking changes
+
+This now consumes the adjusted parser output of lezer-generator 0.7.0.
+
 ## 0.6.0 (2020-01-15)
 
 ### Bug fixes
