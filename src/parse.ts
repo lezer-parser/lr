@@ -46,7 +46,7 @@ class CacheCursor {
   constructor(tree: Tree) { this.trees = [tree] }
 
   // `pos` must be >= any previously given `pos` for this cursor
-  nodeAt(pos: number): Tree | null {
+  nodeAt(pos: number): Tree | TreeBuffer | null {
     if (pos < this.nextStart) return null
 
     for (;;) {
@@ -65,6 +65,7 @@ class CacheCursor {
       let next = top.children[index]
       let start = this.start[last] + top.positions[index]
       if (next instanceof TreeBuffer) {
+        if (start == pos) return next
         this.index[last]++
         this.nextStart = start + next.length
       } else if (start >= pos) {
@@ -198,7 +199,7 @@ export interface ParseOptions {
 }
 
 export class StackContext {
-  reused: Tree[] = []
+  reused: (Tree | TreeBuffer)[] = []
   tokens = new TokenCache
   constructor(
     readonly parser: Parser,
@@ -328,7 +329,7 @@ export class ParseContext {
           if (verbose) console.log(base + stack + ` (via reuse of ${parser.getName(cached.type.id)})`)
           return stack
         }
-        if (cached.children.length == 0 || cached.positions[0] > 0) break
+        if (!(cached instanceof Tree) || cached.children.length == 0 || cached.positions[0] > 0) break
         let inner = cached.children[0]
         if (inner instanceof Tree) cached = inner
         else break
@@ -715,13 +716,13 @@ function withoutPrototype(obj: {}) {
 
 // Checks whether a node starts or ends with an error node, in which
 // case we shouldn't reuse it.
-function isFragile(node: Tree) {
+function isFragile(node: Tree | TreeBuffer) {
   let doneStart = false, doneEnd = false, fragile = node.type.id == Term.Err
   if (!fragile) node.iterate({
     enter(type) {
       return doneStart || (type.id == Term.Err ? fragile = doneStart = true : undefined)
     },
-    leave(type) { doneStart = true }
+    leave() { doneStart = true }
   })
   if (!fragile) node.iterate({
     from: node.length,
@@ -729,7 +730,7 @@ function isFragile(node: Tree) {
     enter(type) {
       return doneEnd || (type.id == Term.Err ? fragile = doneEnd = true : undefined)
     },
-    leave(type) { doneEnd = true }
+    leave() { doneEnd = true }
   })
   return fragile
 }

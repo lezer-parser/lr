@@ -1,6 +1,6 @@
 import {Action, Term, StateFlag, ParseState} from "./constants"
 import {StackContext} from "./parse"
-import {Tree, BufferCursor} from "lezer-tree"
+import {Tree, TreeBuffer, BufferCursor} from "lezer-tree"
 
 /// A parse stack. These are used internally by the parser to track
 /// parsing progress. They also provide some properties and methods
@@ -170,7 +170,7 @@ export class Stack {
   // Add a prebuilt node into the buffer. This may be a reused node or
   // the result of running a nested parser.
   /// @internal
-  useNode(value: Tree, next: number) {
+  useNode(value: Tree | TreeBuffer, next: number) {
     let index = this.cx.reused.length - 1
     if (index < 0 || this.cx.reused[index] != value) {
       this.cx.reused.push(value)
