@@ -1,4 +1,4 @@
-import {Stack} from "./stack"
+import {Stack, Recover} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState} from "./constants"
 import {InputStream, Token, StringStream, Tokenizer, TokenGroup} from "./token"
 import {DefaultBufferLength, Tree, TreeBuffer, NodeGroup, NodeType, NodeProp, NodePropSource} from "lezer-tree"
@@ -448,7 +448,7 @@ export class ParseContext {
   /// of tokens parsed. Could be used to decide to abort a parse when
   /// the input doesn't appear to match the grammar at all.
   get badness() {
-    return this.stacks[0].recovered / this.tokenCount
+    return this.stacks[0].recovered * Recover.Token / this.tokenCount
   }
 
   private scanForNestEnd(stack: Stack, endToken: TokenGroup, filter?: ((token: string) => boolean)) {

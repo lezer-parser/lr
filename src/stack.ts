@@ -208,7 +208,7 @@ export class Stack {
     if (isNode) this.storeNode(next, this.pos, nextEnd)
     this.storeNode(Term.Err, this.pos, nextEnd, isNode ? 8 : 4)
     this.pos = this.reducePos = nextEnd
-    this.recovered++
+    this.recovered += Recover.Token
   }
 
   /// Check if the given term would be able to be shifted (optionally
@@ -277,7 +277,7 @@ export class Stack {
       let stack = this.split()
       stack.storeNode(Term.Err, stack.pos, stack.pos, 4, true)
       stack.pushState(nextStates[i], this.pos)
-      stack.recovered++
+      stack.recovered += Recover.Token
       result.push(stack)
     }
     return result
@@ -291,7 +291,7 @@ export class Stack {
     if ((reduce & Action.ReduceFlag) == 0) return false
     if (!this.cx.parser.validAction(this.state, reduce)) {
       this.storeNode(Term.Err, this.reducePos, this.reducePos, 4, true)
-      this.recovered++
+      this.recovered += Recover.Reduce
     }
     this.reduce(reduce)
     return true
@@ -315,7 +315,9 @@ export class Stack {
   }
 }
 
-const enum Recover {
+export const enum Recover {
+  Token = 2,
+  Reduce = 1,
   MaxNext = 4
 }
 
