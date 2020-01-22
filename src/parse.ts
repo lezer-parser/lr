@@ -324,7 +324,7 @@ export class ParseContext {
     if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
         let match = parser.group.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
-        if (match > -1 && !isFragile(cached)) {
+        if (match > -1) {
           stack.useNode(cached, match)
           if (verbose) console.log(base + stack + ` (via reuse of ${parser.getName(cached.type.id)})`)
           return stack
@@ -712,27 +712,6 @@ function withoutPrototype(obj: {}) {
   let result: {[key: string]: any} = Object.create(null)
   for (let prop in obj) if (Object.prototype.hasOwnProperty.call(obj, prop)) result[prop] = (obj as any)[prop]
   return result
-}
-
-// Checks whether a node starts or ends with an error node, in which
-// case we shouldn't reuse it.
-function isFragile(node: Tree | TreeBuffer) {
-  let doneStart = false, doneEnd = false, fragile = node.type.id == Term.Err
-  if (!fragile) node.iterate({
-    enter(type) {
-      return doneStart || (type.id == Term.Err ? fragile = doneStart = true : undefined)
-    },
-    leave() { doneStart = true }
-  })
-  if (!fragile) node.iterate({
-    from: node.length,
-    to: 0,
-    enter(type) {
-      return doneEnd || (type.id == Term.Err ? fragile = doneEnd = true : undefined)
-    },
-    leave() { doneEnd = true }
-  })
-  return fragile
 }
 
 function findFinished(stacks: Stack[]) {
