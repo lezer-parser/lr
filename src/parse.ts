@@ -428,7 +428,7 @@ export class ParseContext {
           token = Term.Err
         }
         stack.recoverByDelete(token, tokenEnd)
-        if (verbose) console.log(base + ` (via recover-delete ${stack.cx.parser.getName(token)})`)
+        if (verbose) console.log(base + stack + ` (via recover-delete ${stack.cx.parser.getName(token)})`)
         this.putStack(stack)
       } else if (!finished || finished.recovered > stack.recovered) {
         finished = stack
