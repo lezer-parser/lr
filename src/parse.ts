@@ -84,8 +84,6 @@ class CachedToken extends Token {
   extended = -1
   mask = 0
 
-  constructor(readonly tokenizer: Tokenizer) { super() }
-
   clear(start: number) {
     this.start = start
     this.value = this.extended = -1
@@ -100,6 +98,10 @@ class TokenCache {
 
   actions: number[] = []
 
+  constructor(parser: Parser) {
+    this.tokens = parser.tokenizers.map(_ => new CachedToken)
+  }
+
   getActions(stack: Stack, input: InputStream) {
     let actionIndex = 0
     let main: Token | null = null
@@ -108,11 +110,9 @@ class TokenCache {
     let mask = parser.stateSlot(stack.state, ParseState.TokenizerMask)
     for (let i = 0; i < tokenizers.length; i++) {
       if (((1 << i) & mask) == 0) continue
-      let tokenizer = tokenizers[i], token
-      for (let t of this.tokens) if (t.tokenizer == tokenizer) { token = t; break }
-      if (!token) this.tokens.push(token = new CachedToken(tokenizer))
+      let tokenizer = tokenizers[i], token = this.tokens[i]
       if (tokenizer.contextual || token.start != stack.pos || token.mask != mask) {
-        this.updateCachedToken(token, stack, input)
+        this.updateCachedToken(token, tokenizer, stack, input)
         token.mask = mask
       }
 
@@ -137,9 +137,9 @@ class TokenCache {
     return this.actions
   }
 
-  updateCachedToken(token: CachedToken, stack: Stack, input: InputStream) {
+  updateCachedToken(token: CachedToken, tokenizer: Tokenizer, stack: Stack, input: InputStream) {
     token.clear(stack.pos)
-    token.tokenizer.token(input, token, stack)
+    tokenizer.token(input, token, stack)
     if (token.value > -1) {
       let {parser} = stack.cx
       let specIndex = findOffset(parser.data, parser.specializeTable, token.value)
@@ -198,14 +198,16 @@ export interface ParseOptions {
 
 export class StackContext {
   reused: (Tree | TreeBuffer)[] = []
-  tokens = new TokenCache
+  tokens: TokenCache
   constructor(
     readonly parser: Parser,
     readonly maxBufferLength: number,
     readonly input: InputStream,
     readonly parent: Stack | null = null,
     public wrapType: number = -1 // Set to -2 when a stack descending from this nesting event finishes
-  ) {}
+  ) {
+    this.tokens = new TokenCache(parser)
+  }
 }
 
 const recoverDist = 5, maxRemainingPerStep = 3, minBufferLengthPrune = 200, forceReduceLimit = 10
