@@ -1,3 +1,11 @@
+## 0.7.1 (2020-01-23)
+
+### Bug fixes
+
+Tweak recovery cost for forced reductions to prefer those to other recovery strategies.
+
+More agressively reuse cached nodes.
+
 ## 0.7.0 (2020-01-20)
 
 ### Breaking changes

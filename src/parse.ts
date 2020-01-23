@@ -234,6 +234,7 @@ export class ParseContext {
     this.cache = cache ? new CacheCursor(cache) : null
   }
 
+  /// @internal
   putStack(stack: Stack) {
     this.stacks.push(stack)
     if (this.pos < 0 || stack.pos < this.pos) this.pos = stack.pos
@@ -432,7 +433,7 @@ export class ParseContext {
         stack.recoverByDelete(token, tokenEnd)
         if (verbose) console.log(base + stack + ` (via recover-delete ${stack.cx.parser.getName(token)})`)
         this.putStack(stack)
-      } else if (!finished || finished.recovered > stack.recovered) {
+      } else if (!stack.cx.parent && (!finished || finished.recovered > stack.recovered)) {
         finished = stack
       }
     }
