@@ -193,7 +193,10 @@ export interface ParseOptions {
   strict?: boolean,
   /// The maximum length of the TreeBuffers generated in the output
   /// tree. Defaults to 1024.
-  bufferLength?: number
+  bufferLength?: number,
+  /// The name of the @top declaration to parse from. If not
+  /// specified, the first @top declaration is used.
+  top?: string
 }
 
 export class StackContext {
@@ -228,7 +231,7 @@ export class ParseContext {
   /// @internal
   constructor(parser: Parser,
               input: InputStream,
-              {cache = undefined, strict = false, bufferLength = DefaultBufferLength}: ParseOptions = {}) {
+              {cache = undefined, strict = false, bufferLength = DefaultBufferLength, top = null}: ParseOptions = {}) {
     this.stacks = [Stack.start(new StackContext(parser, bufferLength, input))]
     this.strict = strict
     this.cache = cache ? new CacheCursor(cache) : null
