@@ -59,7 +59,7 @@ export class Stack {
   // Start an empty stack
   /// @internal
   static start(cx: StackContext, pos = 0) {
-    return new Stack(cx, [], cx.parser.states[0], pos, pos, 0, [], 0, null)
+    return new Stack(cx, [], 0, pos, pos, 0, [], 0, null)
   }
 
   // Push a state onto the stack, tracking its start position as well
