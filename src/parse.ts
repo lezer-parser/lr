@@ -206,6 +206,7 @@ export class StackContext {
     readonly parser: Parser,
     readonly maxBufferLength: number,
     readonly input: InputStream,
+    readonly topTerm: number,
     readonly parent: Stack | null = null,
     public wrapType: number = -1 // Set to -2 when a stack descending from this nesting event finishes
   ) {
@@ -231,8 +232,10 @@ export class ParseContext {
   /// @internal
   constructor(parser: Parser,
               input: InputStream,
-              {cache = undefined, strict = false, bufferLength = DefaultBufferLength, top = null}: ParseOptions = {}) {
-    this.stacks = [Stack.start(new StackContext(parser, bufferLength, input))]
+              {cache = undefined, strict = false, bufferLength = DefaultBufferLength, top = undefined}: ParseOptions = {}) {
+    let topInfo = parser.topRules[top || Object.keys(parser.topRules)[0]]
+    if (!topInfo) throw new RangeError(`Invalid top rule name ${top}`)
+    this.stacks = [Stack.start(new StackContext(parser, bufferLength, input, topInfo[1]), topInfo[0])]
     this.strict = strict
     this.cache = cache ? new CacheCursor(cache) : null
   }
@@ -360,7 +363,9 @@ export class ParseContext {
         stack.useNode(node, parser.getGoto(stack.state, placeholder, true))
         return stack
       } else {
-        let newStack = Stack.start(new StackContext(nested, stack.cx.maxBufferLength, clippedInput, stack, wrapType), stack.pos)
+        let topInfo = nested.topRules[Object.keys(nested.topRules)[0]] // FIXME make configurable?
+        let newStack = Stack.start(new StackContext(nested, stack.cx.maxBufferLength, clippedInput, topInfo[1], stack, wrapType),
+                                   topInfo[0], stack.pos)
         if (verbose) console.log(base + newStack + ` (nested)`)
         return newStack
       }
@@ -494,6 +499,8 @@ export class Parser {
     readonly minRepeatTerm: number,
     /// The tokenizer objects used by the grammar @internal
     readonly tokenizers: readonly Tokenizer[],
+    /// Maps top rule names to [state ID, top term ID] pairs.
+    readonly topRules: {[name: string]: [number, number]},
     /// Metadata about nested grammars used in this grammar @internal
     readonly nested: readonly {
       /// A name, used by `withNested`
@@ -626,7 +633,7 @@ export class Parser {
   /// in a different language for a nested grammar or fill in a nested
   /// grammar that was left blank by the original grammar.
   withNested(spec: {[name: string]: NestedGrammar | null}) {
-    return new Parser(this.states, this.data, this.goto, this.group, this.minRepeatTerm, this.tokenizers,
+    return new Parser(this.states, this.data, this.goto, this.group, this.minRepeatTerm, this.tokenizers, this.topRules,
                       this.nested.map(obj => {
                         if (!Object.prototype.hasOwnProperty.call(spec, obj.name)) return obj
                         return {name: obj.name, grammar: spec[obj.name], end: obj.end, placeholder: obj.placeholder}
@@ -639,7 +646,7 @@ export class Parser {
   /// to create the arguments to this method.
   withProps(...props: NodePropSource[]) {
     return new Parser(this.states, this.data, this.goto, this.group.extend(...props), this.minRepeatTerm,
-                      this.tokenizers, this.nested,
+                      this.tokenizers, this.topRules, this.nested,
                       this.specializeTable, this.specializations, this.tokenPrecTable, this.termNames)
   }
 
@@ -668,6 +675,7 @@ export class Parser {
     nodeProps?: [NodeProp<any>, ...(string | number)[]][],
     tokenData: string,
     tokenizers: (Tokenizer | number)[],
+    topRules: {[name: string]: [number, number]},
     nested?: [string, null | NestedGrammar, string, number][],
     specializeTable: number,
     specializations?: readonly {[term: string]: number}[],
@@ -694,6 +702,7 @@ export class Parser {
     return new Parser(decodeArray(spec.states, Uint32Array), decodeArray(spec.stateData),
                       decodeArray(spec.goto), group, minRepeatTerm,
                       spec.tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
+                      spec.topRules,
                       (spec.nested || []).map(([name, grammar, endToken, placeholder]) =>
                                               ({name, grammar, end: new TokenGroup(decodeArray(endToken), 0), placeholder})),
                       spec.specializeTable, (spec.specializations || []).map(withoutPrototype),

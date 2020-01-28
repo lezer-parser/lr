@@ -58,8 +58,8 @@ export class Stack {
 
   // Start an empty stack
   /// @internal
-  static start(cx: StackContext, pos = 0) {
-    return new Stack(cx, [], 0, pos, pos, 0, [], 0, null)
+  static start(cx: StackContext, state: number, pos = 0) {
+    return new Stack(cx, [], state, pos, pos, 0, [], 0, null)
   }
 
   // Push a state onto the stack, tracking its start position as well
@@ -308,7 +308,7 @@ export class Stack {
   toTree(): Tree {
     return Tree.build({buffer: StackBufferCursor.create(this),
                        group: this.cx.parser.group,
-                       topID: Term.Top,
+                       topID: this.cx.topTerm,
                        maxBufferLength: this.cx.maxBufferLength,
                        reused: this.cx.reused,
                        minRepeatType: this.cx.parser.minRepeatTerm})

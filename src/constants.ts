@@ -68,10 +68,9 @@ export const enum Specialize {
 
 // Terms are 16-bit numbers
 export const enum Term {
-  // The values of the error and top terms are hard coded, the others
-  // are allocated per grammar.
-  Err = 0,
-  Top = 1
+  // The value of the error term is hard coded, the others are
+  // allocated per grammar.
+  Err = 0
 }
 
 export const enum Seq {
