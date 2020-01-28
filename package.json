@@ -6,6 +6,10 @@
   "types": "dist/index.d.ts",
   "author": "Marijn Haverbeke <marijnh@gmail.com>",
   "license": "MIT",
+  "repository": {
+    "type" : "git",
+    "url" : "https://github.com/lezer-parser/lezer.git"
+  },
   "devDependencies": {
     "rollup": "^1.6.0",
     "rollup-plugin-commonjs": "^10.0.2",
