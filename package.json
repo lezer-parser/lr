@@ -1,6 +1,6 @@
 {
   "name": "lezer",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "Incremental parser",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -18,7 +18,7 @@
     "typescript": "^3.7.2"
   },
   "dependencies": {
-    "lezer-tree": "^0.7.1"
+    "lezer-tree": "^0.8.0"
   },
   "scripts": {
     "watch": "rollup -w -c rollup.config.js",
