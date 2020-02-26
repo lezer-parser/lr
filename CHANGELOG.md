@@ -1,3 +1,9 @@
+## 0.8.1 (2020-02-26)
+
+### New features
+
+You can now find the top node type parsed by the parser through its `topType` property.
+
 ## 0.8.0 (2020-02-03)
 
 ### Breaking changes
