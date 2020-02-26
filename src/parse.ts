@@ -236,7 +236,7 @@ export class ParseContext {
   constructor(parser: Parser,
               input: InputStream,
               {cache = undefined, strict = false, bufferLength = DefaultBufferLength, top = undefined}: ParseOptions = {}) {
-    let topInfo = parser.topRules[top || Object.keys(parser.topRules)[0]]
+    let topInfo = top ? parser.topRules[top] : parser.defaultTop
     if (!topInfo) throw new RangeError(`Invalid top rule name ${top}`)
     this.stacks = [Stack.start(new StackContext(parser, bufferLength, input, topInfo[1]), topInfo[0])]
     this.strict = strict
@@ -366,7 +366,7 @@ export class ParseContext {
         stack.useNode(node, parser.getGoto(stack.state, placeholder, true))
         return stack
       } else {
-        let topInfo = nested.topRules[top || Object.keys(nested.topRules)[0]]
+        let topInfo = top ? nested.topRules[top] : nested.defaultTop
         let newStack = Stack.start(new StackContext(nested, stack.cx.maxBufferLength, clippedInput, topInfo[1], stack, wrapType),
                                    topInfo[0], stack.pos)
         if (verbose) console.log(base + newStack + ` (nested)`)
@@ -667,6 +667,12 @@ export class Parser {
 
   /// Tells you whether this grammar has any nested grammars.
   get hasNested() { return this.nested.length > 0 }
+
+  /// @internal
+  get defaultTop() { return this.topRules[Object.keys(this.topRules)[0]] }
+
+  /// The node type produced by the default top rule.
+  get topType() { return this.group.types[this.defaultTop[1]] }
 
   /// (Used by the output of the parser generator) @internal
   static deserialize(spec: {
