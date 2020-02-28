@@ -1,3 +1,9 @@
+## 0.8.2 (2020-02-28)
+
+### New features
+
+The package now provides an ES6 module.
+
 ## 0.8.1 (2020-02-26)
 
 ### New features
