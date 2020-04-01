@@ -7,7 +7,7 @@ export default {
   external: ["lezer-tree"],
   output: [{
     format: "cjs",
-    file: "./dist/index.js",
+    file: "./dist/index.cjs",
     sourcemap: true,
     externalLiveBindings: false
   }, {
