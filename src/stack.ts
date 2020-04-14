@@ -249,15 +249,23 @@ export class Stack {
   /// for either of those two rules (assuming that `a` isn't part of
   /// some rule that includes other things starting with `"x"`).
   startOf(types: readonly number[]) {
-    for (let frame = this.stack.length; frame >= 0; frame -= 3) {
-      let state = frame == this.stack.length ? this.state : this.stack[frame]
-      let force = this.cx.parser.stateSlot(state, ParseState.ForcedReduce)
-      if (types.includes(force & Action.ValueMask)) {
+    let state = this.state, frame = this.stack.length, {parser} = this.cx
+    for (;;) {
+      let force = parser.stateSlot(state, ParseState.ForcedReduce)
+      let depth = force >> Action.ReduceDepthShift, term = force & Action.ValueMask
+      if (types.includes(term)) {
         let base = frame - (3 * (force >> Action.ReduceDepthShift))
         return this.stack[base + 1]
       }
+      if (frame == 0) return -1
+      if (depth == 0) {
+        frame -= 3
+        state = this.stack[frame]
+      } else {
+        frame -= 3 * (depth - 1)
+        state = parser.getGoto(this.stack[frame - 3], term, true)
+      }
     }
-    return -1
   }
 
   // Apply up to Recover.MaxNext recovery actions that conceptually
