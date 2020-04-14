@@ -1,3 +1,9 @@
+## 0.8.4 (2020-04-14)
+
+### Bug fixes
+
+Fix a bug in `Stack.startOf` that made it fail to find rules that were actually on the stack in many situations.
+
 ## 0.8.3 (2020-04-01)
 
 ### Bug fixes
