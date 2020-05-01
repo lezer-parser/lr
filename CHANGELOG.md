@@ -1,3 +1,9 @@
+## 0.8.5 (2020-05-01)
+
+### Bug fixes
+
+Publish less useless cruft to npm, reducing package size.
+
 ## 0.8.4 (2020-04-14)
 
 ### Bug fixes
