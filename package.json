@@ -26,6 +26,7 @@
   "dependencies": {
     "lezer-tree": "^0.8.0"
   },
+  "files": ["dist"],
   "scripts": {
     "watch": "rollup -w -c rollup.config.js",
     "prepare": "rollup -c rollup.config.js"
