@@ -696,9 +696,9 @@ export class Parser {
     for (let i = 0; i < spec.repeatNodeCount; i++) nodeNames.push("")
     let nodeProps: {[id: number]: any}[] = []
     for (let i = 0; i < nodeNames.length; i++) nodeProps.push(noProps)
-    function setProp(nodeID: number, prop: NodeProp<any>, value: string) {
+    function setProp(nodeID: number, prop: NodeProp<any>, value: any) {
       if (nodeProps[nodeID] == noProps) nodeProps[nodeID] = Object.create(null)
-      prop.set(nodeProps[nodeID], prop.deserialize(value))
+      prop.set(nodeProps[nodeID], prop.deserialize(String(value)))
     }
     setProp(0, NodeProp.error, "")
     if (spec.nodeProps) for (let propSpec of spec.nodeProps) {
