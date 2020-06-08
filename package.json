@@ -1,6 +1,6 @@
 {
   "name": "lezer",
-  "version": "0.8.5",
+  "version": "0.9.0",
   "description": "Incremental parser",
   "main": "dist/index.cjs",
   "type": "module",
@@ -24,7 +24,7 @@
     "typescript": "^3.7.2"
   },
   "dependencies": {
-    "lezer-tree": "^0.8.0"
+    "lezer-tree": "^0.9.0"
   },
   "files": ["dist"],
   "scripts": {
