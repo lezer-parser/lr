@@ -253,7 +253,7 @@ export class Stack {
     for (;;) {
       let force = parser.stateSlot(state, ParseState.ForcedReduce)
       let depth = force >> Action.ReduceDepthShift, term = force & Action.ValueMask
-      if (types.includes(term)) {
+      if (types.indexOf(term) > -1) {
         let base = frame - (3 * (force >> Action.ReduceDepthShift))
         return this.stack[base + 1]
       }
@@ -276,7 +276,7 @@ export class Stack {
     if (nextStates.length > Recover.MaxNext) {
       let best = nextStates.filter(s => s != this.state && this.cx.parser.hasAction(s, next))
       for (let i = 0; best.length < Recover.MaxNext && i < nextStates.length; i++)
-        if (!best.includes(nextStates[i])) best.push(nextStates[i])
+        if (best.indexOf(nextStates[i]) < 0) best.push(nextStates[i])
       nextStates = best
     }
     let result: Stack[] = []

@@ -610,7 +610,7 @@ export class Parser {
     if (cached) return cached
     let result: number[] = []
     for (let i = this.stateSlot(state, ParseState.Actions); this.data[i] != Seq.End; i += 3) {
-      if ((this.data[i + 2] & (Action.ReduceFlag >> 16)) == 0 && !result.includes(this.data[i + 1]))
+      if ((this.data[i + 2] & (Action.ReduceFlag >> 16)) == 0 && result.indexOf(this.data[i + 1]) < 0)
         result.push(this.data[i + 1])
     }
     let table = this.goto, max = table[0]
@@ -618,7 +618,7 @@ export class Parser {
       for (let pos = table[term + 1];;) {
         let groupTag = table[pos++], target = table[pos++]
         for (let end = pos + (groupTag >> 1); pos < end; pos++)
-          if (table[pos] == state && !result.includes(target)) result.push(target)
+          if (table[pos] == state && result.indexOf(target) < 0) result.push(target)
         if (groupTag & 1) break
       }
     }
