@@ -1,3 +1,9 @@
+## 0.9.1 (2020-06-29)
+
+### Bug fixes
+
+Fix accidental use of non-ES5 library methods.
+
 ## 0.9.0 (2020-06-08)
 
 ### Breaking changes
