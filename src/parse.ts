@@ -114,19 +114,19 @@ class TokenCache {
     for (let i = 0; i < tokenizers.length; i++) {
       if (((1 << i) & mask) == 0) continue
       let tokenizer = tokenizers[i], token = this.tokens[i]
+      if (main && !tokenizer.fallback) continue
       if (tokenizer.contextual || token.start != stack.pos || token.mask != mask) {
         this.updateCachedToken(token, tokenizer, stack, input)
         token.mask = mask
       }
 
-      let startIndex = actionIndex
-      if (token.extended > -1) actionIndex = this.addActions(stack, token.extended, token.end, actionIndex)
-      actionIndex = this.addActions(stack, token.value, token.end, actionIndex)
-      if (actionIndex > startIndex) {
+      if (token.value != Term.Err) {
         main = token
-        break
+        let startIndex = actionIndex
+        if (token.extended > -1) actionIndex = this.addActions(stack, token.extended, token.end, actionIndex)
+        actionIndex = this.addActions(stack, token.value, token.end, actionIndex)
+        if (actionIndex > startIndex) break
       }
-      if (!main || token.value != Term.Err) main = token
     }
 
     while (this.actions.length > actionIndex) this.actions.pop()

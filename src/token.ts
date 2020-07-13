@@ -53,25 +53,54 @@ export class StringStream implements InputStream {
 export interface Tokenizer {
   token(input: InputStream, token: Token, stack: Stack): void
   contextual: boolean
+  fallback: boolean
 }
 
 /// @internal
 export class TokenGroup implements Tokenizer {
   contextual!: boolean
+  fallback!: boolean
 
   constructor(readonly data: Readonly<Uint16Array>, readonly id: number) {}
 
   token(input: InputStream, token: Token, stack: Stack) { readToken(this.data, input, token, stack, this.id) }
 }
 
-TokenGroup.prototype.contextual = false
+TokenGroup.prototype.contextual = TokenGroup.prototype.fallback = false
 
+interface ExternalOptions {
+  /// When set to true, mark this tokenizer as depending on the
+  /// current parse stack, which prevents its result from being cached
+  /// between parser actions at the same positions.
+  contextual?: boolean,
+  /// By defaults, when a tokenizer returns a token, that prevents
+  /// tokenizers with lower precedence from even running. When
+  /// `fallback` is true, the tokenizer is allowed to run when a
+  /// previous tokenizer returned a token that didn't match any of the
+  /// current state's actions.
+  fallback?: boolean
+}
+
+/// Exports that are used for `@external tokens` in the grammar should
+/// export an instance of this class.
 export class ExternalTokenizer {
+  /// @internal
   contextual: boolean
+  /// @internal
+  fallback: boolean
 
-  constructor(readonly token: (input: InputStream, token: Token, stack: Stack) => void,
-              options: {contextual?: boolean} = {}) {
-    this.contextual = options && options.contextual || false
+  /// Create a tokenizer. The first argument is the function that,
+  /// given an input stream and a token object,
+  /// [fills](#lezer.Token.accept) the token object if it recognizes a
+  /// token. `token.start` should be used as the start position to
+  /// scan from.
+  constructor(
+    /// @internal
+    readonly token: (input: InputStream, token: Token, stack: Stack) => void,
+    options: ExternalOptions = {}
+  ) {
+    this.contextual = !!options.contextual
+    this.fallback = !!options.fallback
   }
 }
 
