@@ -321,6 +321,9 @@ export class Stack {
                        reused: this.cx.reused,
                        minRepeatType: this.cx.parser.minRepeatTerm})
   }
+
+  /// Get the parser used by this stack.
+  get parser() { return this.cx.parser }
 }
 
 export const enum Recover {
