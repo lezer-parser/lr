@@ -744,7 +744,7 @@ export class Parser {
       for (let i = 1; i < propSpec.length; i += 2)
         setProp(propSpec[i] as number, prop, propSpec[i + 1] as string)
     }
-    let group = new NodeGroup(nodeNames.map((name, i) => new NodeType(name, nodeProps[i], i)))
+    let group = new NodeGroup(nodeNames.map((name, i) => new (NodeType as any)(name, nodeProps[i], i)))
 
     return new Parser(decodeArray(spec.states, Uint32Array), decodeArray(spec.stateData),
                       decodeArray(spec.goto), group, spec.maxTerm, minRepeatTerm,
@@ -757,6 +757,9 @@ export class Parser {
                       spec.tokenPrec, spec.termNames)
   }
 }
+
+// Hidden export for use by lezer-generator
+;(Parser as any).TokenGroup = TokenGroup
 
 const noProps: {[propID: number]: any} = Object.create(null)
 

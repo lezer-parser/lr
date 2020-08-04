@@ -7,7 +7,8 @@
     "strict": true,
     "target": "es5",
     "newLine": "lf",
-    "preserveConstEnums": true
+    "preserveConstEnums": true,
+    "stripInternal": true
   },
   "include": ["src/*.ts"]
 }
