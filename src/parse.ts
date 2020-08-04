@@ -485,9 +485,9 @@ export class ParseContext {
 export class Dialect {
   constructor(readonly source: string | undefined,
               readonly flags: readonly boolean[],
-              readonly disabled: null | {[term: number]: boolean}) {}
+              readonly disabled: null | Uint8Array) {}
 
-  allows(term: number) { return !this.disabled || !this.disabled[term] }
+  allows(term: number) { return !this.disabled || this.disabled[term] == 0 }
 }
 
 /// A parser holds the parse tables for a given grammar, as generated
@@ -512,6 +512,8 @@ export class Parser {
     readonly goto: Readonly<Uint16Array>,
     /// A node group with the node types used by this parser.
     readonly group: NodeGroup,
+    /// The highest term id @internal
+    readonly maxTerm: number,
     /// The first repeat-related term id @internal
     readonly minRepeatTerm: number,
     /// The tokenizer objects used by the grammar @internal
@@ -653,7 +655,8 @@ export class Parser {
   /// in a different language for a nested grammar or fill in a nested
   /// grammar that was left blank by the original grammar.
   withNested(spec: {[name: string]: NestedGrammar | null}) {
-    return new Parser(this.states, this.data, this.goto, this.group, this.minRepeatTerm, this.tokenizers, this.topRules,
+    return new Parser(this.states, this.data, this.goto, this.group, this.maxTerm, this.minRepeatTerm,
+                      this.tokenizers, this.topRules,
                       this.nested.map(obj => {
                         if (!Object.prototype.hasOwnProperty.call(spec, obj.name)) return obj
                         return {name: obj.name, grammar: spec[obj.name], end: obj.end, placeholder: obj.placeholder}
@@ -665,7 +668,7 @@ export class Parser {
   /// props added. You should use [`NodeProp.add`](#tree.NodeProp.add)
   /// to create the arguments to this method.
   withProps(...props: NodePropSource[]) {
-    return new Parser(this.states, this.data, this.goto, this.group.extend(...props), this.minRepeatTerm,
+    return new Parser(this.states, this.data, this.goto, this.group.extend(...props), this.maxTerm, this.minRepeatTerm,
                       this.tokenizers, this.topRules, this.nested, this.dialects,
                       this.specializeTable, this.specializations, this.tokenPrecTable, this.termNames)
   }
@@ -699,10 +702,10 @@ export class Parser {
       let id = values.indexOf(part)
       if (id >= 0) flags[id] = true
     }
-    let disabled: {[term: number]: boolean} | null = null
+    let disabled: Uint8Array | null = null
     for (let i = 0; i < values.length; i++) if (!flags[i]) {
       for (let j = this.dialects[values[i]], id; (id = this.data[j++]) != Seq.End;)
-        (disabled || (disabled = Object.create(null)))[id] = true
+        (disabled || (disabled = new Uint8Array(this.maxTerm + 1)))[id] = 1
     }
     return this.cachedDialect = new Dialect(dialect, flags, disabled)
   }
@@ -713,6 +716,7 @@ export class Parser {
     stateData: string,
     goto: string,
     nodeNames: string,
+    maxTerm: number,
     repeatNodeCount: number,
     nodeProps?: [NodeProp<any>, ...(string | number)[]][],
     tokenData: string,
@@ -743,7 +747,7 @@ export class Parser {
     let group = new NodeGroup(nodeNames.map((name, i) => new NodeType(name, nodeProps[i], i)))
 
     return new Parser(decodeArray(spec.states, Uint32Array), decodeArray(spec.stateData),
-                      decodeArray(spec.goto), group, minRepeatTerm,
+                      decodeArray(spec.goto), group, spec.maxTerm, minRepeatTerm,
                       spec.tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
                       spec.topRules,
                       (spec.nested || []).map(([name, grammar, endToken, placeholder]) =>
