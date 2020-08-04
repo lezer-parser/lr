@@ -199,7 +199,9 @@ export interface ParseOptions {
   bufferLength?: number,
   /// The name of the @top declaration to parse from. If not
   /// specified, the first @top declaration is used.
-  top?: string
+  top?: string,
+  /// A space-separated string of dialects to enable.
+  dialect?: string
 }
 
 export class StackContext {
@@ -210,6 +212,7 @@ export class StackContext {
     readonly maxBufferLength: number,
     readonly input: InputStream,
     readonly topTerm: number,
+    readonly dialect: Dialect,
     readonly parent: Stack | null = null,
     public wrapType: number = -1 // Set to -2 when a stack descending from this nesting event finishes
   ) {
@@ -235,10 +238,11 @@ export class ParseContext {
   /// @internal
   constructor(parser: Parser,
               input: InputStream,
-              {cache = undefined, strict = false, bufferLength = DefaultBufferLength, top = undefined}: ParseOptions = {}) {
+              options: ParseOptions = {}) {
+    let {cache = undefined, strict = false, bufferLength = DefaultBufferLength, top = undefined, dialect} = options
     let topInfo = top ? parser.topRules[top] : parser.defaultTop
     if (!topInfo) throw new RangeError(`Invalid top rule name ${top}`)
-    this.stacks = [Stack.start(new StackContext(parser, bufferLength, input, topInfo[1]), topInfo[0])]
+    this.stacks = [Stack.start(new StackContext(parser, bufferLength, input, topInfo[1], parser.parseDialect(dialect)), topInfo[0])]
     this.strict = strict
     this.cache = cache ? new CacheCursor(cache) : null
   }
@@ -367,7 +371,8 @@ export class ParseContext {
         return stack
       } else {
         let topInfo = top ? nested.topRules[top] : nested.defaultTop
-        let newStack = Stack.start(new StackContext(nested, stack.cx.maxBufferLength, clippedInput, topInfo[1], stack, wrapType),
+        let newStack = Stack.start(new StackContext(nested, stack.cx.maxBufferLength, clippedInput, topInfo[1],
+                                                    nested.parseDialect(), stack, wrapType),
                                    topInfo[0], stack.pos)
         if (verbose) console.log(base + newStack + ` (nested)`)
         return newStack
@@ -477,6 +482,14 @@ export class ParseContext {
   }
 }
 
+export class Dialect {
+  constructor(readonly source: string | undefined,
+              readonly flags: readonly boolean[],
+              readonly disabled: null | {[term: number]: boolean}) {}
+
+  allows(term: number) { return !this.disabled || !this.disabled[term] }
+}
+
 /// A parser holds the parse tables for a given grammar, as generated
 /// by `lezer-generator`.
 export class Parser {
@@ -485,6 +498,7 @@ export class Parser {
   /// @internal
   maxRepeatWrap: number
   private nextStateCache: (readonly number[] | null)[] = []
+  private cachedDialect: Dialect | null = null
 
   /// @internal
   constructor(
@@ -516,6 +530,9 @@ export class Parser {
       /// the position of this nesting
       placeholder: number
     }[],
+    /// A mapping from dialect names to the tokens that are exclusive
+    /// to them. @internal
+    readonly dialects: {[name: string]: number},
     /// Points into this.data at an array of token types that
     /// are specialized @internal
     readonly specializeTable: number,
@@ -640,7 +657,7 @@ export class Parser {
                       this.nested.map(obj => {
                         if (!Object.prototype.hasOwnProperty.call(spec, obj.name)) return obj
                         return {name: obj.name, grammar: spec[obj.name], end: obj.end, placeholder: obj.placeholder}
-                      }),
+                      }), this.dialects,
                       this.specializeTable, this.specializations, this.tokenPrecTable, this.termNames)
   }
 
@@ -649,7 +666,7 @@ export class Parser {
   /// to create the arguments to this method.
   withProps(...props: NodePropSource[]) {
     return new Parser(this.states, this.data, this.goto, this.group.extend(...props), this.minRepeatTerm,
-                      this.tokenizers, this.topRules, this.nested,
+                      this.tokenizers, this.topRules, this.nested, this.dialects,
                       this.specializeTable, this.specializations, this.tokenPrecTable, this.termNames)
   }
 
@@ -674,7 +691,23 @@ export class Parser {
   /// The node type produced by the default top rule.
   get topType() { return this.group.types[this.defaultTop[1]] }
 
-  /// (Used by the output of the parser generator) @internal
+  /// @internal
+  parseDialect(dialect?: string) {
+    if (this.cachedDialect && this.cachedDialect.source == dialect) return this.cachedDialect
+    let values = Object.keys(this.dialects), flags = values.map(() => false)
+    if (dialect) for (let part of dialect.split(" ")) {
+      let id = values.indexOf(part)
+      if (id >= 0) flags[id] = true
+    }
+    let disabled: {[term: number]: boolean} | null = null
+    for (let i = 0; i < values.length; i++) if (!flags[i]) {
+      for (let j = this.dialects[values[i]], id; (id = this.data[j++]) != Seq.End;)
+        (disabled || (disabled = Object.create(null)))[id] = true
+    }
+    return this.cachedDialect = new Dialect(dialect, flags, disabled)
+  }
+
+  /// (used by the output of the parser generator) @internal
   static deserialize(spec: {
     states: string,
     stateData: string,
@@ -686,6 +719,7 @@ export class Parser {
     tokenizers: (Tokenizer | number)[],
     topRules: {[name: string]: [number, number]},
     nested?: [string, null | NestedGrammar, string, number][],
+    dialects?: {[name: string]: number},
     specializeTable: number,
     specializations?: readonly {[term: string]: number}[],
     tokenPrec: number,
@@ -714,6 +748,7 @@ export class Parser {
                       spec.topRules,
                       (spec.nested || []).map(([name, grammar, endToken, placeholder]) =>
                                               ({name, grammar, end: new TokenGroup(decodeArray(endToken), 0), placeholder})),
+                      spec.dialects || {},
                       spec.specializeTable, (spec.specializations || []).map(withoutPrototype),
                       spec.tokenPrec, spec.termNames)
   }

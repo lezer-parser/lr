@@ -324,6 +324,10 @@ export class Stack {
 
   /// Get the parser used by this stack.
   get parser() { return this.cx.parser }
+
+  /// Test whether a given dialect (by numeric ID, as exported from
+  /// the terms file) is enabled.
+  dialectEnabled(dialectID: number) { return this.cx.dialect.flags[dialectID] }
 }
 
 export const enum Recover {
