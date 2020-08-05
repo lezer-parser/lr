@@ -145,12 +145,13 @@ class TokenCache {
     tokenizer.token(input, token, stack)
     if (token.value > -1) {
       let {parser} = stack.cx
-      let specIndex = findOffset(parser.data, parser.specializeTable, token.value)
-      if (specIndex >= 0) {
-        let found = parser.specializations[specIndex][input.read(token.start, token.end)]
-        if (found != null) {
-          if ((found & 1) == Specialize.Specialize) token.value = found >> 1
-          else token.extended = found >> 1
+
+      for (let i = 0; i < parser.specialized.length; i++) if (parser.specialized[i] == token.value) {
+        let result = parser.specializers[i](input.read(token.start, token.end), stack)
+        if (result >= 0) {
+          if ((result & 1) == Specialize.Specialize) token.value = result >> 1
+          else token.extended = result >> 1
+          break
         }
       }
     } else if (stack.pos == input.length) {
@@ -535,14 +536,10 @@ export class Parser {
     /// A mapping from dialect names to the tokens that are exclusive
     /// to them. @internal
     readonly dialects: {[name: string]: number},
-    /// Points into this.data at an array of token types that
-    /// are specialized @internal
-    readonly specializeTable: number,
-    /// For each specialized token type, this holds an object mapping
-    /// names to numbers, with the first bit indicating whether the
-    /// specialization extends or replaces the original token, and the
-    /// rest of the bits holding the specialized token type. @internal
-    readonly specializations: readonly {[value: string]: number}[],
+    /// The token types have specializers (in this.specializers) @internal
+    readonly specialized: Uint16Array,
+    /// The specializer functions for the token types in specialized @internal
+    readonly specializers: readonly ((value: string, stack: Stack) => number)[],
     /// Points into this.data at an array that holds the
     /// precedence order (higher precedence first) for ambiguous
     /// tokens @internal
@@ -661,7 +658,7 @@ export class Parser {
                         if (!Object.prototype.hasOwnProperty.call(spec, obj.name)) return obj
                         return {name: obj.name, grammar: spec[obj.name], end: obj.end, placeholder: obj.placeholder}
                       }), this.dialects,
-                      this.specializeTable, this.specializations, this.tokenPrecTable, this.termNames)
+                      this.specialized, this.specializers, this.tokenPrecTable, this.termNames)
   }
 
   /// Create a new `Parser` instance whose node types have the given
@@ -670,7 +667,7 @@ export class Parser {
   withProps(...props: NodePropSource[]) {
     return new Parser(this.states, this.data, this.goto, this.group.extend(...props), this.maxTerm, this.minRepeatTerm,
                       this.tokenizers, this.topRules, this.nested, this.dialects,
-                      this.specializeTable, this.specializations, this.tokenPrecTable, this.termNames)
+                      this.specialized, this.specializers, this.tokenPrecTable, this.termNames)
   }
 
   /// Returns the name associated with a given term. This will only
@@ -724,8 +721,7 @@ export class Parser {
     topRules: {[name: string]: [number, number]},
     nested?: [string, null | NestedGrammar, string, number][],
     dialects?: {[name: string]: number},
-    specializeTable: number,
-    specializations?: readonly {[term: string]: number}[],
+    specialized?: {term: number, get: (value: string, stack: Stack) => number}[],
     tokenPrec: number,
     termNames?: {[id: number]: string}
   }) {
@@ -745,6 +741,12 @@ export class Parser {
         setProp(propSpec[i] as number, prop, propSpec[i + 1] as string)
     }
     let group = new NodeGroup(nodeNames.map((name, i) => new (NodeType as any)(name, nodeProps[i], i)))
+    let specialized = new Uint16Array(spec.specialized ? spec.specialized.length : 0)
+    let specializers: ((value: string, stack: Stack) => number)[] = []
+    if (spec.specialized) for (let i = 0; i < spec.specialized.length; i++) {
+      specialized[i] = spec.specialized[i].term
+      specializers[i] = spec.specialized[i].get
+    }
 
     return new Parser(decodeArray(spec.states, Uint32Array), decodeArray(spec.stateData),
                       decodeArray(spec.goto), group, spec.maxTerm, minRepeatTerm,
@@ -752,8 +754,7 @@ export class Parser {
                       spec.topRules,
                       (spec.nested || []).map(([name, grammar, endToken, placeholder]) =>
                                               ({name, grammar, end: new TokenGroup(decodeArray(endToken), 0), placeholder})),
-                      spec.dialects || {},
-                      spec.specializeTable, (spec.specializations || []).map(withoutPrototype),
+                      spec.dialects || {}, specialized, specializers,
                       spec.tokenPrec, spec.termNames)
   }
 }
@@ -767,15 +768,6 @@ function findOffset(data: Readonly<Uint16Array>, start: number, term: number) {
   for (let i = start, next; (next = data[i]) != Seq.End; i++)
     if (next == term) return i - start
   return -1
-}
-
-// Strip the prototypes from objects, so that they can safely be
-// accessed as maps.
-function withoutPrototype(obj: {}) {
-  if (!(obj instanceof Object)) return obj
-  let result: {[key: string]: any} = Object.create(null)
-  for (let prop in obj) if (Object.prototype.hasOwnProperty.call(obj, prop)) result[prop] = (obj as any)[prop]
-  return result
 }
 
 function findFinished(stacks: Stack[]) {
