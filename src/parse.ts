@@ -23,6 +23,8 @@ export interface NestedGrammarSpec {
   /// When `parser` is given, this can be used to configure which top
   /// rule to parse with it.
   top?: string
+  /// When `parser` is given, this can be used to configure a dialect.
+  dialect?: string
   /// This being true means that the outer grammar should use
   /// the fallback expression provided for the nesting to parse the
   /// content.
@@ -354,11 +356,11 @@ export class ParseContext {
     let nest = parser.startNested(stack.state)
     maybeNest: if (nest > -1) {
       let {grammar, end: endToken, placeholder} = parser.nested[nest]
-      let filterEnd = undefined, parseNode = null, nested, top, wrapType = undefined
+      let filterEnd = undefined, parseNode = null, nested, top, dialect, wrapType = undefined
       if (typeof grammar == "function") {
         let query = grammar(input, stack)
         if (query.stay) break maybeNest
-        ;({parseNode, parser: nested, top, filterEnd, wrapType} = query)
+        ;({parseNode, parser: nested, top, dialect, filterEnd, wrapType} = query)
       } else {
         nested = grammar
       }
@@ -373,7 +375,7 @@ export class ParseContext {
       } else {
         let topInfo = top ? nested.topRules[top] : nested.defaultTop
         let newStack = Stack.start(new StackContext(nested, stack.cx.maxBufferLength, clippedInput, topInfo[1],
-                                                    nested.parseDialect(), stack, wrapType),
+                                                    nested.parseDialect(dialect), stack, wrapType),
                                    topInfo[0], stack.pos)
         if (verbose) console.log(base + newStack + ` (nested)`)
         return newStack
