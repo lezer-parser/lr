@@ -150,7 +150,7 @@ class TokenCache {
 
       for (let i = 0; i < parser.specialized.length; i++) if (parser.specialized[i] == token.value) {
         let result = parser.specializers[i](input.read(token.start, token.end), stack)
-        if (result >= 0) {
+        if (result >= 0 && stack.cx.dialect.allows(result >> 1)) {
           if ((result & 1) == Specialize.Specialize) token.value = result >> 1
           else token.extended = result >> 1
           break
