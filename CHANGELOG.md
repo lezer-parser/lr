@@ -1,3 +1,21 @@
+## 0.10.0 (2020-08-07)
+
+### New features
+
+Add support for grammar dialects.
+
+Add support for external specializers.
+
+Stacks now have a `parser` accessor that gets you the active parser instance.
+
+### Breaking changes
+
+No longer list internal properties in the type definitions.
+
+Follow changes in the serialized parser format.
+
+The way different tokenizers are combined is now slightly different. The first one to return a token wins, even if that token has no actions in the current state. The old behavior, where further tokenizers are tried until actions are found, can be enabled for a given tokenizer by setting its `fallback` flag.
+
 ## 0.9.1 (2020-06-29)
 
 ### Bug fixes
