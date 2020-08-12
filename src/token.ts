@@ -21,12 +21,12 @@ export class Token {
 }
 
 /// This is the interface the parser uses to access the document. It
-/// exposes a sequence of UTF16 code points. Most access will be
+/// exposes a sequence of UTF16 code units. Most access will be
 /// sequential, so implementations can optimize for that.
 export interface InputStream {
   /// The end of the stream.
   length: number
-  /// Get the code point at the given position. Will return -1 when
+  /// Get the code unit at the given position. Will return -1 when
   /// asked for a point below 0 or beyond the end of the stream
   get(pos: number): number
   /// Read part of the stream as a string
