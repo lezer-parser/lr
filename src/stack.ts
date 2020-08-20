@@ -272,11 +272,14 @@ export class Stack {
   // inserts some missing token or rule.
   /// @internal
   recoverByInsert(next: number): Stack[] {
+    if (this.stack.length >= Recover.MaxInsertStackDepth) return []
+
     let nextStates = this.cx.parser.nextStates(this.state)
-    if (nextStates.length > Recover.MaxNext) {
+    if (nextStates.length > Recover.MaxNext || this.stack.length >= Recover.DampenInsertStackDepth) {
       let best = nextStates.filter(s => s != this.state && this.cx.parser.hasAction(s, next))
-      for (let i = 0; best.length < Recover.MaxNext && i < nextStates.length; i++)
-        if (best.indexOf(nextStates[i]) < 0) best.push(nextStates[i])
+      if (this.stack.length < Recover.DampenInsertStackDepth)
+        for (let i = 0; best.length < Recover.MaxNext && i < nextStates.length; i++)
+          if (best.indexOf(nextStates[i]) < 0) best.push(nextStates[i])
       nextStates = best
     }
     let result: Stack[] = []
@@ -333,7 +336,9 @@ export class Stack {
 export const enum Recover {
   Token = 2,
   Reduce = 1,
-  MaxNext = 4
+  MaxNext = 4,
+  MaxInsertStackDepth = 300,
+  DampenInsertStackDepth = 120
 }
 
 // Used to cheaply run some reductions to scan ahead without mutating
