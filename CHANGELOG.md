@@ -1,3 +1,9 @@
+## 0.10.1 (2020-08-20)
+
+### Bug fixes
+
+Fixes an issue where repeated error recovery could lead to a tree so deep that recursive functions on it would overflow the stack.
+
 ## 0.10.0 (2020-08-07)
 
 ### New features
