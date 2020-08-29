@@ -226,10 +226,14 @@ export class Stack {
 
   /// Find the start position of the rule that is currently being parsed.
   get ruleStart() {
-    let force = this.cx.parser.stateSlot(this.state, ParseState.ForcedReduce)
-    if (!(force & Action.ReduceFlag)) return 0
-    let base = this.stack.length - (3 * (force >> Action.ReduceDepthShift))
-    return this.stack[base + 1]
+    for (let state = this.state, base = this.stack.length;;) {
+      let force = this.cx.parser.stateSlot(state, ParseState.ForcedReduce)
+      if (!(force & Action.ReduceFlag)) return 0
+      base -= 3 * (force >> Action.ReduceDepthShift)
+      if ((force & Action.ValueMask) < this.cx.parser.minRepeatTerm)
+        return this.stack[base + 1]
+      state = this.stack[base]
+    }
   }
 
   /// Find the start position of the innermost instance of any of the
