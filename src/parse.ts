@@ -314,16 +314,25 @@ export class ParseContext {
         this.stacks.length = maxRemaining
       }
       if (this.stacks.some(s => s.reducePos > pos)) this.recovering--
-    } else if (this.stacks.length > 1 && this.stacks[0].buffer.length > minBufferLengthPrune) {
-      // Prune stacks that have been running without splitting for a
-      // while, to avoid getting stuck with multiple successful stacks
-      // running endlessly on.
-      let minLen = 1e9, minI = -1
-      for (let i = 0; i < this.stacks.length; i++) {
+    } else if (this.stacks.length > 1) {
+      // Prune stacks that are in the same state, or that have been
+      // running without splitting for a while, to avoid getting stuck
+      // with multiple successful stacks running endlessly on.
+      outer: for (let i = 0; i < this.stacks.length - 1; i++) {
         let stack = this.stacks[i]
-        if (stack.buffer.length < minLen) { minLen = stack.buffer.length; minI = i }
+        for (let j = i + 1; j < this.stacks.length; j++) {
+          let other = this.stacks[j]
+          if (stack.sameState(this.stacks[j]) ||
+              stack.buffer.length > minBufferLengthPrune && other.buffer.length > minBufferLengthPrune) {
+            if (((stack.score - other.score) || (stack.buffer.length - other.buffer.length)) > 0) {
+              this.stacks.splice(j--, 1)
+            } else {
+              this.stacks.splice(i--, 1)
+              continue outer
+            }
+          }
+        }
       }
-      if (minLen > minBufferLengthPrune) this.stacks.splice(minI, 1)
     }
 
     this.tokenCount++

@@ -322,6 +322,14 @@ export class Stack {
     return this
   }
 
+  /// @internal
+  sameState(other: Stack) {
+    if (this.state != other.state || this.stack.length != other.stack.length) return false
+    for (let i = 0; i < this.stack.length; i += 3)
+      if (this.stack[i] != other.stack[i]) return false
+    return true
+  }
+
   // Convert the stack's buffer to a syntax tree.
   /// @internal
   toTree(): Tree {
