@@ -9,16 +9,15 @@ import {Tree, TreeBuffer, BufferCursor} from "lezer-tree"
 export class Stack {
   /// @internal
   constructor(
-    // A group of values that the stack will share with all
-    // split instances
+    /// A group of values that the stack will share with all
+    /// split instances
     ///@internal
     readonly cx: StackContext,
-    // Holds state, pos, value stack pos (15 bits array index, 15 bits
-    // buffer index) triplets for all but the top state
+    /// Holds state, pos, value stack pos (15 bits array index, 15 bits
+    /// buffer index) triplets for all but the top state
     /// @internal
     readonly stack: number[],
-    // The current parse state
-    /// @internal
+    /// The current parse state @internal
     public state: number,
     // The position at which the next reduce should take place. This
     // can be less than `this.pos` when skipped expressions have been
@@ -26,11 +25,12 @@ export class Stack {
     // reduction)
     /// @internal
     public reducePos: number,
-    // The input position up to which this stack has parsed.
+    /// The input position up to which this stack has parsed.
     public pos: number,
-    // The amount of error-recovery that happened on this stack
+    /// The dynamic score of the stack, including dynamic precedence
+    /// and error-recovery penalties
     /// @internal
-    public recovered: number,
+    public score: number,
     // The output buffer. Holds (type, start, end, size) quads
     // representing nodes created by the parser, where `size` is
     // amount of buffer array entries covered by this node.
@@ -53,7 +53,7 @@ export class Stack {
 
   /// @internal
   toString() {
-    return `[${this.stack.filter((_, i) => i % 3 == 0).concat(this.state)}]@${this.pos}${this.recovered ? "!" + this.recovered : ""}`
+    return `[${this.stack.filter((_, i) => i % 3 == 0).concat(this.state)}]@${this.pos}${this.score ? "!" + this.score : ""}`
   }
 
   // Start an empty stack
@@ -75,6 +75,10 @@ export class Stack {
   reduce(action: number) {
     let depth = action >> Action.ReduceDepthShift, type = action & Action.ValueMask
     let {parser} = this.cx
+
+    let dPrec = parser.dynamicPrecedence(type)
+    if (dPrec) this.score += dPrec
+
     if (depth == 0) {
       // Zero-depth reductions are a special case—they add stuff to
       // the stack without popping anything off.
@@ -198,7 +202,7 @@ export class Stack {
     // Make sure parent points to an actual parent with content, if there is such a parent.
     while (parent && base == parent.bufferBase) parent = parent.parent
     return new Stack(this.cx, this.stack.slice(), this.state, this.reducePos, this.pos,
-                     this.recovered, buffer, base, parent)
+                     this.score, buffer, base, parent)
   }
 
   // Try to recover from an error by 'deleting' (ignoring) one token.
@@ -208,7 +212,7 @@ export class Stack {
     if (isNode) this.storeNode(next, this.pos, nextEnd)
     this.storeNode(Term.Err, this.pos, nextEnd, isNode ? 8 : 4)
     this.pos = this.reducePos = nextEnd
-    this.recovered += Recover.Token
+    this.score -= Recover.Token
   }
 
   /// Check if the given term would be able to be shifted (optionally
@@ -292,7 +296,7 @@ export class Stack {
       let stack = this.split()
       stack.storeNode(Term.Err, stack.pos, stack.pos, 4, true)
       stack.pushState(nextStates[i], this.pos)
-      stack.recovered += Recover.Token
+      stack.score -= Recover.Token
       result.push(stack)
     }
     return result
@@ -306,7 +310,7 @@ export class Stack {
     if ((reduce & Action.ReduceFlag) == 0) return false
     if (!this.cx.parser.validAction(this.state, reduce)) {
       this.storeNode(Term.Err, this.reducePos, this.reducePos, 4, true)
-      this.recovered += Recover.Reduce
+      this.score -= Recover.Reduce
     }
     this.reduce(reduce)
     return true
@@ -338,8 +342,8 @@ export class Stack {
 }
 
 export const enum Recover {
-  Token = 2,
-  Reduce = 1,
+  Token = 200,
+  Reduce = 100,
   MaxNext = 4,
   MaxInsertStackDepth = 300,
   DampenInsertStackDepth = 120

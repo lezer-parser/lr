@@ -310,7 +310,7 @@ export class ParseContext {
     if (this.recovering) {
       let maxRemaining = this.recovering == 1 ? 1 : this.recovering * maxRemainingPerStep
       if (this.stacks.length > maxRemaining) {
-        this.stacks.sort((a, b) => a.recovered - b.recovered)
+        this.stacks.sort((a, b) => b.score - a.score)
         this.stacks.length = maxRemaining
       }
       if (this.stacks.some(s => s.reducePos > pos)) this.recovering--
@@ -452,7 +452,7 @@ export class ParseContext {
         stack.recoverByDelete(token, tokenEnd)
         if (verbose) console.log(base + stack + ` (via recover-delete ${stack.cx.parser.getName(token)})`)
         this.putStack(stack)
-      } else if (!stack.cx.parent && (!finished || finished.recovered > stack.recovered)) {
+      } else if (!stack.cx.parent && (!finished || finished.score < stack.score)) {
         finished = stack
       }
     }
@@ -470,7 +470,7 @@ export class ParseContext {
   /// of tokens parsed. Could be used to decide to abort a parse when
   /// the input doesn't appear to match the grammar at all.
   get badness() {
-    return this.stacks[0].recovered * Recover.Token / this.tokenCount
+    return -(this.stacks[0].score * Recover.Token / this.tokenCount)
   }
 
   private scanForNestEnd(stack: Stack, endToken: TokenGroup, filter?: ((token: string) => boolean)) {
@@ -538,6 +538,9 @@ export class Parser {
     /// A mapping from dialect names to the tokens that are exclusive
     /// to them. @internal
     readonly dialects: {[name: string]: number},
+    /// Null if there are no dynamic precedences, a map from term ids
+    /// to precedence otherwise. @internal
+    readonly dynamicPrecedences: {[term: number]: number} | null,
     /// The token types have specializers (in this.specializers) @internal
     readonly specialized: Uint16Array,
     /// The specializer functions for the token types in specialized @internal
@@ -659,7 +662,7 @@ export class Parser {
                       this.nested.map(obj => {
                         if (!Object.prototype.hasOwnProperty.call(spec, obj.name)) return obj
                         return {name: obj.name, grammar: spec[obj.name], end: obj.end, placeholder: obj.placeholder}
-                      }), this.dialects,
+                      }), this.dialects, this.dynamicPrecedences,
                       this.specialized, this.specializers, this.tokenPrecTable, this.termNames)
   }
 
@@ -668,7 +671,7 @@ export class Parser {
   /// to create the arguments to this method.
   withProps(...props: NodePropSource[]) {
     return new Parser(this.states, this.data, this.goto, this.group.extend(...props), this.maxTerm, this.minRepeatTerm,
-                      this.tokenizers, this.topRules, this.nested, this.dialects,
+                      this.tokenizers, this.topRules, this.nested, this.dialects, this.dynamicPrecedences,
                       this.specialized, this.specializers, this.tokenPrecTable, this.termNames)
   }
 
@@ -689,6 +692,12 @@ export class Parser {
 
   /// @internal
   get defaultTop() { return this.topRules[Object.keys(this.topRules)[0]] }
+
+  /// @internal
+  dynamicPrecedence(term: number) {
+    let prec = this.dynamicPrecedences
+    return prec == null ? 0 : prec[term] || 0
+  }
 
   /// The node type produced by the default top rule.
   get topType() { return this.group.types[this.defaultTop[1]] }
@@ -723,6 +732,7 @@ export class Parser {
     topRules: {[name: string]: [number, number]},
     nested?: [string, null | NestedGrammar, string, number][],
     dialects?: {[name: string]: number},
+    dynamicPrecedences?: {[term: number]: number},
     specialized?: {term: number, get: (value: string, stack: Stack) => number}[],
     tokenPrec: number,
     termNames?: {[id: number]: string}
@@ -756,7 +766,7 @@ export class Parser {
                       spec.topRules,
                       (spec.nested || []).map(([name, grammar, endToken, placeholder]) =>
                                               ({name, grammar, end: new TokenGroup(decodeArray(endToken), 0), placeholder})),
-                      spec.dialects || {}, specialized, specializers,
+                      spec.dialects || {}, spec.dynamicPrecedences || null, specialized, specializers,
                       spec.tokenPrec, spec.termNames)
   }
 }
@@ -777,7 +787,7 @@ function findFinished(stacks: Stack[]) {
   for (let stack of stacks) {
     if (stack.pos == stack.cx.input.length &&
         stack.cx.parser.stateFlag(stack.state, StateFlag.Accepting) &&
-        (!best || best.recovered > stack.recovered))
+        (!best || best.score < stack.score))
       best = stack
   }
   return best
