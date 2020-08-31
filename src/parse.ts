@@ -502,67 +502,123 @@ export class Dialect {
   allows(term: number) { return !this.disabled || this.disabled[term] == 0 }
 }
 
+type ParserSpec = {
+  states: string | Uint32Array,
+  stateData: string | Uint16Array,
+  goto: string | Uint16Array,
+  nodeNames: string,
+  maxTerm: number,
+  repeatNodeCount: number,
+  nodeProps?: [NodeProp<any>, ...(string | number)[]][],
+  tokenData: string,
+  tokenizers: (Tokenizer | number)[],
+  topRules: {[name: string]: [number, number]},
+  nested?: [string, null | NestedGrammar, string | Uint16Array, number][],
+  dialects?: {[name: string]: number},
+  dynamicPrecedences?: {[term: number]: number},
+  specialized?: {term: number, get: (value: string, stack: Stack) => number}[],
+  tokenPrec: number,
+  termNames?: {[id: number]: string}
+}
+
 /// A parser holds the parse tables for a given grammar, as generated
 /// by `lezer-generator`.
 export class Parser {
+  /// The parse states for this grammar @internal
+  readonly states: Readonly<Uint32Array>
+  /// A blob of data that the parse states, as well as some
+  /// of `Parser`'s fields, point into @internal
+  readonly data: Readonly<Uint16Array>
+  /// The goto table. See `computeGotoTable` in
+  /// lezer-generator for details on the format @internal
+  readonly goto: Readonly<Uint16Array>
+  /// A node group with the node types used by this parser.
+  readonly group: NodeGroup
+  /// The highest term id @internal
+  readonly maxTerm: number
+  /// The first repeat-related term id @internal
+  readonly minRepeatTerm: number
+  /// The tokenizer objects used by the grammar @internal
+  readonly tokenizers: readonly Tokenizer[]
+  /// Maps top rule names to [state ID, top term ID] pairs.
+  readonly topRules: {[name: string]: [number, number]}
+  /// Metadata about nested grammars used in this grammar @internal
+  readonly nested: readonly {
+    /// A name, used by `withNested`
+    name: string,
+    /// The grammar or grammar query function to use
+    grammar: NestedGrammar,
+    /// A token-recognizing automaton for the end of the nesting
+    end: TokenGroup,
+    /// The id of the placeholder term that appears in the grammar at
+    /// the position of this nesting
+    placeholder: number
+  }[]
+  /// A mapping from dialect names to the tokens that are exclusive
+  /// to them. @internal
+  readonly dialects: {[name: string]: number}
+  /// Null if there are no dynamic precedences, a map from term ids
+  /// to precedence otherwise. @internal
+  readonly dynamicPrecedences: {[term: number]: number} | null
+  /// The token types have specializers (in this.specializers) @internal
+  readonly specialized: Uint16Array
+  /// The specializer functions for the token types in specialized @internal
+  readonly specializers: ((value: string, stack: Stack) => number)[]
+  /// Points into this.data at an array that holds the
+  /// precedence order (higher precedence first) for ambiguous
+  /// tokens @internal
+  readonly tokenPrecTable: number
+  /// An optional object mapping term ids to name strings @internal
+  readonly termNames: null | {[id: number]: string}
   /// @internal
-  maxNode: number
+  readonly maxNode: number
   /// @internal
-  maxRepeatWrap: number
+  readonly maxRepeatWrap: number
+
   private nextStateCache: (readonly number[] | null)[] = []
   private cachedDialect: Dialect | null = null
 
   /// @internal
-  constructor(
-    /// The parse states for this grammar @internal
-    readonly states: Readonly<Uint32Array>,
-    /// A blob of data that the parse states, as well as some
-    /// of `Parser`'s fields, point into @internal
-    readonly data: Readonly<Uint16Array>,
-    /// The goto table. See `computeGotoTable` in
-    /// lezer-generator for details on the format @internal
-    readonly goto: Readonly<Uint16Array>,
-    /// A node group with the node types used by this parser.
-    readonly group: NodeGroup,
-    /// The highest term id @internal
-    readonly maxTerm: number,
-    /// The first repeat-related term id @internal
-    readonly minRepeatTerm: number,
-    /// The tokenizer objects used by the grammar @internal
-    readonly tokenizers: readonly Tokenizer[],
-    /// Maps top rule names to [state ID, top term ID] pairs.
-    readonly topRules: {[name: string]: [number, number]},
-    /// Metadata about nested grammars used in this grammar @internal
-    readonly nested: readonly {
-      /// A name, used by `withNested`
-      name: string,
-      /// The grammar or grammar query function to use
-      grammar: NestedGrammar,
-      /// A token-recognizing automaton for the end of the nesting
-      end: TokenGroup,
-      /// The id of the placeholder term that appears in the grammar at
-      /// the position of this nesting
-      placeholder: number
-    }[],
-    /// A mapping from dialect names to the tokens that are exclusive
-    /// to them. @internal
-    readonly dialects: {[name: string]: number},
-    /// Null if there are no dynamic precedences, a map from term ids
-    /// to precedence otherwise. @internal
-    readonly dynamicPrecedences: {[term: number]: number} | null,
-    /// The token types have specializers (in this.specializers) @internal
-    readonly specialized: Uint16Array,
-    /// The specializer functions for the token types in specialized @internal
-    readonly specializers: readonly ((value: string, stack: Stack) => number)[],
-    /// Points into this.data at an array that holds the
-    /// precedence order (higher precedence first) for ambiguous
-    /// tokens @internal
-    readonly tokenPrecTable: number,
-    /// An optional object mapping term ids to name strings @internal
-    readonly termNames: null | {[id: number]: string} = null
-  ) {
+  constructor(spec: ParserSpec) {
+    let tokenArray = decodeArray<Uint16Array>(spec.tokenData)
+    let nodeNames = spec.nodeNames.split(" ")
+    this.minRepeatTerm = nodeNames.length
+    for (let i = 0; i < spec.repeatNodeCount; i++) nodeNames.push("")
+    let nodeProps: {[id: number]: any}[] = []
+    for (let i = 0; i < nodeNames.length; i++) nodeProps.push(noProps)
+    function setProp(nodeID: number, prop: NodeProp<any>, value: any) {
+      if (nodeProps[nodeID] == noProps) nodeProps[nodeID] = Object.create(null)
+      prop.set(nodeProps[nodeID], prop.deserialize(String(value)))
+    }
+    setProp(0, NodeProp.error, "")
+    if (spec.nodeProps) for (let propSpec of spec.nodeProps) {
+      let prop = propSpec[0]
+      for (let i = 1; i < propSpec.length; i += 2)
+        setProp(propSpec[i] as number, prop, propSpec[i + 1] as string)
+    }
+    this.specialized = new Uint16Array(spec.specialized ? spec.specialized.length : 0)
+    this.specializers = []
+    if (spec.specialized) for (let i = 0; i < spec.specialized.length; i++) {
+      this.specialized[i] = spec.specialized[i].term
+      this.specializers[i] = spec.specialized[i].get
+    }
+
+    this.states = decodeArray(spec.states, Uint32Array)
+    this.data = decodeArray(spec.stateData)
+    this.goto = decodeArray(spec.goto)
+    this.group = new NodeGroup(nodeNames.map((name, i) => new (NodeType as any)(name, nodeProps[i], i)))
+    this.maxTerm = spec.maxTerm
+    this.tokenizers = spec.tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value)
+    this.topRules = spec.topRules
+    this.nested = (spec.nested || []).map(([name, grammar, endToken, placeholder]) => {
+      return {name, grammar, end: new TokenGroup(decodeArray(endToken), 0), placeholder}
+    })
+    this.dialects = spec.dialects || {}
+    this.dynamicPrecedences = spec.dynamicPrecedences || null
+    this.tokenPrecTable = spec.tokenPrec
+    this.termNames = spec.termNames || null
     this.maxNode = this.group.types.length - 1
-    this.maxRepeatWrap = this.group.types.length + (this.group.types.length - minRepeatTerm) - 1
+    this.maxRepeatWrap = this.group.types.length + (this.group.types.length - this.minRepeatTerm) - 1
     for (let i = 0, l = this.states.length / ParseState.Size; i < l; i++) this.nextStateCache[i] = null
   }
 
@@ -666,22 +722,26 @@ export class Parser {
   /// in a different language for a nested grammar or fill in a nested
   /// grammar that was left blank by the original grammar.
   withNested(spec: {[name: string]: NestedGrammar | null}) {
-    return new Parser(this.states, this.data, this.goto, this.group, this.maxTerm, this.minRepeatTerm,
-                      this.tokenizers, this.topRules,
-                      this.nested.map(obj => {
-                        if (!Object.prototype.hasOwnProperty.call(spec, obj.name)) return obj
-                        return {name: obj.name, grammar: spec[obj.name], end: obj.end, placeholder: obj.placeholder}
-                      }), this.dialects, this.dynamicPrecedences,
-                      this.specialized, this.specializers, this.tokenPrecTable, this.termNames)
+    return this.copy({nested: this.nested.map(obj => {
+      if (!Object.prototype.hasOwnProperty.call(spec, obj.name)) return obj
+      return {name: obj.name, grammar: spec[obj.name], end: obj.end, placeholder: obj.placeholder}
+    })})
   }
 
   /// Create a new `Parser` instance whose node types have the given
   /// props added. You should use [`NodeProp.add`](#tree.NodeProp.add)
   /// to create the arguments to this method.
   withProps(...props: NodePropSource[]) {
-    return new Parser(this.states, this.data, this.goto, this.group.extend(...props), this.maxTerm, this.minRepeatTerm,
-                      this.tokenizers, this.topRules, this.nested, this.dialects, this.dynamicPrecedences,
-                      this.specialized, this.specializers, this.tokenPrecTable, this.termNames)
+    return this.copy({group: this.group.extend(...props)})
+  }
+
+  private copy(props: {[name: string]: any}): Parser {
+    // Hideous reflection-based kludge to make it easy to create a
+    // slightly modified copy of a parser.
+    let obj = Object.create(Parser.prototype)
+    for (let key of Object.keys(this))
+      obj[key] = key in props ? props[key] : (this as any)[key]
+    return obj
   }
 
   /// Returns the name associated with a given term. This will only
@@ -728,55 +788,8 @@ export class Parser {
   }
 
   /// (used by the output of the parser generator) @internal
-  static deserialize(spec: {
-    states: string,
-    stateData: string,
-    goto: string,
-    nodeNames: string,
-    maxTerm: number,
-    repeatNodeCount: number,
-    nodeProps?: [NodeProp<any>, ...(string | number)[]][],
-    tokenData: string,
-    tokenizers: (Tokenizer | number)[],
-    topRules: {[name: string]: [number, number]},
-    nested?: [string, null | NestedGrammar, string, number][],
-    dialects?: {[name: string]: number},
-    dynamicPrecedences?: {[term: number]: number},
-    specialized?: {term: number, get: (value: string, stack: Stack) => number}[],
-    tokenPrec: number,
-    termNames?: {[id: number]: string}
-  }) {
-    let tokenArray = decodeArray(spec.tokenData)
-    let nodeNames = spec.nodeNames.split(" "), minRepeatTerm = nodeNames.length
-    for (let i = 0; i < spec.repeatNodeCount; i++) nodeNames.push("")
-    let nodeProps: {[id: number]: any}[] = []
-    for (let i = 0; i < nodeNames.length; i++) nodeProps.push(noProps)
-    function setProp(nodeID: number, prop: NodeProp<any>, value: any) {
-      if (nodeProps[nodeID] == noProps) nodeProps[nodeID] = Object.create(null)
-      prop.set(nodeProps[nodeID], prop.deserialize(String(value)))
-    }
-    setProp(0, NodeProp.error, "")
-    if (spec.nodeProps) for (let propSpec of spec.nodeProps) {
-      let prop = propSpec[0]
-      for (let i = 1; i < propSpec.length; i += 2)
-        setProp(propSpec[i] as number, prop, propSpec[i + 1] as string)
-    }
-    let group = new NodeGroup(nodeNames.map((name, i) => new (NodeType as any)(name, nodeProps[i], i)))
-    let specialized = new Uint16Array(spec.specialized ? spec.specialized.length : 0)
-    let specializers: ((value: string, stack: Stack) => number)[] = []
-    if (spec.specialized) for (let i = 0; i < spec.specialized.length; i++) {
-      specialized[i] = spec.specialized[i].term
-      specializers[i] = spec.specialized[i].get
-    }
-
-    return new Parser(decodeArray(spec.states, Uint32Array), decodeArray(spec.stateData),
-                      decodeArray(spec.goto), group, spec.maxTerm, minRepeatTerm,
-                      spec.tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value),
-                      spec.topRules,
-                      (spec.nested || []).map(([name, grammar, endToken, placeholder]) =>
-                                              ({name, grammar, end: new TokenGroup(decodeArray(endToken), 0), placeholder})),
-                      spec.dialects || {}, spec.dynamicPrecedences || null, specialized, specializers,
-                      spec.tokenPrec, spec.termNames)
+  static deserialize(spec: ParserSpec) {
+    return new Parser(spec)
   }
 }
 

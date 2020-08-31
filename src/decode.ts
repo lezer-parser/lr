@@ -3,7 +3,11 @@
 
 import {Encode} from "./constants"
 
-export function decodeArray<T extends {[i: number]: number} = Uint16Array>(input: string, Type: {new (n: number): T} = Uint16Array as any): T {
+export function decodeArray<T extends {[i: number]: number} = Uint16Array>(
+  input: string | T,
+  Type: {new (n: number): T} = Uint16Array as any
+): T {
+  if (typeof input != "string") return input
   let array: T | null = null
   for (let pos = 0, out = 0; pos < input.length;) {
     let value = 0
