@@ -123,11 +123,13 @@ class TokenCache {
       }
 
       if (token.value != Term.Err) {
-        main = token
         let startIndex = actionIndex
         if (token.extended > -1) actionIndex = this.addActions(stack, token.extended, token.end, actionIndex)
         actionIndex = this.addActions(stack, token.value, token.end, actionIndex)
-        if (actionIndex > startIndex) break
+        if (!tokenizer.extend) {
+          main = token
+          if (actionIndex > startIndex) break
+        }
       }
     }
 

@@ -54,19 +54,21 @@ export interface Tokenizer {
   token(input: InputStream, token: Token, stack: Stack): void
   contextual: boolean
   fallback: boolean
+  extend: boolean
 }
 
 /// @internal
 export class TokenGroup implements Tokenizer {
   contextual!: boolean
   fallback!: boolean
+  extend!: boolean
 
   constructor(readonly data: Readonly<Uint16Array>, readonly id: number) {}
 
   token(input: InputStream, token: Token, stack: Stack) { readToken(this.data, input, token, stack, this.id) }
 }
 
-TokenGroup.prototype.contextual = TokenGroup.prototype.fallback = false
+TokenGroup.prototype.contextual = TokenGroup.prototype.fallback = TokenGroup.prototype.extend = false
 
 interface ExternalOptions {
   /// When set to true, mark this tokenizer as depending on the
@@ -79,6 +81,10 @@ interface ExternalOptions {
   /// previous tokenizer returned a token that didn't match any of the
   /// current state's actions.
   fallback?: boolean
+  /// When set to true, tokenizing will not stop after this tokenizer
+  /// has produced a token. (But it will still fail to reach this one
+  /// if a higher-precedence tokenizer produced a token.)
+  extend?: boolean
 }
 
 /// Exports that are used for `@external tokens` in the grammar should
@@ -88,6 +94,8 @@ export class ExternalTokenizer {
   contextual: boolean
   /// @internal
   fallback: boolean
+  /// @internal
+  extend: boolean
 
   /// Create a tokenizer. The first argument is the function that,
   /// given an input stream and a token object,
@@ -101,6 +109,7 @@ export class ExternalTokenizer {
   ) {
     this.contextual = !!options.contextual
     this.fallback = !!options.fallback
+    this.extend = !!options.extend
   }
 }
 
