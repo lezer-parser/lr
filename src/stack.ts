@@ -1,4 +1,4 @@
-import {Action, Term, StateFlag, ParseState} from "./constants"
+import {Action, Term, StateFlag, ParseState, Seq} from "./constants"
 import {StackContext} from "./parse"
 import {Tree, TreeBuffer, BufferCursor} from "lezer-tree"
 
@@ -320,6 +320,24 @@ export class Stack {
   forceAll() {
     while (!this.cx.parser.stateFlag(this.state, StateFlag.Accepting) && this.forceReduce()) {}
     return this
+  }
+
+  /// Check whether this state has no further actions (assumed to be a direct descendant of the
+  /// top state, since any other states must be able to continue
+  /// somehow). @internal
+  get deadEnd() {
+    if (this.stack.length != 3) return false
+    let {parser} = this.cx
+    return parser.data[parser.stateSlot(this.state, ParseState.Actions)] == Seq.End &&
+      !parser.stateSlot(this.state, ParseState.DefaultReduce)
+  }
+
+  /// Restart the stack (put it back in its start state). Only safe
+  /// when this.stack.length == 3 (state is directly below the top
+  /// state). @internal
+  restart() {
+    this.state = this.stack[0]
+    this.stack.length = 0
   }
 
   /// @internal

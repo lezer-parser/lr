@@ -451,10 +451,20 @@ export class ParseContext {
   }
 
   private runRecovery(stacks: Stack[], tokens: number[]) {
-    let finished: Stack | null = null
+    let finished: Stack | null = null, restarted = false
     for (let i = 0; i < stacks.length; i++) {
       let stack = stacks[i], token = tokens[i << 1], tokenEnd = tokens[(i << 1) + 1]
       let base = verbose ? this.stackID(stack) + " -> " : ""
+
+      if (stack.deadEnd) {
+        if (restarted) continue
+        restarted = true
+        stack.restart()
+        if (verbose) console.log(base + this.stackID(stack) + " (restarted)")
+        let stopped = this.advanceFully(stack)
+        if (stopped) stack = stopped
+        else continue
+      }
 
       let force = stack.split(), forceBase = base
       for (let j = 0; force.forceReduce() && j < forceReduceLimit; j++) {
