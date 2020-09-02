@@ -258,6 +258,18 @@ export class ParseContext {
     if (this.pos < 0 || stack.pos < this.pos) this.pos = stack.pos
   }
 
+  /// @internal
+  putStackDedup(stack: Stack) {
+    for (let i = 0; i < this.stacks.length; i++) {
+      let other = this.stacks[i]
+      if (other.pos == stack.pos && other.sameState(stack)) {
+        if (this.stacks[i].score < stack.score) this.stacks[i] = stack
+        return
+      }
+    }
+    this.putStack(stack)
+  }
+
   /// Move the parser forward. This will process all parse stacks at
   /// `this.pos` and try to advance them to a further position. If no
   /// stack for such a position is found, it'll start error-recovery.
@@ -421,14 +433,14 @@ export class ParseContext {
 
   // Advance a given stack forward as far as it will go. Returns the
   // (possibly updated) stack if it got stuck, or null if it moved
-  // forward and was given to `putStack`.
+  // forward and was given to `putStackDedup`.
   private advanceFully(stack: Stack) {
     let pos = stack.pos
     for (;;) {
       let result = this.advanceStack(stack, null)
       if (!result) return stack
       if (result.pos > pos) {
-        this.putStack(result)
+        this.putStackDedup(result)
         return null
       }
       stack = result
@@ -462,7 +474,7 @@ export class ParseContext {
         }
         stack.recoverByDelete(token, tokenEnd)
         if (verbose) console.log(base + stack + ` (via recover-delete ${stack.cx.parser.getName(token)})`)
-        this.putStack(stack)
+        this.putStackDedup(stack)
       } else if (!stack.cx.parent && (!finished || finished.score < stack.score)) {
         finished = stack
       }
