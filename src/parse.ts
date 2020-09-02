@@ -7,6 +7,8 @@ import {decodeArray} from "./decode"
 // Environment variable used to control console output
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
 
+let stackIDs: WeakMap<Stack, string> | null = null
+
 /// Nested grammar values are associated with nesting positions in the
 /// grammar. If they are null, the nested region is simply skipped
 /// over. If they hold a parser object, that parser is used to parse
@@ -239,6 +241,7 @@ export class ParseContext {
   private tokenCount = 0
   private cache: CacheCursor | null
   private strict: boolean
+  private nextStackID = 0x2654
 
   /// @internal
   constructor(parser: Parser,
@@ -336,7 +339,7 @@ export class ParseContext {
         let stack = this.stacks[i]
         for (let j = i + 1; j < this.stacks.length; j++) {
           let other = this.stacks[j]
-          if (stack.sameState(this.stacks[j]) ||
+          if (stack.sameState(other) ||
               stack.buffer.length > minBufferLengthPrune && other.buffer.length > minBufferLengthPrune) {
             if (((stack.score - other.score) || (stack.buffer.length - other.buffer.length)) > 0) {
               this.stacks.splice(j--, 1)
@@ -359,14 +362,14 @@ export class ParseContext {
   // `putStack` if they move `pos` forward.
   private advanceStack(stack: Stack, split: null | Stack[]) {
     let start = stack.pos, {input, parser} = stack.cx
-    let base = verbose ? stack + " -> " : ""
+    let base = verbose ? this.stackID(stack) + " -> " : ""
 
     if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
         let match = parser.group.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
         if (match > -1) {
           stack.useNode(cached, match)
-          if (verbose) console.log(base + stack + ` (via reuse of ${parser.getName(cached.type.id)})`)
+          if (verbose) console.log(base + this.stackID(stack) + ` (via reuse of ${parser.getName(cached.type.id)})`)
           return stack
         }
         if (!(cached instanceof Tree) || cached.children.length == 0 || cached.positions[0] > 0) break
@@ -400,7 +403,7 @@ export class ParseContext {
         let newStack = Stack.start(new StackContext(nested, stack.cx.maxBufferLength, clippedInput, topInfo[1],
                                                     nested.parseDialect(dialect), stack, wrapType),
                                    topInfo[0], stack.pos)
-        if (verbose) console.log(base + newStack + ` (nested)`)
+        if (verbose) console.log(base + this.stackID(newStack) + ` (nested)`)
         return newStack
       }
     }
@@ -408,7 +411,7 @@ export class ParseContext {
     let defaultReduce = parser.stateSlot(stack.state, ParseState.DefaultReduce)
     if (defaultReduce > 0) {
       stack.reduce(defaultReduce)
-      if (verbose) console.log(base + stack + ` (via always-reduce ${parser.getName(defaultReduce & Action.ValueMask)})`)
+      if (verbose) console.log(base + this.stackID(stack) + ` (via always-reduce ${parser.getName(defaultReduce & Action.ValueMask)})`)
       return stack
     }
 
@@ -419,7 +422,7 @@ export class ParseContext {
       let localStack = last ? stack : stack.split()
       localStack.apply(action, term, end)
       if (verbose)
-        console.log(base + localStack + ` (via ${(action & Action.ReduceFlag) == 0 ? "shift"
+        console.log(base + this.stackID(localStack) + ` (via ${(action & Action.ReduceFlag) == 0 ? "shift"
                      : `reduce of ${parser.getName(action & Action.ValueMask)}`} for ${
         parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
       if (last) return localStack
@@ -427,7 +430,7 @@ export class ParseContext {
       else split!.push(localStack)
     }
 
-    if (stack.cx.parent && stack.pos == input.length) return finishNested(stack)
+    if (stack.cx.parent && stack.pos == input.length) return this.finishNested(stack)
     return null
   }
 
@@ -451,19 +454,19 @@ export class ParseContext {
     let finished: Stack | null = null
     for (let i = 0; i < stacks.length; i++) {
       let stack = stacks[i], token = tokens[i << 1], tokenEnd = tokens[(i << 1) + 1]
-      let base = verbose ? stack + " -> " : ""
+      let base = verbose ? this.stackID(stack) + " -> " : ""
 
       let force = stack.split(), forceBase = base
       for (let j = 0; force.forceReduce() && j < forceReduceLimit; j++) {
-        if (verbose) console.log(forceBase + force + " (via force-reduce)")
+        if (verbose) console.log(forceBase + this.stackID(force) + " (via force-reduce)")
         let stopped = this.advanceFully(force)
         if (!stopped) break
         force = stopped
-        if (verbose) forceBase = stopped + " -> "
+        if (verbose) forceBase = this.stackID(stopped) + " -> "
       }
 
       for (let insert of stack.recoverByInsert(token)) {
-        if (verbose) console.log(base + insert + " (via recover-insert)")
+        if (verbose) console.log(base + this.stackID(insert) + " (via recover-insert)")
         this.advanceFully(insert)
       }
 
@@ -473,7 +476,7 @@ export class ParseContext {
           token = Term.Err
         }
         stack.recoverByDelete(token, tokenEnd)
-        if (verbose) console.log(base + stack + ` (via recover-delete ${stack.cx.parser.getName(token)})`)
+        if (verbose) console.log(base + this.stackID(stack) + ` (via recover-delete ${stack.cx.parser.getName(token)})`)
         this.putStackDedup(stack)
       } else if (!stack.cx.parent && (!finished || finished.score < stack.score)) {
         finished = stack
@@ -505,6 +508,24 @@ export class ParseContext {
       if (dummyToken.value > -1 && (!filter || filter(input.read(pos, dummyToken.end)))) return pos
     }
     return input.length
+  }
+
+  private finishNested(stack: Stack) {
+    if (stack.cx.wrapType == -2) return null // Another nested stack already finished
+    let parent = stack.cx.parent!, tree = stack.forceAll().toTree()
+    let parentParser = parent.cx.parser, info = parentParser.nested[parentParser.startNested(parent.state)]
+    tree = new Tree(tree.type, tree.children, tree.positions.map(p => p - parent!.pos), stack.pos - parent.pos)
+    if (stack.cx.wrapType > -1) tree = new Tree(parentParser.group.types[stack.cx.wrapType], [tree], [0], tree.length)
+    stack.cx.wrapType = -2
+    parent.useNode(tree, parentParser.getGoto(parent.state, info.placeholder, true))
+    if (verbose) console.log(this.stackID(parent) + ` (via unnest ${stack.cx.wrapType > -1 ? parentParser.getName(stack.cx.wrapType) : tree.type.name})`)
+    return parent
+  }
+
+  private stackID(stack: Stack) {
+    let id = (stackIDs || (stackIDs = new WeakMap)).get(stack)
+    if (!id) stackIDs.set(stack, id = String.fromCodePoint(this.nextStackID++))
+    return id + stack
   }
 }
 
@@ -827,16 +848,4 @@ function findFinished(stacks: Stack[]) {
       best = stack
   }
   return best
-}
-
-function finishNested(stack: Stack) {
-  if (stack.cx.wrapType == -2) return null // Another nested stack already finished
-  let parent = stack.cx.parent!, tree = stack.forceAll().toTree()
-  let parentParser = parent.cx.parser, info = parentParser.nested[parentParser.startNested(parent.state)]
-  tree = new Tree(tree.type, tree.children, tree.positions.map(p => p - parent!.pos), stack.pos - parent.pos)
-  if (stack.cx.wrapType > -1) tree = new Tree(parentParser.group.types[stack.cx.wrapType], [tree], [0], tree.length)
-  stack.cx.wrapType = -2
-  parent.useNode(tree, parentParser.getGoto(parent.state, info.placeholder, true))
-  if (verbose) console.log(parent + ` (via unnest ${stack.cx.wrapType > -1 ? parentParser.getName(stack.cx.wrapType) : tree.type.name})`)
-  return parent
 }
