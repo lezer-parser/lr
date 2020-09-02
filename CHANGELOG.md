@@ -1,3 +1,17 @@
+## 0.10.2 (2020-09-02)
+
+### Bug fixes
+
+`Stack.ruleStart` will now ignore repeat rules and node-less rules when determining the inner rule.
+
+Work around a failure mode where error-recovery got stuck in an end-of-grammar state and thus could not continue meaningfully parsing anything by restarting such states back to their initial state.
+
+### New features
+
+External tokenizers can now provide an `extend` flag to allow their tokens to be used alongside tokens produced by other tokenizers.
+
+Add support for dynamic precedences.
+
 ## 0.10.1 (2020-08-20)
 
 ### Bug fixes
