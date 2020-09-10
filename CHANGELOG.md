@@ -1,3 +1,9 @@
+## 0.10.3 (2020-09-10)
+
+### Bug fixes
+
+Fix a bug that caused the value returned by `ParseContext.badness` to be much higher than intended.
+
 ## 0.10.2 (2020-09-02)
 
 ### Bug fixes
