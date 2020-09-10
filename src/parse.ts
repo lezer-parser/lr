@@ -506,7 +506,8 @@ export class ParseContext {
   /// of tokens parsed. Could be used to decide to abort a parse when
   /// the input doesn't appear to match the grammar at all.
   get badness() {
-    return -(this.stacks[0].score * Recover.Token / this.tokenCount)
+    if (!this.stacks.length) return 0
+    return -(this.stacks[0].score / (Recover.Token * this.tokenCount))
   }
 
   private scanForNestEnd(stack: Stack, endToken: TokenGroup, filter?: ((token: string) => boolean)) {
