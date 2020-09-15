@@ -1,6 +1,6 @@
 import {Stack, Recover} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState} from "./constants"
-import {InputStream, Token, StringStream, Tokenizer, TokenGroup} from "./token"
+import {InputStream, Token, StringStream, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
 import {DefaultBufferLength, Tree, TreeBuffer, NodeGroup, NodeType, NodeProp, NodePropSource} from "lezer-tree"
 import {decodeArray} from "./decode"
 
@@ -779,6 +779,12 @@ export class Parser {
   /// to create the arguments to this method.
   withProps(...props: NodePropSource[]) {
     return this.copy({group: this.group.extend(...props)})
+  }
+
+  /// Replace the given external tokenizer with another one, returning
+  /// a new parser object.
+  withTokenizer(from: ExternalTokenizer, to: ExternalTokenizer) {
+    return this.copy({tokenizers: this.tokenizers.map(t => t == from ? to : t)})
   }
 
   private copy(props: {[name: string]: any}): Parser {
