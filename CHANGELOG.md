@@ -1,3 +1,9 @@
+## 0.10.4 (2020-09-15)
+
+### New features
+
+Parser objects now have a `withTokenizer` method that can be used to replace external tokenizers.
+
 ## 0.10.3 (2020-09-10)
 
 ### Bug fixes
