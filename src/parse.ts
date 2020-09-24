@@ -618,8 +618,6 @@ export class Parser {
   readonly termNames: null | {[id: number]: string}
   /// @internal
   readonly maxNode: number
-  /// @internal
-  readonly maxRepeatWrap: number
 
   private nextStateCache: (readonly number[] | null)[] = []
   private cachedDialect: Dialect | null = null
@@ -664,7 +662,6 @@ export class Parser {
     this.tokenPrecTable = spec.tokenPrec
     this.termNames = spec.termNames || null
     this.maxNode = this.group.types.length - 1
-    this.maxRepeatWrap = this.group.types.length + (this.group.types.length - this.minRepeatTerm) - 1
     for (let i = 0, l = this.states.length / ParseState.Size; i < l; i++) this.nextStateCache[i] = null
   }
 
@@ -806,7 +803,7 @@ export class Parser {
 
   /// The eof term id is always allocated directly after the node
   /// types. @internal
-  get eofTerm() { return this.maxRepeatWrap + 1 }
+  get eofTerm() { return this.maxNode + 1 }
 
   /// Tells you whether this grammar has any nested grammars.
   get hasNested() { return this.nested.length > 0 }

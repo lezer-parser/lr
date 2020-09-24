@@ -22,9 +22,9 @@ export const enum Action {
   // In reduce actions, all bits beyond 18 hold the reduction's depth
   // (the amount of stack frames it reduces).
   ReduceDepthShift = 19,
-  // This is set for reduces that reduce the content of a repeat
-  // expression to the repeat term (but _not_ for the reduction that
-  // reduces two instances of the repeat term).
+  // This is set for reduce actions that reduce two instances of a
+  // repeat term to the term (but _not_ for the reductions that match
+  // the repeated content).
   RepeatFlag = 1 << 17,
   // Goto actions are a special kind of shift that don't actually
   // shift the current token, just add a stack frame. This is used for
