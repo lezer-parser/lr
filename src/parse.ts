@@ -315,7 +315,11 @@ export class ParseContext {
       let finished = stopped && findFinished(stopped)
       if (finished) return finished.toTree()
 
-      if (this.strict) throw new SyntaxError("No parse at " + pos)
+      if (this.strict) {
+        if (verbose && stopped)
+          console.log("Stuck with token " + stopped[0].cx.parser.getName(stopped[0].cx.tokens.mainToken.value))
+        throw new SyntaxError("No parse at " + pos)
+      }
       if (!this.recovering) this.recovering = recoverDist
     }
 
