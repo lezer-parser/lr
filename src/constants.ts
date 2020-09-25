@@ -76,7 +76,10 @@ export const enum Term {
 export const enum Seq {
   // Used as end marker for most of the sequences stored in uint16
   // arrays
-  End = 0xffff
+  End = 0xffff,
+  Done = 0,
+  Next = 1,
+  Other = 2,
 }
 
 // Memory layout of parse states

@@ -179,9 +179,17 @@ class TokenCache {
   addActions(stack: Stack, token: number, end: number, index: number) {
     let {state} = stack, {parser} = stack.cx, {data} = parser
     for (let set = 0; set < 2; set++) {
-      for (let i = parser.stateSlot(state, set ? ParseState.Skip : ParseState.Actions), next; (next = data[i]) != Seq.End; i += 3) {
-        if (next == token || (next == Term.Err && index == 0))
-          index = this.putAction(data[i + 1] | (data[i + 2] << 16), token, end, index)
+      for (let i = parser.stateSlot(state, set ? ParseState.Skip : ParseState.Actions);; i += 3) {
+        if (data[i] == Seq.End) {
+          if (data[i + 1] == Seq.Next) {
+            i = pair(data, i + 2)
+          } else {
+            if (index == 0 && data[i + 1] == Seq.Other)
+              index = this.putAction(pair(data, i + 1), token, end, index)
+            break
+          }
+        }
+        if (data[i] == token) index = this.putAction(pair(data, i + 1), token, end, index)
       }
     }
     return index
@@ -703,9 +711,12 @@ export class Parser {
   hasAction(state: number, terminal: number) {
     let data = this.data
     for (let set = 0; set < 2; set++) {
-      for (let i = this.stateSlot(state, set ? ParseState.Skip : ParseState.Actions), next; (next = data[i]) != Seq.End; i += 3) {
-        if (next == terminal || next == Term.Err)
-          return data[i + 1] | (data[i + 2] << 16)
+      for (let i = this.stateSlot(state, set ? ParseState.Skip : ParseState.Actions), next;; i += 3) {
+        if ((next = data[i]) == Seq.End) {
+          if (data[i + 1] == Seq.Next) next = data[i = pair(data, i + 2)]
+          else if (data[i + 1] == Seq.Other) return pair(data, i + 2)
+        }
+        if (next == terminal || next == Term.Err) return pair(data, i + 1)
       }
     }
     return 0
@@ -731,8 +742,11 @@ export class Parser {
   validAction(state: number, action: number) {
     if (action == this.stateSlot(state, ParseState.DefaultReduce)) return true
     for (let i = this.stateSlot(state, ParseState.Actions);; i += 3) {
-      if (this.data[i] == Seq.End) return false
-      if (action == (this.data[i + 1] | (this.data[i + 2] << 16))) return true
+      if (this.data[i] == Seq.End) {
+        if (this.data[i + 1] == Seq.Next) i = pair(this.data, i + 2)
+        else return false
+      }
+      if (action == pair(this.data, i + 1)) return true
     }
   }
 
@@ -742,7 +756,11 @@ export class Parser {
     let cached = this.nextStateCache[state]
     if (cached) return cached
     let result: number[] = []
-    for (let i = this.stateSlot(state, ParseState.Actions); this.data[i] != Seq.End; i += 3) {
+    for (let i = this.stateSlot(state, ParseState.Actions);; i += 3) {
+      if (this.data[i] == Seq.End) {
+        if (this.data[i + 1] == Seq.Next) i = pair(this.data, i + 2)
+        else break
+      }
       if ((this.data[i + 2] & (Action.ReduceFlag >> 16)) == 0 && result.indexOf(this.data[i + 1]) < 0)
         result.push(this.data[i + 1])
     }
@@ -845,6 +863,8 @@ export class Parser {
     return new Parser(spec)
   }
 }
+
+function pair(data: Readonly<Uint16Array>, off: number) { return data[off] | (data[off + 1] << 16) }
 
 // Hidden export for use by lezer-generator
 ;(Parser as any).TokenGroup = TokenGroup
