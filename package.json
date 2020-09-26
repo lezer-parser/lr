@@ -1,6 +1,6 @@
 {
   "name": "lezer",
-  "version": "0.10.4",
+  "version": "0.11.0",
   "description": "Incremental parser",
   "main": "dist/index.cjs",
   "type": "module",

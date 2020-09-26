@@ -1,3 +1,11 @@
+## 0.11.0 (2020-09-26)
+
+### Breaking changes
+
+Follow a breaking change in the way repeat nodes are represented.
+
+Support the new action table format that allows sharing between states.
+
 ## 0.10.4 (2020-09-15)
 
 ### New features
