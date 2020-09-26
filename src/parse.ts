@@ -715,6 +715,7 @@ export class Parser {
         if ((next = data[i]) == Seq.End) {
           if (data[i + 1] == Seq.Next) next = data[i = pair(data, i + 2)]
           else if (data[i + 1] == Seq.Other) return pair(data, i + 2)
+          else break
         }
         if (next == terminal || next == Term.Err) return pair(data, i + 1)
       }
