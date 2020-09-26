@@ -1,3 +1,9 @@
+## 0.11.1 (2020-09-26)
+
+### Bug fixes
+
+Fix an infinite loop that was sometimes hit during error recovery.
+
 ## 0.11.0 (2020-09-26)
 
 ### Breaking changes
