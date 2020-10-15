@@ -27,7 +27,9 @@ well for convenience.
 
 @Tree
 
-@Subtree
+@SyntaxNode
+
+@TreeCursor
 
 @NodeType
 

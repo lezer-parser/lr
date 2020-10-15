@@ -662,7 +662,7 @@ export class Parser {
     this.states = decodeArray(spec.states, Uint32Array)
     this.data = decodeArray(spec.stateData)
     this.goto = decodeArray(spec.goto)
-    this.group = new NodeGroup(nodeNames.map((name, i) => new (NodeType as any)(name, nodeProps[i], i)))
+    this.group = new NodeGroup(nodeNames.map((name, i) => new (NodeType as any)(name, nodeProps[i], i, i >= this.minRepeatTerm)))
     this.maxTerm = spec.maxTerm
     this.tokenizers = spec.tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value)
     this.topRules = spec.topRules
