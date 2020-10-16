@@ -1,5 +1,5 @@
 import {Stack, Recover} from "./stack"
-import {Action, Specialize, Term, Seq, StateFlag, ParseState, NodeFlag} from "./constants"
+import {Action, Specialize, Term, Seq, StateFlag, ParseState, NodeFlag, File} from "./constants"
 import {InputStream, Token, StringStream, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
 import {DefaultBufferLength, Tree, TreeBuffer, NodeGroup, NodeType, NodeProp, NodePropSource} from "lezer-tree"
 import {decodeArray} from "./decode"
@@ -561,6 +561,7 @@ export class Dialect {
 }
 
 type ParserSpec = {
+  version: number,
   states: string | Uint32Array,
   stateData: string | Uint16Array,
   goto: string | Uint16Array,
@@ -637,6 +638,8 @@ export class Parser {
 
   /// @internal
   constructor(spec: ParserSpec) {
+    if (spec.version != File.Version)
+      throw new RangeError(`Parser version (${spec.version}) doesn't match runtime version (${File.Version})`)
     let tokenArray = decodeArray<Uint16Array>(spec.tokenData)
     let nodeNames = spec.nodeNames.split(" ")
     this.minRepeatTerm = nodeNames.length

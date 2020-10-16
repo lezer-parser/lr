@@ -111,3 +111,7 @@ export const enum NodeFlag {
   Error = 4,
   Repeated = 8
 }
+
+export const enum File {
+  Version = 12
+}
