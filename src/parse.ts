@@ -1,5 +1,5 @@
 import {Stack, Recover} from "./stack"
-import {Action, Specialize, Term, Seq, StateFlag, ParseState} from "./constants"
+import {Action, Specialize, Term, Seq, StateFlag, ParseState, NodeFlag} from "./constants"
 import {InputStream, Token, StringStream, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
 import {DefaultBufferLength, Tree, TreeBuffer, NodeGroup, NodeType, NodeProp, NodePropSource} from "lezer-tree"
 import {decodeArray} from "./decode"
@@ -568,6 +568,7 @@ type ParserSpec = {
   maxTerm: number,
   repeatNodeCount: number,
   nodeProps?: [NodeProp<any>, ...(string | number)[]][],
+  skippedNodes?: number[],
   tokenData: string,
   tokenizers: (Tokenizer | number)[],
   topRules: {[name: string]: [number, number]},
@@ -646,7 +647,6 @@ export class Parser {
       if (nodeProps[nodeID] == noProps) nodeProps[nodeID] = Object.create(null)
       prop.set(nodeProps[nodeID], prop.deserialize(String(value)))
     }
-    setProp(0, NodeProp.error, "")
     if (spec.nodeProps) for (let propSpec of spec.nodeProps) {
       let prop = propSpec[0]
       for (let i = 1; i < propSpec.length; i += 2)
@@ -662,7 +662,14 @@ export class Parser {
     this.states = decodeArray(spec.states, Uint32Array)
     this.data = decodeArray(spec.stateData)
     this.goto = decodeArray(spec.goto)
-    this.group = new NodeGroup(nodeNames.map((name, i) => new (NodeType as any)(name, nodeProps[i], i, i >= this.minRepeatTerm)))
+    let topTerms = Object.keys(spec.topRules).map(r => spec.topRules[r][1])
+    this.group = new NodeGroup(nodeNames.map((name, i) => {
+      let flags = (i >= this.minRepeatTerm ? NodeFlag.Repeated : 0) |
+        (topTerms.indexOf(i) > -1 ? NodeFlag.Top : 0) |
+        (i == 0 ? NodeFlag.Error : 0) |
+        (spec.skippedNodes && spec.skippedNodes.indexOf(i) > -1 ? NodeFlag.Skipped : 0)
+      return new (NodeType as any)(name, nodeProps[i], i, flags)
+    }))
     this.maxTerm = spec.maxTerm
     this.tokenizers = spec.tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value)
     this.topRules = spec.topRules

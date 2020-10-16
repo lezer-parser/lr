@@ -103,3 +103,11 @@ export const enum Encode {
   Gap2 = 92, // '\\;
   Base = 46 // (126 - 32 - 2) / 2
 }
+
+// NOTE These are duplicated in the corresponding getters in NodeType
+export const enum NodeFlag {
+  Top = 1,
+  Skipped = 2,
+  Error = 4,
+  Repeated = 8
+}
