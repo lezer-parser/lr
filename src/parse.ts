@@ -652,8 +652,16 @@ export class Parser {
     }
     if (spec.nodeProps) for (let propSpec of spec.nodeProps) {
       let prop = propSpec[0]
-      for (let i = 1; i < propSpec.length; i += 2)
-        setProp(propSpec[i] as number, prop, propSpec[i + 1] as string)
+      for (let i = 1; i < propSpec.length;) {
+        let next = propSpec[i++]
+        if (next >= 0) {
+          setProp(next as number, prop, propSpec[i++] as string)
+        } else {
+          let value = propSpec[i + -next] as string
+          for (let j = -next; j > 0; j--) setProp(propSpec[i++] as number, prop, value)
+          i++
+        }
+      }
     }
     this.specialized = new Uint16Array(spec.specialized ? spec.specialized.length : 0)
     this.specializers = []
