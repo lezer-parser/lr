@@ -1,3 +1,17 @@
+## 0.12.0 (2020-10-23)
+
+### Breaking changes
+
+Follow the change from `Subtree` to `TreeCursor` in lezer-tree.
+
+The serialized parser format changed.
+
+`Stack.startOf` now returns null, rather than -1, when it can't find the given element.
+
+### New features
+
+`Stack.startOf` now takes an optional second argument that allows you to select a match beyond the innermost one.
+
 ## 0.11.2 (2020-09-26)
 
 ### Bug fixes
