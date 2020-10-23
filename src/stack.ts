@@ -240,7 +240,7 @@ export class Stack {
   }
 
   /// Find the start position of an instance of any of the given term
-  /// types, or return `-1` when none of them are found.
+  /// types, or return `null` when none of them are found.
   ///
   /// **Note:** this is only reliable when there is at least some
   /// state that unambiguously matches the given rule on the stack.
@@ -267,7 +267,7 @@ export class Stack {
         let base = frame - (3 * (force >> Action.ReduceDepthShift)), pos = this.stack[base + 1]
         if (before == null || before > pos) return pos
       }
-      if (frame == 0) return -1
+      if (frame == 0) return null
       if (depth == 0) {
         frame -= 3
         state = this.stack[frame]
