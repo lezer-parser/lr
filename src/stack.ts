@@ -239,8 +239,8 @@ export class Stack {
     }
   }
 
-  /// Find the start position of the innermost instance of any of the
-  /// given term types, or return `-1` when none of them are found.
+  /// Find the start position of an instance of any of the given term
+  /// types, or return `-1` when none of them are found.
   ///
   /// **Note:** this is only reliable when there is at least some
   /// state that unambiguously matches the given rule on the stack.
@@ -255,14 +255,17 @@ export class Stack {
   /// `b` is on the stack. You _can_ pass `[b, c]` to reliably check
   /// for either of those two rules (assuming that `a` isn't part of
   /// some rule that includes other things starting with `"x"`).
-  startOf(types: readonly number[]) {
+  ///
+  /// When `before` is given, this keeps scanning up the stack until
+  /// it finds a match that starts before that position.
+  startOf(types: readonly number[], before?: number) {
     let state = this.state, frame = this.stack.length, {parser} = this.cx
     for (;;) {
       let force = parser.stateSlot(state, ParseState.ForcedReduce)
       let depth = force >> Action.ReduceDepthShift, term = force & Action.ValueMask
       if (types.indexOf(term) > -1) {
-        let base = frame - (3 * (force >> Action.ReduceDepthShift))
-        return this.stack[base + 1]
+        let base = frame - (3 * (force >> Action.ReduceDepthShift)), pos = this.stack[base + 1]
+        if (before == null || before > pos) return pos
       }
       if (frame == 0) return -1
       if (depth == 0) {
