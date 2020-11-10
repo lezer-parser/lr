@@ -109,7 +109,7 @@ export const enum NodeFlag {
   Top = 1,
   Skipped = 2,
   Error = 4,
-  Repeated = 8
+  Anonymous = 8
 }
 
 export const enum File {

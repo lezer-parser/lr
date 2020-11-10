@@ -675,7 +675,7 @@ export class Parser {
     this.goto = decodeArray(spec.goto)
     let topTerms = Object.keys(spec.topRules).map(r => spec.topRules[r][1])
     this.group = new NodeGroup(nodeNames.map((name, i) => {
-      let flags = (i >= this.minRepeatTerm ? NodeFlag.Repeated : 0) |
+      let flags = (i >= this.minRepeatTerm ? NodeFlag.Anonymous : 0) |
         (topTerms.indexOf(i) > -1 ? NodeFlag.Top : 0) |
         (i == 0 ? NodeFlag.Error : 0) |
         (spec.skippedNodes && spec.skippedNodes.indexOf(i) > -1 ? NodeFlag.Skipped : 0)
