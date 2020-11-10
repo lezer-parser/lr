@@ -33,6 +33,6 @@ well for convenience.
 
 @NodeType
 
-@NodeGroup
+@NodeSet
 
 @NodeProp

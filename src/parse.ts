@@ -1,7 +1,7 @@
 import {Stack, Recover} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {InputStream, Token, StringStream, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
-import {DefaultBufferLength, Tree, TreeBuffer, NodeGroup, NodeType, NodeProp, NodePropSource} from "lezer-tree"
+import {DefaultBufferLength, Tree, TreeBuffer, NodeSet, NodeType, NodeProp, NodePropSource} from "lezer-tree"
 import {decodeArray} from "./decode"
 
 // Environment variable used to control console output
@@ -378,7 +378,7 @@ export class ParseContext {
 
     if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
-        let match = parser.group.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
+        let match = parser.nodeSet.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
         if (match > -1 && cached.length) {
           stack.useNode(cached, match)
           if (verbose) console.log(base + this.stackID(stack) + ` (via reuse of ${parser.getName(cached.type.id)})`)
@@ -407,7 +407,7 @@ export class ParseContext {
       if (parseNode || !nested) {
         let node = parseNode ? parseNode(clippedInput, stack.pos) : Tree.empty
         if (node.length != end - stack.pos) node = new Tree(node.type, node.children, node.positions, end - stack.pos)
-        if (wrapType != null) node = new Tree(parser.group.types[wrapType], [node], [0], node.length)
+        if (wrapType != null) node = new Tree(parser.nodeSet.types[wrapType], [node], [0], node.length)
         stack.useNode(node, parser.getGoto(stack.state, placeholder, true))
         return stack
       } else {
@@ -538,7 +538,7 @@ export class ParseContext {
     let parent = stack.cx.parent!, tree = stack.forceAll().toTree()
     let parentParser = parent.cx.parser, info = parentParser.nested[parentParser.startNested(parent.state)]
     tree = new Tree(tree.type, tree.children, tree.positions.map(p => p - parent!.pos), stack.pos - parent.pos)
-    if (stack.cx.wrapType > -1) tree = new Tree(parentParser.group.types[stack.cx.wrapType], [tree], [0], tree.length)
+    if (stack.cx.wrapType > -1) tree = new Tree(parentParser.nodeSet.types[stack.cx.wrapType], [tree], [0], tree.length)
     stack.cx.wrapType = -2
     parent.useNode(tree, parentParser.getGoto(parent.state, info.placeholder, true))
     if (verbose) console.log(this.stackID(parent) + ` (via unnest ${stack.cx.wrapType > -1 ? parentParser.getName(stack.cx.wrapType) : tree.type.name})`)
@@ -592,8 +592,8 @@ export class Parser {
   /// The goto table. See `computeGotoTable` in
   /// lezer-generator for details on the format @internal
   readonly goto: Readonly<Uint16Array>
-  /// A node group with the node types used by this parser.
-  readonly group: NodeGroup
+  /// A node set with the node types used by this parser.
+  readonly nodeSet: NodeSet
   /// The highest term id @internal
   readonly maxTerm: number
   /// The first repeat-related term id @internal
@@ -673,7 +673,7 @@ export class Parser {
     this.data = decodeArray(spec.stateData)
     this.goto = decodeArray(spec.goto)
     let topTerms = Object.keys(spec.topRules).map(r => spec.topRules[r][1])
-    this.group = new NodeGroup(nodeNames.map((name, i) => NodeType.define({
+    this.nodeSet = new NodeSet(nodeNames.map((name, i) => NodeType.define({
       name: i >= this.minRepeatTerm ? undefined: name,
       id: i,
       props: nodeProps[i],
@@ -691,7 +691,7 @@ export class Parser {
     this.dynamicPrecedences = spec.dynamicPrecedences || null
     this.tokenPrecTable = spec.tokenPrec
     this.termNames = spec.termNames || null
-    this.maxNode = this.group.types.length - 1
+    this.maxNode = this.nodeSet.types.length - 1
     for (let i = 0, l = this.states.length / ParseState.Size; i < l; i++) this.nextStateCache[i] = null
   }
 
@@ -816,7 +816,7 @@ export class Parser {
   /// props added. You should use [`NodeProp.add`](#tree.NodeProp.add)
   /// to create the arguments to this method.
   withProps(...props: NodePropSource[]) {
-    return this.copy({group: this.group.extend(...props)})
+    return this.copy({nodeSet: this.nodeSet.extend(...props)})
   }
 
   /// Replace the given external tokenizer with another one, returning
@@ -839,7 +839,7 @@ export class Parser {
   /// `--names` option. By default, only the names of tagged terms are
   /// stored.
   getName(term: number): string {
-    return this.termNames ? this.termNames[term] : String(term <= this.maxNode && this.group.types[term].name || term)
+    return this.termNames ? this.termNames[term] : String(term <= this.maxNode && this.nodeSet.types[term].name || term)
   }
 
   /// The eof term id is always allocated directly after the node
@@ -859,7 +859,7 @@ export class Parser {
   }
 
   /// The node type produced by the default top rule.
-  get topType() { return this.group.types[this.defaultTop[1]] }
+  get topType() { return this.nodeSet.types[this.defaultTop[1]] }
 
   /// @internal
   parseDialect(dialect?: string) {
