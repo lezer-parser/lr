@@ -104,14 +104,6 @@ export const enum Encode {
   Base = 46 // (126 - 32 - 2) / 2
 }
 
-// NOTE These are duplicated in the corresponding getters in NodeType
-export const enum NodeFlag {
-  Top = 1,
-  Skipped = 2,
-  Error = 4,
-  Anonymous = 8
-}
-
 export const enum File {
   Version = 12
 }

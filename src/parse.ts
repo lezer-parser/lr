@@ -1,5 +1,5 @@
 import {Stack, Recover} from "./stack"
-import {Action, Specialize, Term, Seq, StateFlag, ParseState, NodeFlag, File} from "./constants"
+import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {InputStream, Token, StringStream, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
 import {DefaultBufferLength, Tree, TreeBuffer, NodeGroup, NodeType, NodeProp, NodePropSource} from "lezer-tree"
 import {decodeArray} from "./decode"
@@ -644,11 +644,10 @@ export class Parser {
     let nodeNames = spec.nodeNames.split(" ")
     this.minRepeatTerm = nodeNames.length
     for (let i = 0; i < spec.repeatNodeCount; i++) nodeNames.push("")
-    let nodeProps: {[id: number]: any}[] = []
-    for (let i = 0; i < nodeNames.length; i++) nodeProps.push(noProps)
+    let nodeProps: [NodeProp<any>, any][][] = []
+    for (let i = 0; i < nodeNames.length; i++) nodeProps.push([])
     function setProp(nodeID: number, prop: NodeProp<any>, value: any) {
-      if (nodeProps[nodeID] == noProps) nodeProps[nodeID] = Object.create(null)
-      prop.set(nodeProps[nodeID], prop.deserialize(String(value)))
+      nodeProps[nodeID].push([prop, prop.deserialize(String(value))])
     }
     if (spec.nodeProps) for (let propSpec of spec.nodeProps) {
       let prop = propSpec[0]
@@ -674,13 +673,14 @@ export class Parser {
     this.data = decodeArray(spec.stateData)
     this.goto = decodeArray(spec.goto)
     let topTerms = Object.keys(spec.topRules).map(r => spec.topRules[r][1])
-    this.group = new NodeGroup(nodeNames.map((name, i) => {
-      let flags = (i >= this.minRepeatTerm ? NodeFlag.Anonymous : 0) |
-        (topTerms.indexOf(i) > -1 ? NodeFlag.Top : 0) |
-        (i == 0 ? NodeFlag.Error : 0) |
-        (spec.skippedNodes && spec.skippedNodes.indexOf(i) > -1 ? NodeFlag.Skipped : 0)
-      return new (NodeType as any)(name, nodeProps[i], i, flags)
-    }))
+    this.group = new NodeGroup(nodeNames.map((name, i) => NodeType.define({
+      name: i >= this.minRepeatTerm ? undefined: name,
+      id: i,
+      props: nodeProps[i],
+      top: topTerms.indexOf(i) > -1,
+      error: i == 0,
+      skipped: spec.skippedNodes && spec.skippedNodes.indexOf(i) > -1
+    })))
     this.maxTerm = spec.maxTerm
     this.tokenizers = spec.tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value)
     this.topRules = spec.topRules
@@ -887,8 +887,6 @@ function pair(data: Readonly<Uint16Array>, off: number) { return data[off] | (da
 
 // Hidden export for use by lezer-generator
 ;(Parser as any).TokenGroup = TokenGroup
-
-const noProps: {[propID: number]: any} = Object.create(null)
 
 function findOffset(data: Readonly<Uint16Array>, start: number, term: number) {
   for (let i = start, next; (next = data[i]) != Seq.End; i++)
