@@ -1,7 +1,7 @@
 import {Stack, Recover} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {InputStream, Token, StringStream, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
-import {DefaultBufferLength, Tree, TreeBuffer, NodeSet, NodeType, NodeProp, NodePropSource} from "lezer-tree"
+import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource} from "lezer-tree"
 import {decodeArray} from "./decode"
 
 // Environment variable used to control console output
@@ -44,22 +44,41 @@ export interface NestedGrammarSpec {
   filterEnd?: (endToken: string) => boolean
 }
 
-class CacheCursor {
-  trees: Tree[]
-  start = [0]
-  index = [0]
-  nextStart: number = 0
+class FragmentCursor {
+  i = 0
+  fragment: TreeFragment | null = null
+  trees: Tree[] = []
+  start: number[] = []
+  index: number[] = []
+  nextStart!: number
 
-  constructor(tree: Tree) { this.trees = [tree] }
+  constructor(readonly fragments: readonly TreeFragment[]) {
+    this.nextFragment()
+  }
+
+  nextFragment() {
+    this.fragment = this.i == this.fragments.length ? null : this.fragments[this.i++]
+    if (this.fragment) {
+      while (this.trees.length) { this.trees.pop(); this.start.pop(); this.index.pop() }
+      this.trees.push(this.fragment.tree)
+      this.start.push(-this.fragment.offset)
+      this.index.push(0)
+      this.nextStart = this.fragment.safeFrom
+    } else {
+      this.nextStart = 1e9
+    }
+  }
 
   // `pos` must be >= any previously given `pos` for this cursor
   nodeAt(pos: number): Tree | TreeBuffer | null {
     if (pos < this.nextStart) return null
+    while (this.fragment && this.fragment.safeTo <= pos) this.nextFragment()
+    if (!this.fragment) return null
 
     for (;;) {
       let last = this.trees.length - 1
       if (last < 0) { // End of tree
-        this.nextStart = 1e9
+        this.nextFragment()
         return null
       }
       let top = this.trees[last], index = this.index[last]
@@ -71,7 +90,12 @@ class CacheCursor {
       }
       let next = top.children[index]
       let start = this.start[last] + top.positions[index]
-      if (start >= pos) return start == pos ? next : null
+      if (start > pos) {
+        this.nextStart = start
+        return null
+      } else if (start == pos && start + next.length <= this.fragment.safeTo) {
+        return start == pos && start >= this.fragment.safeFrom ? next : null
+      }
       if (next instanceof TreeBuffer) {
         this.index[last]++
         this.nextStart = start + next.length
@@ -198,13 +222,15 @@ class TokenCache {
 
 /// Options that can be passed to control parsing.
 export interface ParseOptions {
-  /// Passing a cached tree is used for incremental parsing. This
-  /// should be a tree whose content is aligned with the current
-  /// document (though a call to `Tree.unchanged`) if any changes were
-  /// made since it was produced. The parser will try to reuse nodes
-  /// from this tree in the new parse, greatly speeding up the parse
-  /// when it can reuse nodes for most of the document.
-  cache?: Tree
+  /// Passing a set of fragments from a previous parse is used for
+  /// incremental parsing. These should be aligned with the current
+  /// document (though a call to
+  /// [`TreeFragment.applyChanges`](#tree.TreeFragment^applyChanges))
+  /// if any changes were made since they were produced. The parser
+  /// will try to reuse nodes from the fragments in the new parse,
+  /// greatly speeding up the parse when it can do so for most of the
+  /// document.
+  fragments?: readonly TreeFragment[],
   /// When true, the parser will raise an exception, rather than run
   /// its error-recovery strategies, when the input doesn't match the
   /// grammar.
@@ -247,7 +273,7 @@ export class ParseContext {
   public pos = 0
   private recovering = 0
   private tokenCount = 0
-  private cache: CacheCursor | null
+  private fragments: FragmentCursor | null
   private strict: boolean
   private nextStackID = 0x2654
 
@@ -255,12 +281,12 @@ export class ParseContext {
   constructor(parser: Parser,
               input: InputStream,
               options: ParseOptions = {}) {
-    let {cache = undefined, strict = false, bufferLength = DefaultBufferLength, top = undefined, dialect} = options
+    let {fragments = undefined, strict = false, bufferLength = DefaultBufferLength, top = undefined, dialect} = options
     let topInfo = top ? parser.topRules[top] : parser.defaultTop
     if (!topInfo) throw new RangeError(`Invalid top rule name ${top}`)
     this.stacks = [Stack.start(new StackContext(parser, bufferLength, input, topInfo[1], parser.parseDialect(dialect)), topInfo[0])]
     this.strict = strict
-    this.cache = cache ? new CacheCursor(cache) : null
+    this.fragments = fragments && fragments.length ? new FragmentCursor(fragments) : null
   }
 
   /// @internal
@@ -376,8 +402,8 @@ export class ParseContext {
     let start = stack.pos, {input, parser} = stack.cx
     let base = verbose ? this.stackID(stack) + " -> " : ""
 
-    if (this.cache) {
-      for (let cached = this.cache.nodeAt(start); cached;) {
+    if (this.fragments) {
+      for (let cached = this.fragments.nodeAt(start); cached;) {
         let match = parser.nodeSet.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
         if (match > -1 && cached.length) {
           stack.useNode(cached, match)
