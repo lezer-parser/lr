@@ -414,8 +414,8 @@ export class ParseContext {
     }
 
     let nest = parser.startNested(stack.state)
-    maybeNest: if (nest > -1) {
-      let {grammar, end: endToken, placeholder} = parser.nested[nest]
+    maybeNest: if (nest) {
+      let {grammar, end: endToken, placeholder} = nest
       let filterEnd = undefined, parseNode = null, nested, top, dialect, wrapType = undefined
       if (typeof grammar == "function") {
         let query = grammar(input, stack)
@@ -558,7 +558,7 @@ export class ParseContext {
   private finishNested(stack: Stack) {
     if (stack.cx.wrapType == -2) return null // Another nested stack already finished
     let parent = stack.cx.parent!, tree = stack.forceAll().toTree()
-    let parentParser = parent.cx.parser, info = parentParser.nested[parentParser.startNested(parent.state)]
+    let parentParser = parent.cx.parser, info = parentParser.startNested(parent.state)!
     tree = new Tree(tree.type, tree.children, tree.positions.map(p => p - parent!.pos), stack.pos - parent.pos)
     if (stack.cx.wrapType > -1) tree = new Tree(parentParser.nodeSet.types[stack.cx.wrapType], [tree], [0], tree.length)
     stack.cx.wrapType = -2
@@ -776,7 +776,7 @@ export class Parser {
   /// @internal
   startNested(state: number) {
     let flags = this.stateSlot(state, ParseState.Flags)
-    return flags & StateFlag.StartNest ? flags >> StateFlag.NestShift : -1
+    return flags & StateFlag.StartNest ? this.nested[flags >> StateFlag.NestShift] : null
   }
 
   /// @internal
