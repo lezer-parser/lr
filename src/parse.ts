@@ -290,12 +290,6 @@ export class ParseContext {
   }
 
   /// @internal
-  putStack(stack: Stack) {
-    this.stacks.push(stack)
-    if (this.pos < 0 || stack.pos < this.pos) this.pos = stack.pos
-  }
-
-  /// @internal
   putStackDedup(stack: Stack) {
     for (let i = 0; i < this.stacks.length; i++) {
       let other = this.stacks[i]
@@ -304,7 +298,7 @@ export class ParseContext {
         return
       }
     }
-    this.putStack(stack)
+    this.stacks.push(stack)
   }
 
   /// Move the parser forward. This will process all parse stacks at
@@ -317,7 +311,7 @@ export class ParseContext {
     let stacks = this.stacks, pos = this.pos
     // This will now hold stacks beyond `pos`.
     this.stacks = []
-    // Will be reset to the next position by `putStack`.
+    // Will be reset to the next position at the end of `advance`.
     this.pos = -1
     let stopped: Stack[] | null = null, stoppedTokens: number[] | null = null
 
@@ -328,7 +322,7 @@ export class ParseContext {
       let stack = stacks[i]
       for (;;) {
         if (stack.pos > pos) {
-          this.putStack(stack)
+          this.stacks.push(stack)
         } else {
           let result = this.advanceStack(stack, stacks)
           if (result) {
@@ -391,13 +385,15 @@ export class ParseContext {
     }
 
     this.tokenCount++
+    this.pos = this.stacks[0].pos
+    for (let i = 1; i < this.stacks.length; i++) if (this.stacks[i].pos < this.pos) this.pos = this.stacks[i].pos
     return null
   }
 
   // Returns an updated version of the given stack, or null if the
   // stack can't advance normally. When `split` is given, stacks split
-  // off by ambiguous operations will be pushed to that, or given to
-  // `putStack` if they move `pos` forward.
+  // off by ambiguous operations will be pushed to that, or added to
+  // `this.stacks` if they move `pos` forward.
   private advanceStack(stack: Stack, split: null | Stack[]) {
     let start = stack.pos, {input, parser} = stack.cx
     let base = verbose ? this.stackID(stack) + " -> " : ""
@@ -464,7 +460,7 @@ export class ParseContext {
                      : `reduce of ${parser.getName(action & Action.ValueMask)}`} for ${
         parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
       if (last) return localStack
-      else if (localStack.pos > start) this.putStack(localStack)
+      else if (localStack.pos > start) this.stacks.push(localStack)
       else split!.push(localStack)
     }
 
