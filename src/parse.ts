@@ -10,10 +10,13 @@ const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LO
 
 let stackIDs: WeakMap<Stack, string> | null = null
 
-export type NestedParser = {
-  filter?(input: InputStream, stack: Stack): boolean | ((endToken: string) => boolean),
+export type NestedParserSpec = {
   parser?(input: InputStream, pos: number, fragments?: readonly TreeFragment[]): IncrementalParser
+  wrapType?: NodeType | number
+  filterEnd?(endToken: string): boolean
 }
+
+export type NestedParser = NestedParserSpec | ((input: InputStream, stack: Stack) => NestedParserSpec | null)
 
 class FragmentCursor {
   i = 0
@@ -235,6 +238,7 @@ export class ParseContext {
   private nextStackID = 0x2654
   private nested: IncrementalParser | null = null
   private nestEnd = 0
+  private nestWrap: NodeType | null = null
 
   /// @internal
   public reused: (Tree | TreeBuffer)[] = []
@@ -513,33 +517,36 @@ export class ParseContext {
   private checkNest(stack: Stack) {
     let info = this.parser.findNested(stack.state)
     if (!info) return null
-    let filter = info.value.filter ? info.value.filter(this.input, stack) : true
-    return filter ? {stack, info, tokenFilter: filter === true ? () => true : filter} : null
+    let spec: NestedParser | null = info.value
+    if (typeof spec == "function") spec = spec(this.input, stack)
+    return spec ? {stack, info, spec} : null
   }
 
-  private startNested(nest: {stack: Stack, info: NestInfo, tokenFilter: (token: string) => boolean}) {
-    let {stack, info, tokenFilter} = nest
+  private startNested(nest: {stack: Stack, info: NestInfo, spec: NestedParserSpec}) {
+    let {stack, info, spec} = nest
     this.stacks = [stack]
-    let end = this.nestEnd = this.scanForNestEnd(stack, info.end, tokenFilter)
-    if (info.value.parser) {
-      this.nested = info.value.parser(this.input.clip(end), stack.pos, this.fragments?.fragments)
+    this.nestEnd = this.scanForNestEnd(stack, info.end, spec.filterEnd)
+    this.nestWrap = typeof spec.wrapType == "number" ? this.parser.nodeSet.types[spec.wrapType] : spec.wrapType || null
+    if (spec.parser) {
+      this.nested = spec.parser(this.input.clip(this.nestEnd), stack.pos, this.fragments?.fragments)
     } else {
       this.finishNested(stack, Tree.empty)
     }
   }
 
-  private scanForNestEnd(stack: Stack, endToken: TokenGroup, filter: (token: string) => boolean) {
+  private scanForNestEnd(stack: Stack, endToken: TokenGroup, filter?: (token: string) => boolean) {
     for (let pos = stack.pos; pos < this.input.length; pos++) {
       dummyToken.start = pos
       dummyToken.value = -1
       endToken.token(this.input, dummyToken, stack)
-      if (dummyToken.value > -1 && filter(this.input.read(pos, dummyToken.end))) return pos
+      if (dummyToken.value > -1 && (!filter || filter(this.input.read(pos, dummyToken.end)))) return pos
     }
     return this.input.length
   }
 
   private finishNested(stack: Stack, tree: Tree) {
     tree = new Tree(tree.type, tree.children, tree.positions.map(p => p - stack.pos), this.nestEnd - stack.pos)
+    if (this.nestWrap) tree = new Tree(this.nestWrap, [tree], [0], tree.length)
     let info = this.parser.findNested(stack.state)!
     stack.useNode(tree, this.parser.getGoto(stack.state, info.placeholder, true))
     if (verbose) console.log(this.stackID(stack) + ` (via unnest)`)
@@ -896,12 +903,11 @@ export class Parser {
 }
 
 function ensureNested(parser: NestedParser | Parser) {
-  if (parser instanceof Parser) return {
+  return parser instanceof Parser ? {
     parser(input: InputStream, startPos: number, fragments?: readonly TreeFragment[]) {
       return parser.startParse(input, {fragments, startPos})
     }
-  }
-  return parser
+  } : parser
 }
 
 function pair(data: Readonly<Uint16Array>, off: number) { return data[off] | (data[off + 1] << 16) }
