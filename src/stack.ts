@@ -1,5 +1,5 @@
 import {Action, Term, StateFlag, ParseState, Seq} from "./constants"
-import {StackContext} from "./parse"
+import {ParseContext} from "./parse"
 import {Tree, TreeBuffer, BufferCursor} from "lezer-tree"
 
 /// A parse stack. These are used internally by the parser to track
@@ -12,7 +12,7 @@ export class Stack {
     /// A group of values that the stack will share with all
     /// split instances
     ///@internal
-    readonly cx: StackContext,
+    readonly cx: ParseContext,
     /// Holds state, pos, value stack pos (15 bits array index, 15 bits
     /// buffer index) triplets for all but the top state
     /// @internal
@@ -58,7 +58,7 @@ export class Stack {
 
   // Start an empty stack
   /// @internal
-  static start(cx: StackContext, state: number, pos = 0) {
+  static start(cx: ParseContext, state: number, pos = 0) {
     return new Stack(cx, [], state, pos, pos, 0, [], 0, null)
   }
 
