@@ -309,8 +309,8 @@ export class ParseContext {
   /// not, it returns `null`.
   advance() {
     let stacks = this.stacks, pos = this.pos
-    // This will now hold stacks beyond `pos`.
-    this.stacks = []
+    // This will hold stacks beyond `pos`.
+    let newStacks: Stack[] = this.stacks = []
     // Will be reset to the next position at the end of `advance`.
     this.pos = -1
     let stopped: Stack[] | null = null, stoppedTokens: number[] | null = null
@@ -322,9 +322,9 @@ export class ParseContext {
       let stack = stacks[i]
       for (;;) {
         if (stack.pos > pos) {
-          this.stacks.push(stack)
+          newStacks.push(stack)
         } else {
-          let result = this.advanceStack(stack, stacks)
+          let result = this.advanceStack(stack, newStacks, stacks)
           if (result) {
             stack = result
             continue
@@ -339,7 +339,7 @@ export class ParseContext {
       }
     }
 
-    if (!this.stacks.length) {
+    if (!newStacks.length) {
       let finished = stopped && findFinished(stopped)
       if (finished) return finished.toTree()
 
@@ -358,25 +358,25 @@ export class ParseContext {
 
     if (this.recovering) {
       let maxRemaining = this.recovering == 1 ? 1 : this.recovering * maxRemainingPerStep
-      if (this.stacks.length > maxRemaining) {
-        this.stacks.sort((a, b) => b.score - a.score)
-        this.stacks.length = maxRemaining
+      if (newStacks.length > maxRemaining) {
+        newStacks.sort((a, b) => b.score - a.score)
+        while (newStacks.length > maxRemaining) newStacks.pop()
       }
-      if (this.stacks.some(s => s.reducePos > pos)) this.recovering--
-    } else if (this.stacks.length > 1) {
+      if (newStacks.some(s => s.reducePos > pos)) this.recovering--
+    } else if (newStacks.length > 1) {
       // Prune stacks that are in the same state, or that have been
       // running without splitting for a while, to avoid getting stuck
       // with multiple successful stacks running endlessly on.
-      outer: for (let i = 0; i < this.stacks.length - 1; i++) {
-        let stack = this.stacks[i]
-        for (let j = i + 1; j < this.stacks.length; j++) {
-          let other = this.stacks[j]
+      outer: for (let i = 0; i < newStacks.length - 1; i++) {
+        let stack = newStacks[i]
+        for (let j = i + 1; j < newStacks.length; j++) {
+          let other = newStacks[j]
           if (stack.sameState(other) ||
               stack.buffer.length > minBufferLengthPrune && other.buffer.length > minBufferLengthPrune) {
             if (((stack.score - other.score) || (stack.buffer.length - other.buffer.length)) > 0) {
-              this.stacks.splice(j--, 1)
+              newStacks.splice(j--, 1)
             } else {
-              this.stacks.splice(i--, 1)
+              newStacks.splice(i--, 1)
               continue outer
             }
           }
@@ -385,16 +385,16 @@ export class ParseContext {
     }
 
     this.tokenCount++
-    this.pos = this.stacks[0].pos
-    for (let i = 1; i < this.stacks.length; i++) if (this.stacks[i].pos < this.pos) this.pos = this.stacks[i].pos
+    this.pos = newStacks[0].pos
+    for (let i = 1; i < newStacks.length; i++) if (newStacks[i].pos < this.pos) this.pos = newStacks[i].pos
     return null
   }
 
   // Returns an updated version of the given stack, or null if the
-  // stack can't advance normally. When `split` is given, stacks split
-  // off by ambiguous operations will be pushed to that, or added to
-  // `this.stacks` if they move `pos` forward.
-  private advanceStack(stack: Stack, split: null | Stack[]) {
+  // stack can't advance normally. When `split` and `stacks` are
+  // given, stacks split off by ambiguous operations will be pushed to
+  // `split`, or added to `stacks` if they move `pos` forward.
+  private advanceStack(stack: Stack, stacks: null | Stack[], split: null | Stack[]) {
     let start = stack.pos, {input, parser} = stack.cx
     let base = verbose ? this.stackID(stack) + " -> " : ""
 
@@ -460,7 +460,7 @@ export class ParseContext {
                      : `reduce of ${parser.getName(action & Action.ValueMask)}`} for ${
         parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
       if (last) return localStack
-      else if (localStack.pos > start) this.stacks.push(localStack)
+      else if (localStack.pos > start) stacks!.push(localStack)
       else split!.push(localStack)
     }
 
@@ -474,7 +474,7 @@ export class ParseContext {
   private advanceFully(stack: Stack) {
     let pos = stack.pos
     for (;;) {
-      let result = this.advanceStack(stack, null)
+      let result = this.advanceStack(stack, null, null)
       if (!result) return stack
       if (result.pos > pos) {
         this.putStackDedup(result)
