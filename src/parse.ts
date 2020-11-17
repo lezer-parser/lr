@@ -1,7 +1,8 @@
 import {Stack, Recover} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {InputStream, Token, StringStream, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
-import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource} from "lezer-tree"
+import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet,
+        NodeType, NodeProp, NodePropSource, IncrementalParser} from "lezer-tree"
 import {decodeArray} from "./decode"
 
 // Environment variable used to control console output
@@ -9,39 +10,9 @@ const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LO
 
 let stackIDs: WeakMap<Stack, string> | null = null
 
-/// Nested grammar values are associated with nesting positions in the
-/// grammar. If they are null, the nested region is simply skipped
-/// over. If they hold a parser object, that parser is used to parse
-/// the region. To implement dynamic behavior, the value may also be a
-/// function which returns a description of the way the region should
-/// be parsed.
-export type NestedGrammar = null | Parser | ((input: InputStream, stack: Stack) => NestedGrammarSpec)
-
-/// An object indicating how to proceed with a nested parse.
-export interface NestedGrammarSpec {
-  /// When given, this is used to provide a parser that should be used
-  /// to parse the content.
-  parser?: Parser
-  /// When `parser` is given, this can be used to configure which top
-  /// rule to parse with it.
-  top?: string
-  /// When `parser` is given, this can be used to configure a dialect.
-  dialect?: string
-  /// This being true means that the outer grammar should use
-  /// the fallback expression provided for the nesting to parse the
-  /// content.
-  stay?: boolean
-  /// Alternatively, `parseNode` may hold a function which will be made
-  /// responsible for parsing the region.
-  parseNode?: (input: InputStream, start: number) => Tree
-  /// An optional extra type to tag the resulting tree with.
-  wrapType?: number,
-  /// When a `filterEnd` property is present, that should hold a
-  /// function that determines whether a given end token (which matches
-  /// the end token specified in the grammar) should be used (true) or
-  /// ignored (false). This is mostly useful for implementing things
-  /// like XML closing tag matching.
-  filterEnd?: (endToken: string) => boolean
+export type NestedParser = {
+  filter?(input: InputStream, stack: Stack): boolean | ((endToken: string) => boolean),
+  parser?(input: InputStream, pos: number, fragments?: readonly TreeFragment[]): IncrementalParser
 }
 
 class FragmentCursor {
@@ -231,6 +202,8 @@ export interface ParseOptions {
   /// greatly speeding up the parse when it can do so for most of the
   /// document.
   fragments?: readonly TreeFragment[],
+  /// The input position to start parsing from.
+  startPos?: number,
   /// When true, the parser will raise an exception, rather than run
   /// its error-recovery strategies, when the input doesn't match the
   /// grammar.
@@ -276,6 +249,8 @@ export class ParseContext {
   private fragments: FragmentCursor | null
   private strict: boolean
   private nextStackID = 0x2654
+  private nested: IncrementalParser | null = null
+  private nestEnd = 0
 
   /// @internal
   constructor(parser: Parser,
@@ -284,21 +259,10 @@ export class ParseContext {
     let {fragments = undefined, strict = false, bufferLength = DefaultBufferLength, top = undefined, dialect} = options
     let topInfo = top ? parser.topRules[top] : parser.defaultTop
     if (!topInfo) throw new RangeError(`Invalid top rule name ${top}`)
-    this.stacks = [Stack.start(new StackContext(parser, bufferLength, input, topInfo[1], parser.parseDialect(dialect)), topInfo[0])]
+    this.stacks = [Stack.start(new StackContext(parser, bufferLength, input, topInfo[1], parser.parseDialect(dialect)),
+                               topInfo[0], options.startPos || 0)]
     this.strict = strict
     this.fragments = fragments && fragments.length ? new FragmentCursor(fragments) : null
-  }
-
-  /// @internal
-  putStackDedup(stack: Stack) {
-    for (let i = 0; i < this.stacks.length; i++) {
-      let other = this.stacks[i]
-      if (other.pos == stack.pos && other.sameState(stack)) {
-        if (this.stacks[i].score < stack.score) this.stacks[i] = stack
-        return
-      }
-    }
-    this.stacks.push(stack)
   }
 
   /// Move the parser forward. This will process all parse stacks at
@@ -308,35 +272,49 @@ export class ParseContext {
   /// When the parse is finished, this will return a syntax tree. When
   /// not, it returns `null`.
   advance() {
+    if (this.nested) {
+      let result = this.nested.advance()
+      this.pos = this.nested.pos
+      if (result) {
+        this.finishNested(this.stacks[0], result)
+        this.nested = null
+      }
+      return null
+    }
+
     let stacks = this.stacks, pos = this.pos
     // This will hold stacks beyond `pos`.
     let newStacks: Stack[] = this.stacks = []
     // Will be reset to the next position at the end of `advance`.
     this.pos = -1
-    let stopped: Stack[] | null = null, stoppedTokens: number[] | null = null
+    let stopped: Stack[] | undefined, stoppedTokens: number[] | undefined
+    let maybeNest
 
     // Keep advancing any stacks at `pos` until they either move
     // forward or can't be advanced. Gather stacks that can't be
     // advanced further in `stopped`.
     for (let i = 0; i < stacks.length; i++) {
-      let stack = stacks[i]
+      let stack = stacks[i], nest
       for (;;) {
         if (stack.pos > pos) {
           newStacks.push(stack)
+        } else if (nest = this.checkNest(stack)) {
+          if (!maybeNest || maybeNest.stack.score < stack.score) maybeNest = nest
+        } else if (this.advanceStack(stack, newStacks, stacks)) {
+          continue
         } else {
-          let result = this.advanceStack(stack, newStacks, stacks)
-          if (result) {
-            stack = result
-            continue
-          } else {
-            if (!stopped) { stopped = []; stoppedTokens = [] }
-            stopped.push(stack)
-            let tok = stack.cx.tokens.mainToken
-            stoppedTokens!.push(tok.value, tok.end)
-          }
+          if (!stopped) { stopped = []; stoppedTokens = [] }
+          stopped.push(stack)
+          let tok = stack.cx.tokens.mainToken
+          stoppedTokens!.push(tok.value, tok.end)
         }
         break
       }
+    }
+
+    if (maybeNest) {
+      this.startNested(maybeNest)
+      return null
     }
 
     if (!newStacks.length) {
@@ -352,7 +330,7 @@ export class ParseContext {
     }
 
     if (this.recovering && stopped) {
-      let finished = this.runRecovery(stopped, stoppedTokens!)
+      let finished = this.runRecovery(stopped, stoppedTokens!, newStacks)
       if (finished) return finished.forceAll().toTree()
     }
 
@@ -404,7 +382,7 @@ export class ParseContext {
         if (match > -1 && cached.length) {
           stack.useNode(cached, match)
           if (verbose) console.log(base + this.stackID(stack) + ` (via reuse of ${parser.getName(cached.type.id)})`)
-          return stack
+          return true
         }
         if (!(cached instanceof Tree) || cached.children.length == 0 || cached.positions[0] > 0) break
         let inner = cached.children[0]
@@ -413,40 +391,12 @@ export class ParseContext {
       }
     }
 
-    let nest = parser.startNested(stack.state)
-    maybeNest: if (nest) {
-      let {grammar, end: endToken, placeholder} = nest
-      let filterEnd = undefined, parseNode = null, nested, top, dialect, wrapType = undefined
-      if (typeof grammar == "function") {
-        let query = grammar(input, stack)
-        if (query.stay) break maybeNest
-        ;({parseNode, parser: nested, top, dialect, filterEnd, wrapType} = query)
-      } else {
-        nested = grammar
-      }
-      let end = this.scanForNestEnd(stack, endToken, filterEnd)
-      let clippedInput = stack.cx.input.clip(end)
-      if (parseNode || !nested) {
-        let node = parseNode ? parseNode(clippedInput, stack.pos) : Tree.empty
-        if (node.length != end - stack.pos) node = new Tree(node.type, node.children, node.positions, end - stack.pos)
-        if (wrapType != null) node = new Tree(parser.nodeSet.types[wrapType], [node], [0], node.length)
-        stack.useNode(node, parser.getGoto(stack.state, placeholder, true))
-        return stack
-      } else {
-        let topInfo = top ? nested.topRules[top] : nested.defaultTop
-        let newStack = Stack.start(new StackContext(nested, stack.cx.maxBufferLength, clippedInput, topInfo[1],
-                                                    nested.parseDialect(dialect), stack, wrapType),
-                                   topInfo[0], stack.pos)
-        if (verbose) console.log(base + this.stackID(newStack) + ` (nested)`)
-        return newStack
-      }
-    }
-
     let defaultReduce = parser.stateSlot(stack.state, ParseState.DefaultReduce)
     if (defaultReduce > 0) {
       stack.reduce(defaultReduce)
-      if (verbose) console.log(base + this.stackID(stack) + ` (via always-reduce ${parser.getName(defaultReduce & Action.ValueMask)})`)
-      return stack
+      if (verbose)
+        console.log(base + this.stackID(stack) + ` (via always-reduce ${parser.getName(defaultReduce & Action.ValueMask)})`)
+      return true
     }
 
     let actions = stack.cx.tokens.getActions(stack, input)
@@ -459,33 +409,33 @@ export class ParseContext {
         console.log(base + this.stackID(localStack) + ` (via ${(action & Action.ReduceFlag) == 0 ? "shift"
                      : `reduce of ${parser.getName(action & Action.ValueMask)}`} for ${
         parser.getName(term)} @ ${start}${localStack == stack ? "" : ", split"})`)
-      if (last) return localStack
+      if (last) return true
       else if (localStack.pos > start) stacks!.push(localStack)
       else split!.push(localStack)
     }
 
-    if (stack.cx.parent && stack.pos == input.length) return this.finishNested(stack)
-    return null
+    return false
   }
 
   // Advance a given stack forward as far as it will go. Returns the
   // (possibly updated) stack if it got stuck, or null if it moved
-  // forward and was given to `putStackDedup`.
-  private advanceFully(stack: Stack) {
+  // forward and was given to `pushStackDedup`.
+  private advanceFully(stack: Stack, newStacks: Stack[]) {
     let pos = stack.pos
     for (;;) {
-      let result = this.advanceStack(stack, null, null)
-      if (!result) return stack
-      if (result.pos > pos) {
-        this.putStackDedup(result)
-        return null
+      let nest = this.checkNest(stack)
+      if (nest) return nest
+      if (!this.advanceStack(stack, null, null)) return false
+      if (stack.pos > pos) {
+        pushStackDedup(stack, newStacks)
+        return true
       }
-      stack = result
     }
   }
 
-  private runRecovery(stacks: Stack[], tokens: number[]) {
+  private runRecovery(stacks: Stack[], tokens: number[], newStacks: Stack[]) {
     let finished: Stack | null = null, restarted = false
+    let maybeNest
     for (let i = 0; i < stacks.length; i++) {
       let stack = stacks[i], token = tokens[i << 1], tokenEnd = tokens[(i << 1) + 1]
       let base = verbose ? this.stackID(stack) + " -> " : ""
@@ -495,23 +445,27 @@ export class ParseContext {
         restarted = true
         stack.restart()
         if (verbose) console.log(base + this.stackID(stack) + " (restarted)")
-        let stopped = this.advanceFully(stack)
-        if (stopped) stack = stopped
-        else continue
+        let done = this.advanceFully(stack, newStacks)
+        if (done) {
+          if (done !== true) maybeNest = done
+          continue
+        }
       }
 
       let force = stack.split(), forceBase = base
       for (let j = 0; force.forceReduce() && j < forceReduceLimit; j++) {
         if (verbose) console.log(forceBase + this.stackID(force) + " (via force-reduce)")
-        let stopped = this.advanceFully(force)
-        if (!stopped) break
-        force = stopped
-        if (verbose) forceBase = this.stackID(stopped) + " -> "
+        let done = this.advanceFully(force, newStacks)
+        if (done) {
+          if (done !== true) maybeNest = done
+          break
+        }
+        if (verbose) forceBase = this.stackID(force) + " -> "
       }
 
       for (let insert of stack.recoverByInsert(token)) {
         if (verbose) console.log(base + this.stackID(insert) + " (via recover-insert)")
-        this.advanceFully(insert)
+        this.advanceFully(insert, newStacks)
       }
 
       if (stack.cx.input.length > stack.pos) {
@@ -521,18 +475,28 @@ export class ParseContext {
         }
         stack.recoverByDelete(token, tokenEnd)
         if (verbose) console.log(base + this.stackID(stack) + ` (via recover-delete ${stack.cx.parser.getName(token)})`)
-        this.putStackDedup(stack)
+        pushStackDedup(stack, newStacks)
       } else if (!stack.cx.parent && (!finished || finished.score < stack.score)) {
         finished = stack
       }
     }
-    return finished
+
+    if (finished) return finished
+
+    if (maybeNest) for (let s of this.stacks) if (s.score > maybeNest.stack.score) {
+      maybeNest = undefined
+      break
+    }
+    if (maybeNest) this.startNested(maybeNest)
+    return null
   }
 
   /// Force the parse to finish, generating a tree containing the nodes
   /// parsed so far.
   forceFinish() {
-    return this.stacks[0].split().forceAll().toTree()
+    let stack = this.stacks[0].split()
+    if (this.nested) this.finishNested(stack, this.nested.forceFinish())
+    return stack.forceAll().toTree()
   }
 
   /// A value that indicates how successful the parse is so far, as
@@ -544,27 +508,40 @@ export class ParseContext {
     return -(this.stacks[0].score / (Recover.Token * this.tokenCount))
   }
 
-  private scanForNestEnd(stack: Stack, endToken: TokenGroup, filter?: ((token: string) => boolean)) {
+  private checkNest(stack: Stack) {
+    let info = stack.cx.parser.findNested(stack.state)
+    if (!info) return null
+    let filter = info.value.filter ? info.value.filter(stack.cx.input, stack) : true
+    return filter ? {stack, info, tokenFilter: filter === true ? () => true : filter} : null
+  }
+
+  private startNested(nest: {stack: Stack, info: NestInfo, tokenFilter: (token: string) => boolean}) {
+    let {stack, info, tokenFilter} = nest
+    this.stacks = [stack]
+    let end = this.nestEnd = this.scanForNestEnd(stack, info.end, tokenFilter)
+    if (info.value.parser) {
+      this.nested = info.value.parser(stack.cx.input.clip(end), stack.pos, this.fragments?.fragments)
+    } else {
+      this.finishNested(stack, Tree.empty)
+    }
+  }
+
+  private scanForNestEnd(stack: Stack, endToken: TokenGroup, filter: (token: string) => boolean) {
     let input = stack.cx.input
     for (let pos = stack.pos; pos < input.length; pos++) {
       dummyToken.start = pos
       dummyToken.value = -1
       endToken.token(input, dummyToken, stack)
-      if (dummyToken.value > -1 && (!filter || filter(input.read(pos, dummyToken.end)))) return pos
+      if (dummyToken.value > -1 && filter(input.read(pos, dummyToken.end))) return pos
     }
     return input.length
   }
 
-  private finishNested(stack: Stack) {
-    if (stack.cx.wrapType == -2) return null // Another nested stack already finished
-    let parent = stack.cx.parent!, tree = stack.forceAll().toTree()
-    let parentParser = parent.cx.parser, info = parentParser.startNested(parent.state)!
-    tree = new Tree(tree.type, tree.children, tree.positions.map(p => p - parent!.pos), stack.pos - parent.pos)
-    if (stack.cx.wrapType > -1) tree = new Tree(parentParser.nodeSet.types[stack.cx.wrapType], [tree], [0], tree.length)
-    stack.cx.wrapType = -2
-    parent.useNode(tree, parentParser.getGoto(parent.state, info.placeholder, true))
-    if (verbose) console.log(this.stackID(parent) + ` (via unnest ${stack.cx.wrapType > -1 ? parentParser.getName(stack.cx.wrapType) : tree.type.name})`)
-    return parent
+  private finishNested(stack: Stack, tree: Tree) {
+    tree = new Tree(tree.type, tree.children, tree.positions.map(p => p - stack.pos), this.nestEnd - stack.pos)
+    let parser = stack.cx.parser, info = parser.findNested(stack.state)!
+    stack.useNode(tree, stack.cx.parser.getGoto(stack.state, info.placeholder, true))
+    if (verbose) console.log(this.stackID(stack) + ` (via unnest)`)
   }
 
   private stackID(stack: Stack) {
@@ -572,6 +549,17 @@ export class ParseContext {
     if (!id) stackIDs.set(stack, id = String.fromCodePoint(this.nextStackID++))
     return id + stack
   }
+}
+
+function pushStackDedup(stack: Stack, newStacks: Stack[]) {
+  for (let i = 0; i < newStacks.length; i++) {
+    let other = newStacks[i]
+    if (other.pos == stack.pos && other.sameState(stack)) {
+      if (newStacks[i].score < stack.score) newStacks[i] = stack
+      return
+    }
+  }
+  newStacks.push(stack)
 }
 
 export class Dialect {
@@ -595,12 +583,23 @@ type ParserSpec = {
   tokenData: string,
   tokenizers: (Tokenizer | number)[],
   topRules: {[name: string]: [number, number]},
-  nested?: [string, null | NestedGrammar, string | Uint16Array, number][],
+  nested?: [string, NestedParser | Parser, string | Uint16Array, number][],
   dialects?: {[name: string]: number},
   dynamicPrecedences?: {[term: number]: number},
   specialized?: {term: number, get: (value: string, stack: Stack) => number}[],
   tokenPrec: number,
   termNames?: {[id: number]: string}
+}
+
+type NestInfo = {
+  // A name, used by `withNested`
+  name: string,
+  value: NestedParser,
+  // A token-recognizing automaton for the end of the nesting
+  end: TokenGroup,
+  // The id of the placeholder term that appears in the grammar at
+  // the position of this nesting
+  placeholder: number
 }
 
 /// A parser holds the parse tables for a given grammar, as generated
@@ -625,17 +624,7 @@ export class Parser {
   /// Maps top rule names to [state ID, top term ID] pairs.
   readonly topRules: {[name: string]: [number, number]}
   /// Metadata about nested grammars used in this grammar @internal
-  readonly nested: readonly {
-    /// A name, used by `withNested`
-    name: string,
-    /// The grammar or grammar query function to use
-    grammar: NestedGrammar,
-    /// A token-recognizing automaton for the end of the nesting
-    end: TokenGroup,
-    /// The id of the placeholder term that appears in the grammar at
-    /// the position of this nesting
-    placeholder: number
-  }[]
+  readonly nested: readonly NestInfo[]
   /// A mapping from dialect names to the tokens that are exclusive
   /// to them. @internal
   readonly dialects: {[name: string]: number}
@@ -706,8 +695,8 @@ export class Parser {
     this.maxTerm = spec.maxTerm
     this.tokenizers = spec.tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value)
     this.topRules = spec.topRules
-    this.nested = (spec.nested || []).map(([name, grammar, endToken, placeholder]) => {
-      return {name, grammar, end: new TokenGroup(decodeArray(endToken), 0), placeholder}
+    this.nested = (spec.nested || []).map(([name, value, endToken, placeholder]) => {
+      return {name, value: ensureNested(value), end: new TokenGroup(decodeArray(endToken), 0), placeholder}
     })
     this.dialects = spec.dialects || {}
     this.dynamicPrecedences = spec.dynamicPrecedences || null
@@ -774,7 +763,7 @@ export class Parser {
   }
 
   /// @internal
-  startNested(state: number) {
+  findNested(state: number) {
     let flags = this.stateSlot(state, ParseState.Flags)
     return flags & StateFlag.StartNest ? this.nested[flags >> StateFlag.NestShift] : null
   }
@@ -827,10 +816,10 @@ export class Parser {
   /// of) the nested grammars. This can be used to, for example, swap
   /// in a different language for a nested grammar or fill in a nested
   /// grammar that was left blank by the original grammar.
-  withNested(spec: {[name: string]: NestedGrammar | null}) {
+  withNested(spec: {[name: string]: NestedParser | Parser}) {
     return this.copy({nested: this.nested.map(obj => {
       if (!Object.prototype.hasOwnProperty.call(spec, obj.name)) return obj
-      return {name: obj.name, grammar: spec[obj.name], end: obj.end, placeholder: obj.placeholder}
+      return {name: obj.name, value: ensureNested(spec[obj.name]), end: obj.end, placeholder: obj.placeholder}
     })})
   }
 
@@ -903,6 +892,15 @@ export class Parser {
   static deserialize(spec: ParserSpec) {
     return new Parser(spec)
   }
+}
+
+function ensureNested(parser: NestedParser | Parser) {
+  if (parser instanceof Parser) return {
+    parser(input: InputStream, startPos: number, fragments?: readonly TreeFragment[]) {
+      return parser.startParse(input, {fragments, startPos})
+    }
+  }
+  return parser
 }
 
 function pair(data: Readonly<Uint16Array>, off: number) { return data[off] | (data[off + 1] << 16) }
