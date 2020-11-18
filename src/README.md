@@ -14,7 +14,7 @@
 
 ### Tokenizers
 
-@InputStream
+@Input
 
 @Token
 

@@ -21,24 +21,25 @@ export class Token {
 }
 
 /// This is the interface the parser uses to access the document. It
-/// exposes a sequence of UTF16 code units. Most access will be
-/// sequential, so implementations can optimize for that.
-export interface InputStream {
+/// exposes a sequence of UTF16 code units. Most (but not _all_)
+/// access, especially through `get`, will be sequential, so
+/// implementations can optimize for that.
+export interface Input {
   /// The end of the stream.
   length: number
   /// Get the code unit at the given position. Will return -1 when
-  /// asked for a point below 0 or beyond the end of the stream
+  /// asked for a point below 0 or beyond the end of the stream.
   get(pos: number): number
   /// Read part of the stream as a string
   read(from: number, to: number): string
-  /// Return a new `InputStream` over the same data, but with a lower
+  /// Return a new `Input` over the same data, but with a lower
   /// `length`. Used, for example, when nesting grammars to give the
   /// inner grammar a narrower view of the input.
-  clip(at: number): InputStream
+  clip(at: number): Input
 }
 
-/// An `InputStream` that is backed by a single, flat string.
-export class StringStream implements InputStream {
+// An `Input` that is backed by a single, flat string.
+export class StringInput implements Input {
   constructor(readonly string: string, readonly length = string.length) {}
 
   get(pos: number) {
@@ -47,11 +48,11 @@ export class StringStream implements InputStream {
   
   read(from: number, to: number): string { return this.string.slice(from, Math.min(this.length, to)) }
 
-  clip(at: number) { return new StringStream(this.string, at) }
+  clip(at: number) { return new StringInput(this.string, at) }
 }
 
 export interface Tokenizer {
-  token(input: InputStream, token: Token, stack: Stack): void
+  token(input: Input, token: Token, stack: Stack): void
   contextual: boolean
   fallback: boolean
   extend: boolean
@@ -65,7 +66,7 @@ export class TokenGroup implements Tokenizer {
 
   constructor(readonly data: Readonly<Uint16Array>, readonly id: number) {}
 
-  token(input: InputStream, token: Token, stack: Stack) { readToken(this.data, input, token, stack, this.id) }
+  token(input: Input, token: Token, stack: Stack) { readToken(this.data, input, token, stack, this.id) }
 }
 
 TokenGroup.prototype.contextual = TokenGroup.prototype.fallback = TokenGroup.prototype.extend = false
@@ -104,7 +105,7 @@ export class ExternalTokenizer {
   /// scan from.
   constructor(
     /// @internal
-    readonly token: (input: InputStream, token: Token, stack: Stack) => void,
+    readonly token: (input: Input, token: Token, stack: Stack) => void,
     options: ExternalOptions = {}
   ) {
     this.contextual = !!options.contextual
@@ -134,7 +135,7 @@ export class ExternalTokenizer {
 // long as new states with the a matching group mask can be reached,
 // and updating `token` when it matches a token.
 function readToken(data: Readonly<Uint16Array>,
-                   input: InputStream,
+                   input: Input,
                    token: Token,
                    stack: Stack,
                    group: number) {

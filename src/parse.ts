@@ -1,6 +1,6 @@
 import {Stack, Recover} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
-import {InputStream, Token, StringStream, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
+import {Input, Token, StringInput, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
 import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet,
         NodeType, NodeProp, NodePropSource, IncrementalParser} from "lezer-tree"
 import {decodeArray} from "./decode"
@@ -11,12 +11,12 @@ const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LO
 let stackIDs: WeakMap<Stack, string> | null = null
 
 export type NestedParserSpec = {
-  parser?(input: InputStream, pos: number, fragments?: readonly TreeFragment[]): IncrementalParser
+  parser?(input: Input, pos: number, fragments?: readonly TreeFragment[]): IncrementalParser
   wrapType?: NodeType | number
   filterEnd?(endToken: string): boolean
 }
 
-export type NestedParser = NestedParserSpec | ((input: InputStream, stack: Stack) => NestedParserSpec | null)
+export type NestedParser = NestedParserSpec | ((input: Input, stack: Stack) => NestedParserSpec | null)
 
 class FragmentCursor {
   i = 0
@@ -107,7 +107,7 @@ class TokenCache {
     this.tokens = parser.tokenizers.map(_ => new CachedToken)
   }
 
-  getActions(stack: Stack, input: InputStream) {
+  getActions(stack: Stack, input: Input) {
     let actionIndex = 0
     let main: Token | null = null
     let {parser} = stack.cx, {tokenizers} = parser
@@ -144,7 +144,7 @@ class TokenCache {
     return this.actions
   }
 
-  updateCachedToken(token: CachedToken, tokenizer: Tokenizer, stack: Stack, input: InputStream) {
+  updateCachedToken(token: CachedToken, tokenizer: Tokenizer, stack: Stack, input: Input) {
     token.clear(stack.pos)
     tokenizer.token(input, token, stack)
     if (token.value > -1) {
@@ -255,7 +255,7 @@ export class ParseContext {
     /// @internal
     public parser: Parser,
     /// @internal
-    public input: InputStream,
+    public input: Input,
     options: ParseOptions = {}
   ) {
     let {fragments = undefined, strict = false, bufferLength = DefaultBufferLength, top = undefined, dialect} = options
@@ -715,8 +715,8 @@ export class Parser {
   }
 
   /// Parse a given string or stream.
-  parse(input: InputStream | string, options?: ParseOptions) {
-    if (typeof input == "string") input = new StringStream(input)
+  parse(input: Input | string, options?: ParseOptions) {
+    if (typeof input == "string") input = new StringInput(input)
     let cx = new ParseContext(this, input, options)
     for (;;) {
       let done = cx.advance()
@@ -725,8 +725,8 @@ export class Parser {
   }
 
   /// Create a `ParseContext`.
-  startParse(input: InputStream | string, options?: ParseOptions) {
-    if (typeof input == "string") input = new StringStream(input)
+  startParse(input: Input | string, options?: ParseOptions) {
+    if (typeof input == "string") input = new StringInput(input)
     return new ParseContext(this, input, options)
   }
 
@@ -904,7 +904,7 @@ export class Parser {
 
 function ensureNested(parser: NestedParser | Parser) {
   return parser instanceof Parser ? {
-    parser(input: InputStream, startPos: number, fragments?: readonly TreeFragment[]) {
+    parser(input: Input, startPos: number, fragments?: readonly TreeFragment[]) {
       return parser.startParse(input, {fragments, startPos})
     }
   } : parser
