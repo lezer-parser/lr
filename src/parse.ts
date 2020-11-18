@@ -2,7 +2,7 @@ import {Stack, Recover} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {Input, Token, StringInput, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
 import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet,
-        NodeType, NodeProp, NodePropSource, IncrementalParser} from "lezer-tree"
+        NodeType, NodeProp, NodePropSource} from "lezer-tree"
 import {decodeArray} from "./decode"
 
 // Environment variable used to control console output
@@ -10,12 +10,47 @@ const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LO
 
 let stackIDs: WeakMap<Stack, string> | null = null
 
+/// Interface that a parser that is used as a nested incremental
+/// parser must conform to.
+export interface IncrementalParser {
+  /// Advance the parse state by some amount.
+  advance(): Tree | null
+  /// The current parse position.
+  pos: number
+  /// Get the currently parsed content as a tree, even though the
+  /// parse hasn't finished yet.
+  forceFinish(): Tree
+}
+
+/// Used to configure a [nested parse](#lezer.Parser.withNested).
 export type NestedParserSpec = {
+  /// A function that creates the inner parser. Will be passed the
+  /// input, [clipped](#lezer.Input.clip) to the size of the parseable
+  /// region, the start position of the inner region, and an optional
+  /// array of tree fragments from a previous parse that can be
+  /// reused.
+  ///
+  /// The resulting parser should produce trees that start at document
+  /// position 0, with their children offset to their actual document
+  /// positions.
+  ///
+  /// When this property isn't given, the inner region is simply
+  /// skipped over intead of parsed.
   parser?(input: Input, pos: number, fragments?: readonly TreeFragment[]): IncrementalParser
+  /// When given, an additional node will be wrapped around the
+  /// part of the tree produced by this inner parse.
   wrapType?: NodeType | number
+  /// When given, this will be called with the token that ends the
+  /// inner region. It can return `false` to cause a given end token
+  /// to be ignored.
   filterEnd?(endToken: string): boolean
 }
 
+/// This type is used to specify a nested parser. It may directly be a
+/// nested parse [spec](#lezer.NestedParseSpec), or a function that,
+/// given an input document and a stack, returns such a spec or `null`
+/// to indicate that the nested parse should not happen (and the
+/// grammar's fallback expression should be used).
 export type NestedParser = NestedParserSpec | ((input: Input, stack: Stack) => NestedParserSpec | null)
 
 class FragmentCursor {
@@ -226,7 +261,7 @@ const recoverDist = 5, maxRemainingPerStep = 3, minBufferLengthPrune = 200, forc
 /// A parse context can be used for step-by-step parsing. After
 /// creating it, you repeatedly call `.advance()` until it returns a
 /// tree to indicate it has reached the end of the parse.
-export class ParseContext {
+export class ParseContext implements IncrementalParser {
   // Active parse stacks.
   private stacks: Stack[]
   // The position to which the parse has advanced.

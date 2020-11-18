@@ -30,6 +30,11 @@ export interface Input {
   /// Get the code unit at the given position. Will return -1 when
   /// asked for a point below 0 or beyond the end of the stream.
   get(pos: number): number
+  /// Returns the string between `pos` and the next newline character
+  /// or the end of the document. Not used by the built-in tokenizers,
+  /// but can be useful in custom tokenizers or completely custom
+  /// parsers.
+  lineAfter(pos: number): string
   /// Read part of the stream as a string
   read(from: number, to: number): string
   /// Return a new `Input` over the same data, but with a lower
@@ -44,6 +49,12 @@ export class StringInput implements Input {
 
   get(pos: number) {
     return pos < 0 || pos >= this.length ? -1 : this.string.charCodeAt(pos)
+  }
+
+  lineAfter(pos: number) {
+    if (pos < 0) return ""
+    let end = this.string.indexOf("\n", pos)
+    return this.string.slice(pos, end < 0 ? this.length : Math.max(end, this.length))
   }
   
   read(from: number, to: number): string { return this.string.slice(from, Math.min(this.length, to)) }

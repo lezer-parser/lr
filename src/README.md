@@ -12,6 +12,8 @@
 
 @Stack
 
+@IncrementalParser
+
 ### Tokenizers
 
 @Input
