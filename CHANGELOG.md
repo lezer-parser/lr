@@ -1,3 +1,9 @@
+## 0.12.1 (2020-11-19)
+
+### Bug fixes
+
+Fix an infinite loop in incremental parsing when repeatedly reusing a zero-length cached node.
+
 ## 0.12.0 (2020-10-23)
 
 ### Breaking changes
