@@ -43,8 +43,10 @@ export interface Input {
   clip(at: number): Input
 }
 
-// An `Input` that is backed by a single, flat string.
-export class StringInput implements Input {
+// Creates an `Input` that is backed by a single, flat string.
+export function stringInput(input: string): Input { return new StringInput(input) }
+
+class StringInput implements Input {
   constructor(readonly string: string, readonly length = string.length) {}
 
   get(pos: number) {
@@ -54,7 +56,7 @@ export class StringInput implements Input {
   lineAfter(pos: number) {
     if (pos < 0) return ""
     let end = this.string.indexOf("\n", pos)
-    return this.string.slice(pos, end < 0 ? this.length : Math.max(end, this.length))
+    return this.string.slice(pos, end < 0 ? this.length : Math.min(end, this.length))
   }
   
   read(from: number, to: number): string { return this.string.slice(from, Math.min(this.length, to)) }

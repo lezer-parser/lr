@@ -1,6 +1,6 @@
 import {Stack, Recover} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
-import {Input, Token, StringInput, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
+import {Input, Token, stringInput, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
 import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet,
         NodeType, NodeProp, NodePropSource} from "lezer-tree"
 import {decodeArray} from "./decode"
@@ -749,7 +749,7 @@ export class Parser {
 
   /// Parse a given string or stream.
   parse(input: Input | string, options?: ParseOptions) {
-    if (typeof input == "string") input = new StringInput(input)
+    if (typeof input == "string") input = stringInput(input)
     let cx = new ParseContext(this, input, options)
     for (;;) {
       let done = cx.advance()
@@ -759,7 +759,7 @@ export class Parser {
 
   /// Create a `ParseContext`.
   startParse(input: Input | string, options?: ParseOptions) {
-    if (typeof input == "string") input = new StringInput(input)
+    if (typeof input == "string") input = stringInput(input)
     return new ParseContext(this, input, options)
   }
 
