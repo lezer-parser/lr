@@ -379,7 +379,7 @@ export class ParseContext {
     if (this.cache) {
       for (let cached = this.cache.nodeAt(start); cached;) {
         let match = parser.group.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
-        if (match > -1) {
+        if (match > -1 && cached.length) {
           stack.useNode(cached, match)
           if (verbose) console.log(base + this.stackID(stack) + ` (via reuse of ${parser.getName(cached.type.id)})`)
           return stack
