@@ -326,8 +326,6 @@ export class ParseContext implements IncrementalParser {
     let stacks = this.stacks, pos = this.pos
     // This will hold stacks beyond `pos`.
     let newStacks: Stack[] = this.stacks = []
-    // Will be reset to the next position at the end of `advance`.
-    this.pos = -1
     let stopped: Stack[] | undefined, stoppedTokens: number[] | undefined
     let maybeNest
 
