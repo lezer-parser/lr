@@ -354,7 +354,7 @@ export class Stack {
   /// @internal
   toTree(): Tree {
     return Tree.build({buffer: StackBufferCursor.create(this),
-                       nodeSet: this.cx.parser.nodeSet,
+                       nodeSet: this.cx.nodeSet,
                        topID: this.cx.topTerm,
                        maxBufferLength: this.cx.maxBufferLength,
                        reused: this.cx.reused,

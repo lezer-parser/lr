@@ -242,6 +242,9 @@ export interface ParseOptions {
   fragments?: readonly TreeFragment[],
   /// The input position to start parsing from.
   startPos?: number,
+  /// The node set to use. Defaults to the parser's own
+  /// [`nodeSet`](#lezer.Parser.nodeSet) property.
+  nodeSet?: NodeSet,
   /// When true, the parser will raise an exception, rather than run
   /// its error-recovery strategies, when the input doesn't match the
   /// grammar.
@@ -283,6 +286,8 @@ export class ParseContext implements IncrementalParser {
   /// @internal
   public topTerm: number
   /// @internal
+  public nodeSet: NodeSet
+  /// @internal
   public dialect: Dialect
 
   /// @internal
@@ -299,6 +304,7 @@ export class ParseContext implements IncrementalParser {
     this.dialect = parser.parseDialect(dialect)
     this.tokens = new TokenCache(parser)
     this.topTerm = topInfo[1]
+    this.nodeSet = options.nodeSet || parser.nodeSet
     this.maxBufferLength = bufferLength
     this.stacks = [Stack.start(this, topInfo[0], options.startPos || 0)]
     this.strict = strict
@@ -417,7 +423,7 @@ export class ParseContext implements IncrementalParser {
 
     if (this.fragments) {
       for (let cached = this.fragments.nodeAt(start); cached;) {
-        let match = parser.nodeSet.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
+        let match = this.nodeSet.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
         if (match > -1 && cached.length) {
           stack.useNode(cached, match)
           if (verbose) console.log(base + this.stackID(stack) + ` (via reuse of ${parser.getName(cached.type.id)})`)
@@ -559,7 +565,7 @@ export class ParseContext implements IncrementalParser {
     let {stack, info, spec} = nest
     this.stacks = [stack]
     this.nestEnd = this.scanForNestEnd(stack, info.end, spec.filterEnd)
-    this.nestWrap = typeof spec.wrapType == "number" ? this.parser.nodeSet.types[spec.wrapType] : spec.wrapType || null
+    this.nestWrap = typeof spec.wrapType == "number" ? this.nodeSet.types[spec.wrapType] : spec.wrapType || null
     if (spec.parser) {
       this.nested = spec.parser(this.input.clip(this.nestEnd), stack.pos, this.fragments?.fragments)
     } else {
@@ -909,9 +915,6 @@ export class Parser {
     let prec = this.dynamicPrecedences
     return prec == null ? 0 : prec[term] || 0
   }
-
-  /// The node type produced by the default top rule.
-  get topType() { return this.nodeSet.types[this.defaultTop[1]] }
 
   /// @internal
   parseDialect(dialect?: string) {
