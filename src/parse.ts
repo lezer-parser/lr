@@ -2,7 +2,7 @@ import {Stack, Recover} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {Input, Token, stringInput, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
 import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet,
-        NodeType, NodeProp, NodePropSource} from "lezer-tree"
+        NodeType, NodeProp} from "lezer-tree"
 import {decodeArray} from "./decode"
 
 // Environment variable used to control console output
@@ -187,7 +187,7 @@ class TokenCache {
 
       for (let i = 0; i < parser.specialized.length; i++) if (parser.specialized[i] == token.value) {
         let result = parser.specializers[i](input.read(token.start, token.end), stack)
-        if (result >= 0 && stack.cx.dialect.allows(result >> 1)) {
+        if (result >= 0 && stack.cx.parser.dialect.allows(result >> 1)) {
           if ((result & 1) == Specialize.Specialize) token.value = result >> 1
           else token.extended = result >> 1
           break
@@ -242,21 +242,13 @@ export interface ParseOptions {
   fragments?: readonly TreeFragment[],
   /// The input position to start parsing from.
   startPos?: number,
-  /// The node set to use. Defaults to the parser's own
-  /// [`nodeSet`](#lezer.Parser.nodeSet) property.
-  nodeSet?: NodeSet,
   /// When true, the parser will raise an exception, rather than run
   /// its error-recovery strategies, when the input doesn't match the
   /// grammar.
   strict?: boolean,
   /// The maximum length of the TreeBuffers generated in the output
   /// tree. Defaults to 1024.
-  bufferLength?: number,
-  /// The name of the @top declaration to parse from. If not
-  /// specified, the first @top declaration is used.
-  top?: string,
-  /// A space-separated string of dialects to enable.
-  dialect?: string
+  bufferLength?: number
 }
 
 const recoverDist = 5, maxRemainingPerStep = 3, minBufferLengthPrune = 200, forceReduceLimit = 10
@@ -285,10 +277,6 @@ export class ParseContext implements IncrementalParser {
   public maxBufferLength: number
   /// @internal
   public topTerm: number
-  /// @internal
-  public nodeSet: NodeSet
-  /// @internal
-  public dialect: Dialect
 
   /// @internal
   constructor(
@@ -298,15 +286,11 @@ export class ParseContext implements IncrementalParser {
     public input: Input,
     options: ParseOptions = {}
   ) {
-    let {fragments = undefined, strict = false, bufferLength = DefaultBufferLength, top = undefined, dialect} = options
-    let topInfo = top ? parser.topRules[top] : parser.defaultTop
-    if (!topInfo) throw new RangeError(`Invalid top rule name ${top}`)
-    this.dialect = parser.parseDialect(dialect)
+    let {fragments = undefined, strict = false, bufferLength = DefaultBufferLength} = options
     this.tokens = new TokenCache(parser)
-    this.topTerm = topInfo[1]
-    this.nodeSet = options.nodeSet || parser.nodeSet
+    this.topTerm = parser.top[1]
     this.maxBufferLength = bufferLength
-    this.stacks = [Stack.start(this, topInfo[0], options.startPos || 0)]
+    this.stacks = [Stack.start(this, parser.top[0], options.startPos || 0)]
     this.strict = strict
     this.fragments = fragments && fragments.length ? new FragmentCursor(fragments) : null
     
@@ -423,7 +407,7 @@ export class ParseContext implements IncrementalParser {
 
     if (this.fragments) {
       for (let cached = this.fragments.nodeAt(start); cached;) {
-        let match = this.nodeSet.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
+        let match = this.parser.nodeSet.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
         if (match > -1 && cached.length) {
           stack.useNode(cached, match)
           if (verbose) console.log(base + this.stackID(stack) + ` (via reuse of ${parser.getName(cached.type.id)})`)
@@ -565,7 +549,7 @@ export class ParseContext implements IncrementalParser {
     let {stack, info, spec} = nest
     this.stacks = [stack]
     this.nestEnd = this.scanForNestEnd(stack, info.end, spec.filterEnd)
-    this.nestWrap = typeof spec.wrapType == "number" ? this.nodeSet.types[spec.wrapType] : spec.wrapType || null
+    this.nestWrap = typeof spec.wrapType == "number" ? this.parser.nodeSet.types[spec.wrapType] : spec.wrapType || null
     if (spec.parser) {
       this.nested = spec.parser(this.input.clip(this.nestEnd), stack.pos, this.fragments?.fragments)
     } else {
@@ -690,6 +674,10 @@ export class Parser {
   readonly termNames: null | {[id: number]: string}
   /// @internal
   readonly maxNode: number
+  /// @internal
+  readonly dialect: Dialect
+  /// @internal
+  readonly top: [number, number]
 
   private nextStateCache: (readonly number[] | null)[] = []
   private cachedDialect: Dialect | null = null
@@ -751,6 +739,9 @@ export class Parser {
     this.termNames = spec.termNames || null
     this.maxNode = this.nodeSet.types.length - 1
     for (let i = 0, l = this.states.length / ParseState.Size; i < l; i++) this.nextStateCache[i] = null
+
+    this.dialect = this.parseDialect()
+    this.top = this.topRules[Object.keys(this.topRules)[0]]
   }
 
   /// Parse a given string or stream.
@@ -859,37 +850,48 @@ export class Parser {
     return iPrev < 0 || findOffset(this.data, this.tokenPrecTable, token) < iPrev
   }
 
-  /// Create a new `Parser` instance with different values for (some
-  /// of) the nested grammars. This can be used to, for example, swap
-  /// in a different language for a nested grammar or fill in a nested
-  /// grammar that was left blank by the original grammar.
-  withNested(spec: {[name: string]: NestedParser | Parser}) {
-    return this.copy({nested: this.nested.map(obj => {
-      if (!Object.prototype.hasOwnProperty.call(spec, obj.name)) return obj
-      return {name: obj.name, value: ensureNested(spec[obj.name]), end: obj.end, placeholder: obj.placeholder}
-    })})
-  }
-
-  /// Create a new `Parser` instance whose node types have the given
-  /// props added. You should use [`NodeProp.add`](#tree.NodeProp.add)
-  /// to create the arguments to this method.
-  withProps(...props: NodePropSource[]) {
-    return this.copy({nodeSet: this.nodeSet.extend(...props)})
-  }
-
-  /// Replace the given external tokenizer with another one, returning
-  /// a new parser object.
-  withTokenizer(from: ExternalTokenizer, to: ExternalTokenizer) {
-    return this.copy({tokenizers: this.tokenizers.map(t => t == from ? to : t)})
-  }
-
-  private copy(props: {[name: string]: any}): Parser {
+  /// Configure the parser. Returns a new parser instance that has the
+  /// given settings modified. Settings not provided in `config` are
+  /// kept from the original parser.
+  configure(config: {
+    /// The node set to use. Defaults to the parser's own
+    /// [`nodeSet`](#lezer.Parser.nodeSet) property.
+    nodeSet?: NodeSet,
+    /// The name of the @top declaration to parse from. If not
+    /// specified, the first @top declaration is used.
+    top?: string,
+    /// A space-separated string of dialects to enable.
+    dialect?: string,
+    /// The nested grammars to use. This can be used to, for example,
+    /// swap in a different language for a nested grammar or fill in a
+    /// nested grammar that was left blank by the original grammar.
+    nested?: {[name: string]: NestedParser | Parser},
+    /// Replace the given external tokenizers with new ones.
+    tokenizers?: {from: ExternalTokenizer, to: ExternalTokenizer}[]
+  }) {
     // Hideous reflection-based kludge to make it easy to create a
     // slightly modified copy of a parser.
-    let obj = Object.create(Parser.prototype)
-    for (let key of Object.keys(this))
-      obj[key] = key in props ? props[key] : (this as any)[key]
-    return obj
+    let copy = Object.assign(Object.create(Parser.prototype), this)
+    if (config.nodeSet)
+      copy.nodeSet = config.nodeSet
+    if (config.top) {
+      let info = this.topRules[config.top!]
+      if (!info) throw new RangeError(`Invalid top rule name ${config.top}`)
+      copy.top = info
+    }
+    if (config.tokenizers)
+      copy.tokenizers = this.tokenizers.map(t => {
+        let found = config.tokenizers!.find(r => r.from == t)
+        return found ? found.to : t
+      })
+    if (config.dialect)
+      copy.dialect = this.parseDialect(config.dialect)
+    if (config.nested)
+      copy.nested = this.nested.map(obj => {
+        if (!Object.prototype.hasOwnProperty.call(config.nested, obj.name)) return obj
+        return {name: obj.name, value: ensureNested(config.nested![obj.name]), end: obj.end, placeholder: obj.placeholder}
+      })
+    return copy as Parser
   }
 
   /// Returns the name associated with a given term. This will only
@@ -906,9 +908,6 @@ export class Parser {
 
   /// Tells you whether this grammar has any nested grammars.
   get hasNested() { return this.nested.length > 0 }
-
-  /// @internal
-  get defaultTop() { return this.topRules[Object.keys(this.topRules)[0]] }
 
   /// @internal
   dynamicPrecedence(term: number) {

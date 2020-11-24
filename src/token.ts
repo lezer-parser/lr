@@ -152,7 +152,7 @@ function readToken(data: Readonly<Uint16Array>,
                    token: Token,
                    stack: Stack,
                    group: number) {
-  let state = 0, groupMask = 1 << group, dialect = stack.cx.dialect
+  let state = 0, groupMask = 1 << group, dialect = stack.cx.parser.dialect
   scan: for (let pos = token.start;;) {
     if ((groupMask & data[state]) == 0) break
     let accEnd = data[state + 1]

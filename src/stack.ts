@@ -354,7 +354,7 @@ export class Stack {
   /// @internal
   toTree(): Tree {
     return Tree.build({buffer: StackBufferCursor.create(this),
-                       nodeSet: this.cx.nodeSet,
+                       nodeSet: this.cx.parser.nodeSet,
                        topID: this.cx.topTerm,
                        maxBufferLength: this.cx.maxBufferLength,
                        reused: this.cx.reused,
@@ -367,7 +367,7 @@ export class Stack {
 
   /// Test whether a given dialect (by numeric ID, as exported from
   /// the terms file) is enabled.
-  dialectEnabled(dialectID: number) { return this.cx.dialect.flags[dialectID] }
+  dialectEnabled(dialectID: number) { return this.cx.parser.dialect.flags[dialectID] }
 }
 
 export const enum Recover {
