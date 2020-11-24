@@ -1,8 +1,7 @@
 import {Stack, Recover} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {Input, Token, stringInput, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
-import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet,
-        NodeType, NodeProp} from "lezer-tree"
+import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource} from "lezer-tree"
 import {decodeArray} from "./decode"
 
 // Environment variable used to control console output
@@ -12,7 +11,7 @@ let stackIDs: WeakMap<Stack, string> | null = null
 
 /// Interface that a parser that is used as a nested incremental
 /// parser must conform to.
-export interface IncrementalParser {
+export interface IncrementalParse {
   /// Advance the parse state by some amount.
   advance(): Tree | null
   /// The current parse position.
@@ -22,21 +21,32 @@ export interface IncrementalParser {
   forceFinish(): Tree
 }
 
+/// Generic interface for parsers.
+export interface IncrementalParser {
+  /// Start a parse.
+  startParse(input: Input, options?: {
+    /// The position to start parsing at. Defaults to 0.
+    startPos?: number,
+    /// Fragments to reuse, if any.
+    fragments?: readonly TreeFragment[]
+  }): IncrementalParse
+}
+
 /// Used to configure a [nested parse](#lezer.Parser.withNested).
 export type NestedParserSpec = {
-  /// A function that creates the inner parser. Will be passed the
-  /// input, [clipped](#lezer.Input.clip) to the size of the parseable
-  /// region, the start position of the inner region, and an optional
-  /// array of tree fragments from a previous parse that can be
-  /// reused.
+  /// The inner parser. Will be passed the input,
+  /// [clipped](#lezer.Input.clip) to the size of the parseable
+  /// region, the start position of the inner region as `startPos`,
+  /// and an optional array of tree fragments from a previous parse
+  /// that can be reused.
   ///
-  /// The resulting parser should produce trees that start at document
+  /// The resulting parse should produce trees that start at document
   /// position 0, with their children offset to their actual document
   /// positions.
   ///
   /// When this property isn't given, the inner region is simply
   /// skipped over intead of parsed.
-  parser?(input: Input, pos: number, fragments?: readonly TreeFragment[]): IncrementalParser
+  parser?: IncrementalParser
   /// When given, an additional node will be wrapped around the
   /// part of the tree produced by this inner parse.
   wrapType?: NodeType | number
@@ -256,7 +266,7 @@ const recoverDist = 5, maxRemainingPerStep = 3, minBufferLengthPrune = 200, forc
 /// A parse context can be used for step-by-step parsing. After
 /// creating it, you repeatedly call `.advance()` until it returns a
 /// tree to indicate it has reached the end of the parse.
-export class ParseContext implements IncrementalParser {
+export class ParseContext implements IncrementalParse {
   // Active parse stacks.
   private stacks: Stack[]
   // The position to which the parse has advanced.
@@ -266,23 +276,17 @@ export class ParseContext implements IncrementalParser {
   private fragments: FragmentCursor | null
   private strict: boolean
   private nextStackID = 0x2654
-  private nested: IncrementalParser | null = null
+  private nested: IncrementalParse | null = null
   private nestEnd = 0
   private nestWrap: NodeType | null = null
 
-  /// @internal
   public reused: (Tree | TreeBuffer)[] = []
   private tokens: TokenCache
-  /// @internal
   public maxBufferLength: number
-  /// @internal
   public topTerm: number
 
-  /// @internal
   constructor(
-    /// @internal
     public parser: Parser,
-    /// @internal
     public input: Input,
     options: ParseOptions = {}
   ) {
@@ -296,12 +300,12 @@ export class ParseContext implements IncrementalParser {
     
   }
 
-  /// Move the parser forward. This will process all parse stacks at
-  /// `this.pos` and try to advance them to a further position. If no
-  /// stack for such a position is found, it'll start error-recovery.
-  ///
-  /// When the parse is finished, this will return a syntax tree. When
-  /// not, it returns `null`.
+  // Move the parser forward. This will process all parse stacks at
+  // `this.pos` and try to advance them to a further position. If no
+  // stack for such a position is found, it'll start error-recovery.
+  //
+  // When the parse is finished, this will return a syntax tree. When
+  // not, it returns `null`.
   advance() {
     if (this.nested) {
       let result = this.nested.advance()
@@ -520,18 +524,17 @@ export class ParseContext implements IncrementalParser {
     return null
   }
 
-  /// Force the parse to finish, generating a tree containing the nodes
-  /// parsed so far.
   forceFinish() {
     let stack = this.stacks[0].split()
     if (this.nested) this.finishNested(stack, this.nested.forceFinish())
     return stack.forceAll().toTree()
   }
 
-  /// A value that indicates how successful the parse is so far, as
-  /// the number of error-recovery steps taken divided by the number
-  /// of tokens parsed. Could be used to decide to abort a parse when
-  /// the input doesn't appear to match the grammar at all.
+  // A value that indicates how successful the parse is so far, as
+  // the number of error-recovery steps taken divided by the number
+  // of tokens parsed. Could be used to decide to abort a parse when
+  // the input doesn't appear to match the grammar at all.
+  // FIXME replace this with automatic skip-ahead logic
   get badness() {
     if (!this.stacks.length) return 0
     return -(this.stacks[0].score / (Recover.Token * this.tokenCount))
@@ -551,7 +554,8 @@ export class ParseContext implements IncrementalParser {
     this.nestEnd = this.scanForNestEnd(stack, info.end, spec.filterEnd)
     this.nestWrap = typeof spec.wrapType == "number" ? this.parser.nodeSet.types[spec.wrapType] : spec.wrapType || null
     if (spec.parser) {
-      this.nested = spec.parser(this.input.clip(this.nestEnd), stack.pos, this.fragments?.fragments)
+      this.nested = spec.parser.startParse(this.input.clip(this.nestEnd),
+                                           {startPos: stack.pos, fragments: this.fragments?.fragments})
     } else {
       this.finishNested(stack, Tree.empty)
     }
@@ -614,7 +618,7 @@ type ParserSpec = {
   tokenData: string,
   tokenizers: (Tokenizer | number)[],
   topRules: {[name: string]: [number, number]},
-  nested?: [string, NestedParser | Parser, string | Uint16Array, number][],
+  nested?: [string, NestedParser, string | Uint16Array, number][],
   dialects?: {[name: string]: number},
   dynamicPrecedences?: {[term: number]: number},
   specialized?: {term: number, get: (value: string, stack: Stack) => number}[],
@@ -635,7 +639,7 @@ type NestInfo = {
 
 /// A parser holds the parse tables for a given grammar, as generated
 /// by `lezer-generator`.
-export class Parser {
+export class Parser implements IncrementalParser {
   /// The parse states for this grammar @internal
   readonly states: Readonly<Uint32Array>
   /// A blob of data that the parse states, as well as some
@@ -755,7 +759,7 @@ export class Parser {
   }
 
   /// Create a `ParseContext`.
-  startParse(input: Input | string, options?: ParseOptions) {
+  startParse(input: Input | string, options?: ParseOptions): IncrementalParse {
     if (typeof input == "string") input = stringInput(input)
     return new ParseContext(this, input, options)
   }
@@ -854,9 +858,8 @@ export class Parser {
   /// given settings modified. Settings not provided in `config` are
   /// kept from the original parser.
   configure(config: {
-    /// The node set to use. Defaults to the parser's own
-    /// [`nodeSet`](#lezer.Parser.nodeSet) property.
-    nodeSet?: NodeSet,
+    /// Node props to add to the parser's node set.
+    props?: readonly NodePropSource[],
     /// The name of the @top declaration to parse from. If not
     /// specified, the first @top declaration is used.
     top?: string,
@@ -865,15 +868,15 @@ export class Parser {
     /// The nested grammars to use. This can be used to, for example,
     /// swap in a different language for a nested grammar or fill in a
     /// nested grammar that was left blank by the original grammar.
-    nested?: {[name: string]: NestedParser | Parser},
+    nested?: {[name: string]: NestedParser | IncrementalParser},
     /// Replace the given external tokenizers with new ones.
     tokenizers?: {from: ExternalTokenizer, to: ExternalTokenizer}[]
   }) {
     // Hideous reflection-based kludge to make it easy to create a
     // slightly modified copy of a parser.
     let copy = Object.assign(Object.create(Parser.prototype), this)
-    if (config.nodeSet)
-      copy.nodeSet = config.nodeSet
+    if (config.props)
+      copy.nodeSet = this.nodeSet.extend(...config.props)
     if (config.top) {
       let info = this.topRules[config.top!]
       if (!info) throw new RangeError(`Invalid top rule name ${config.top}`)
@@ -937,12 +940,8 @@ export class Parser {
   }
 }
 
-function ensureNested(parser: NestedParser | Parser) {
-  return parser instanceof Parser ? {
-    parser(input: Input, startPos: number, fragments?: readonly TreeFragment[]) {
-      return parser.startParse(input, {fragments, startPos})
-    }
-  } : parser
+function ensureNested(parser: NestedParser | IncrementalParser): NestedParser {
+  return (parser as any).startParse ? {parser: parser as IncrementalParser} : parser as NestedParser
 }
 
 function pair(data: Readonly<Uint16Array>, off: number) { return data[off] | (data[off + 1] << 16) }

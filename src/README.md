@@ -4,15 +4,15 @@
 
 @Parser
 
-@ParseContext
-
-@NestedGrammar
-
-@NestedGrammarSpec
-
-@Stack
+@IncrementalParse
 
 @IncrementalParser
+
+@NestedParser
+
+@NestedParserSpec
+
+@Stack
 
 ### Tokenizers
 
