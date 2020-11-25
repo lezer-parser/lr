@@ -358,7 +358,8 @@ export class Stack {
                        topID: this.cx.topTerm,
                        maxBufferLength: this.cx.maxBufferLength,
                        reused: this.cx.reused,
-                       length: this.pos,
+                       start: this.cx.startPos,
+                       length: this.pos - this.cx.startPos,
                        minRepeatType: this.cx.parser.minRepeatTerm})
   }
 

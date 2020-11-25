@@ -25,7 +25,8 @@ export interface IncrementalParse {
 export interface IncrementalParser {
   /// Start a parse.
   startParse(input: Input, options?: {
-    /// The position to start parsing at. Defaults to 0.
+    /// The position to start parsing at. Defaults to 0. The returned
+    /// tree should start at this position.
     startPos?: number,
     /// Fragments to reuse, if any.
     fragments?: readonly TreeFragment[]
@@ -39,10 +40,6 @@ export type NestedParserSpec = {
   /// region, the start position of the inner region as `startPos`,
   /// and an optional array of tree fragments from a previous parse
   /// that can be reused.
-  ///
-  /// The resulting parse should produce trees that start at document
-  /// position 0, with their children offset to their actual document
-  /// positions.
   ///
   /// When this property isn't given, the inner region is simply
   /// skipped over intead of parsed.
@@ -284,6 +281,7 @@ export class ParseContext implements IncrementalParse {
   private tokens: TokenCache
   public maxBufferLength: number
   public topTerm: number
+  public startPos: number
 
   constructor(
     public parser: Parser,
@@ -294,10 +292,10 @@ export class ParseContext implements IncrementalParse {
     this.tokens = new TokenCache(parser)
     this.topTerm = parser.top[1]
     this.maxBufferLength = bufferLength
-    this.stacks = [Stack.start(this, parser.top[0], options.startPos || 0)]
+    this.startPos = options.startPos || 0
+    this.stacks = [Stack.start(this, parser.top[0], this.startPos)]
     this.strict = strict
     this.fragments = fragments && fragments.length ? new FragmentCursor(fragments) : null
-    
   }
 
   // Move the parser forward. This will process all parse stacks at
@@ -557,7 +555,7 @@ export class ParseContext implements IncrementalParse {
       this.nested = spec.parser.startParse(this.input.clip(this.nestEnd),
                                            {startPos: stack.pos, fragments: this.fragments?.fragments})
     } else {
-      this.finishNested(stack, Tree.empty)
+      this.finishNested(stack)
     }
   }
 
@@ -571,9 +569,9 @@ export class ParseContext implements IncrementalParse {
     return this.input.length
   }
 
-  private finishNested(stack: Stack, tree: Tree) {
-    tree = new Tree(tree.type, tree.children, tree.positions.map(p => p - stack.pos), this.nestEnd - stack.pos)
-    if (this.nestWrap) tree = new Tree(this.nestWrap, [tree], [0], tree.length)
+  private finishNested(stack: Stack, tree?: Tree) {
+    if (this.nestWrap) tree = new Tree(this.nestWrap, tree ? [tree] : [], tree ? [0] : [], this.nestEnd - stack.pos)
+    else if (!tree) tree = new Tree(NodeType.none, [], [], this.nestEnd - stack.pos)
     let info = this.parser.findNested(stack.state)!
     stack.useNode(tree, this.parser.getGoto(stack.state, info.placeholder, true))
     if (verbose) console.log(this.stackID(stack) + ` (via unnest)`)
