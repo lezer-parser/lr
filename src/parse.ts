@@ -1,4 +1,4 @@
-import {Stack, Recover} from "./stack"
+import {Stack, Recover, StackBufferCursor} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {Input, Token, stringInput, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
 import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource} from "lezer-tree"
@@ -262,7 +262,8 @@ const enum Rec {
   Distance = 5,
   MaxRemainingPerStep = 3,
   MinBufferLengthPrune = 200,
-  ForceReduceLimit = 10
+  ForceReduceLimit = 10,
+  MaxBadness = 0.75
 }
 
 /// A parse context can be used for step-by-step parsing. After
@@ -355,7 +356,7 @@ export class ParseContext implements IncrementalParse {
 
     if (!newStacks.length) {
       let finished = stopped && findFinished(stopped)
-      if (finished) return finished.toTree()
+      if (finished) return this.stackToTree(finished)
 
       if (this.strict) {
         if (verbose && stopped)
@@ -367,7 +368,7 @@ export class ParseContext implements IncrementalParse {
 
     if (this.recovering && stopped) {
       let finished = this.runRecovery(stopped, stoppedTokens!, newStacks)
-      if (finished) return finished.forceAll().toTree()
+      if (finished) return this.stackToTree(finished.forceAll())
     }
 
     if (this.recovering) {
@@ -530,14 +531,25 @@ export class ParseContext implements IncrementalParse {
   forceFinish() {
     let stack = this.stacks[0].split()
     if (this.nested) this.finishNested(stack, this.nested.forceFinish())
-    return stack.forceAll().toTree()
+    return this.stackToTree(stack.forceAll())
+  }
+
+  // Convert the stack's buffer to a syntax tree.
+  stackToTree(stack: Stack, pos: number = stack.pos): Tree {
+    return Tree.build({buffer: StackBufferCursor.create(stack),
+                       nodeSet: this.parser.nodeSet,
+                       topID: this.topTerm,
+                       maxBufferLength: this.maxBufferLength,
+                       reused: this.reused,
+                       start: this.startPos,
+                       length: pos - this.startPos,
+                       minRepeatType: this.parser.minRepeatTerm})
   }
 
   // A value that indicates how successful the parse is so far, as
   // the number of error-recovery steps taken divided by the number
   // of tokens parsed. Could be used to decide to abort a parse when
   // the input doesn't appear to match the grammar at all.
-  // FIXME replace this with automatic skip-ahead logic
   get badness() {
     if (!this.stacks.length) return 0
     return -(this.stacks[0].score / (Recover.Token * this.tokenCount))

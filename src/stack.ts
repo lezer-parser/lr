@@ -350,19 +350,6 @@ export class Stack {
     return true
   }
 
-  // Convert the stack's buffer to a syntax tree.
-  /// @internal
-  toTree(): Tree {
-    return Tree.build({buffer: StackBufferCursor.create(this),
-                       nodeSet: this.cx.parser.nodeSet,
-                       topID: this.cx.topTerm,
-                       maxBufferLength: this.cx.maxBufferLength,
-                       reused: this.cx.reused,
-                       start: this.cx.startPos,
-                       length: this.pos - this.cx.startPos,
-                       minRepeatType: this.cx.parser.minRepeatTerm})
-  }
-
   /// Get the parser used by this stack.
   get parser() { return this.cx.parser }
 
@@ -408,7 +395,7 @@ class SimulatedStack {
 
 // This is given to `Tree.build` to build a buffer, and encapsulates
 // the parent-stack-walking necessary to read the nodes.
-class StackBufferCursor implements BufferCursor {
+export class StackBufferCursor implements BufferCursor {
   buffer: number[]
 
   constructor(public stack: Stack, public pos: number, public index: number) {
