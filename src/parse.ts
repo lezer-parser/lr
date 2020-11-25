@@ -258,7 +258,12 @@ export interface ParseOptions {
   bufferLength?: number
 }
 
-const recoverDist = 5, maxRemainingPerStep = 3, minBufferLengthPrune = 200, forceReduceLimit = 10
+const enum Rec {
+  Distance = 5,
+  MaxRemainingPerStep = 3,
+  MinBufferLengthPrune = 200,
+  ForceReduceLimit = 10
+}
 
 /// A parse context can be used for step-by-step parsing. After
 /// creating it, you repeatedly call `.advance()` until it returns a
@@ -357,7 +362,7 @@ export class ParseContext implements IncrementalParse {
           console.log("Stuck with token " + this.parser.getName(this.tokens.mainToken.value))
         throw new SyntaxError("No parse at " + pos)
       }
-      if (!this.recovering) this.recovering = recoverDist
+      if (!this.recovering) this.recovering = Rec.Distance
     }
 
     if (this.recovering && stopped) {
@@ -366,7 +371,7 @@ export class ParseContext implements IncrementalParse {
     }
 
     if (this.recovering) {
-      let maxRemaining = this.recovering == 1 ? 1 : this.recovering * maxRemainingPerStep
+      let maxRemaining = this.recovering == 1 ? 1 : this.recovering * Rec.MaxRemainingPerStep
       if (newStacks.length > maxRemaining) {
         newStacks.sort((a, b) => b.score - a.score)
         while (newStacks.length > maxRemaining) newStacks.pop()
@@ -381,7 +386,7 @@ export class ParseContext implements IncrementalParse {
         for (let j = i + 1; j < newStacks.length; j++) {
           let other = newStacks[j]
           if (stack.sameState(other) ||
-              stack.buffer.length > minBufferLengthPrune && other.buffer.length > minBufferLengthPrune) {
+              stack.buffer.length > Rec.MinBufferLengthPrune && other.buffer.length > Rec.MinBufferLengthPrune) {
             if (((stack.score - other.score) || (stack.buffer.length - other.buffer.length)) > 0) {
               newStacks.splice(j--, 1)
             } else {
@@ -484,7 +489,7 @@ export class ParseContext implements IncrementalParse {
       }
 
       let force = stack.split(), forceBase = base
-      for (let j = 0; force.forceReduce() && j < forceReduceLimit; j++) {
+      for (let j = 0; force.forceReduce() && j < Rec.ForceReduceLimit; j++) {
         if (verbose) console.log(forceBase + this.stackID(force) + " (via force-reduce)")
         let done = this.advanceFully(force, newStacks)
         if (done) {
