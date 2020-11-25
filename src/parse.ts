@@ -1,8 +1,11 @@
-import {Stack, Recover, StackBufferCursor} from "./stack"
+import {Stack, StackBufferCursor} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {Input, Token, stringInput, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
 import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource} from "lezer-tree"
 import {decodeArray} from "./decode"
+
+// FIXME find some way to reduce recovery work done when the input
+// doesn't match the grammar at all.
 
 // Environment variable used to control console output
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
@@ -262,8 +265,7 @@ const enum Rec {
   Distance = 5,
   MaxRemainingPerStep = 3,
   MinBufferLengthPrune = 200,
-  ForceReduceLimit = 10,
-  MaxBadness = 0.75
+  ForceReduceLimit = 10
 }
 
 /// A parse context can be used for step-by-step parsing. After
@@ -275,7 +277,6 @@ export class ParseContext implements IncrementalParse {
   // The position to which the parse has advanced.
   public pos = 0
   private recovering = 0
-  private tokenCount = 0
   private fragments: FragmentCursor | null
   private strict: boolean
   private nextStackID = 0x2654
@@ -399,7 +400,6 @@ export class ParseContext implements IncrementalParse {
       }
     }
 
-    this.tokenCount++
     this.pos = newStacks[0].pos
     for (let i = 1; i < newStacks.length; i++) if (newStacks[i].pos < this.pos) this.pos = newStacks[i].pos
     return null
@@ -544,15 +544,6 @@ export class ParseContext implements IncrementalParse {
                        start: this.startPos,
                        length: pos - this.startPos,
                        minRepeatType: this.parser.minRepeatTerm})
-  }
-
-  // A value that indicates how successful the parse is so far, as
-  // the number of error-recovery steps taken divided by the number
-  // of tokens parsed. Could be used to decide to abort a parse when
-  // the input doesn't appear to match the grammar at all.
-  get badness() {
-    if (!this.stacks.length) return 0
-    return -(this.stacks[0].score / (Recover.Token * this.tokenCount))
   }
 
   private checkNest(stack: Stack) {
