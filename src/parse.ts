@@ -952,9 +952,6 @@ function ensureNested(parser: NestedParser | IncrementalParser): NestedParser {
 
 function pair(data: Readonly<Uint16Array>, off: number) { return data[off] | (data[off + 1] << 16) }
 
-// Hidden export for use by lezer-generator
-;(Parser as any).TokenGroup = TokenGroup
-
 function findOffset(data: Readonly<Uint16Array>, start: number, term: number) {
   for (let i = start, next; (next = data[i]) != Seq.End; i++)
     if (next == term) return i - start

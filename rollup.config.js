@@ -25,7 +25,7 @@ export default {
         compilerOptions: {
           lib: ["es5", "es6"],
           sourceMap: true,
-          target: "es5",
+          target: "es6",
           strict: false,
           declaration: true
         }
