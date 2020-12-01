@@ -34,12 +34,12 @@ export type NestedParserSpec = {
   ///
   /// When this property isn't given, the inner region is simply
   /// skipped over intead of parsed.
-  parse?(input: Input, options?: {
+  startParse?(input: Input, options?: {
     /// The position to start parsing at. Defaults to 0. The returned
     /// tree should start at this position.
     startPos?: number,
-    /// Fragments to reuse, if any.
-    fragments?: readonly TreeFragment[]
+    /// The parse context.
+    context?: ParseContext
   }): IncrementalParse
 
   /// When given, an additional node will be wrapped around the
@@ -234,26 +234,32 @@ class TokenCache {
   }
 }
 
-/// Options that can be passed to control parsing.
-export interface ParseOptions {
-  /// Passing a set of fragments from a previous parse is used for
-  /// incremental parsing. These should be aligned with the current
-  /// document (though a call to
+export interface ParseContext {
+  /// A set of fragments from a previous parse to be used for incremental
+  /// parsing. These should be aligned with the current document
+  /// (through a call to
   /// [`TreeFragment.applyChanges`](#tree.TreeFragment^applyChanges))
   /// if any changes were made since they were produced. The parser
   /// will try to reuse nodes from the fragments in the new parse,
   /// greatly speeding up the parse when it can do so for most of the
   /// document.
-  fragments?: readonly TreeFragment[],
+  fragments?: readonly TreeFragment[]
+}
+
+/// Options that can be passed to control parsing.
+export interface ParseOptions {
   /// The input position to start parsing from.
-  startPos?: number,
+  startPos?: number
   /// When true, the parser will raise an exception, rather than run
   /// its error-recovery strategies, when the input doesn't match the
   /// grammar.
-  strict?: boolean,
+  strict?: boolean
   /// The maximum length of the TreeBuffers generated in the output
   /// tree. Defaults to 1024.
   bufferLength?: number
+  /// A context, which may provide tree fragments to reuse, and will
+  /// be passed through to nested parsers.
+  context?: ParseContext
 }
 
 const enum Rec {
@@ -266,37 +272,40 @@ const enum Rec {
 /// A parse context can be used for step-by-step parsing. After
 /// creating it, you repeatedly call `.advance()` until it returns a
 /// tree to indicate it has reached the end of the parse.
-export class ParseContext implements IncrementalParse {
+export class Parse implements IncrementalParse {
   // Active parse stacks.
-  private stacks: Stack[]
+  stacks: Stack[]
   // The position to which the parse has advanced.
-  public pos = 0
-  private recovering = 0
-  private fragments: FragmentCursor | null
-  private strict: boolean
-  private nextStackID = 0x2654
-  private nested: IncrementalParse | null = null
-  private nestEnd = 0
-  private nestWrap: NodeType | null = null
+  pos = 0
+  recovering = 0
+  fragments: FragmentCursor | null
+  strict: boolean
+  nextStackID = 0x2654
+  nested: IncrementalParse | null = null
+  nestEnd = 0
+  nestWrap: NodeType | null = null
 
-  public reused: (Tree | TreeBuffer)[] = []
-  private tokens: TokenCache
-  public maxBufferLength: number
-  public topTerm: number
-  public startPos: number
+  reused: (Tree | TreeBuffer)[] = []
+  tokens: TokenCache
+  maxBufferLength: number
+  topTerm: number
+  startPos: number
+  context: ParseContext | undefined
 
   constructor(
     public parser: Parser,
     public input: Input,
     options: ParseOptions = {}
   ) {
-    let {fragments = undefined, strict = false, bufferLength = DefaultBufferLength} = options
+    let {context = undefined, strict = false, bufferLength = DefaultBufferLength} = options
     this.tokens = new TokenCache(parser)
     this.topTerm = parser.top[1]
     this.maxBufferLength = bufferLength
     this.startPos = options.startPos || 0
     this.stacks = [Stack.start(this, parser.top[0], this.startPos)]
     this.strict = strict
+    this.context = context
+    let fragments = context?.fragments
     this.fragments = fragments && fragments.length ? new FragmentCursor(fragments) : null
   }
 
@@ -554,9 +563,8 @@ export class ParseContext implements IncrementalParse {
     this.stacks = [stack]
     this.nestEnd = this.scanForNestEnd(stack, info.end, spec.filterEnd)
     this.nestWrap = typeof spec.wrapType == "number" ? this.parser.nodeSet.types[spec.wrapType] : spec.wrapType || null
-    if (spec.parse) {
-      this.nested = spec.parse(this.input.clip(this.nestEnd),
-                               {startPos: stack.pos, fragments: this.fragments?.fragments})
+    if (spec.startParse) {
+      this.nested = spec.startParse(this.input.clip(this.nestEnd), {startPos: stack.pos, context: this.context})
     } else {
       this.finishNested(stack)
     }
@@ -752,17 +760,17 @@ export class Parser {
   /// Parse a given string or stream.
   parse(input: Input | string, options?: ParseOptions) {
     if (typeof input == "string") input = stringInput(input)
-    let cx = new ParseContext(this, input, options)
+    let cx = new Parse(this, input, options)
     for (;;) {
       let done = cx.advance()
       if (done) return done
     }
   }
 
-  /// Create a `ParseContext`.
+  /// Start an incremental parse.
   startParse(input: Input | string, options?: ParseOptions): IncrementalParse {
     if (typeof input == "string") input = stringInput(input)
-    return new ParseContext(this, input, options)
+    return new Parse(this, input, options)
   }
 
   /// Get a goto table entry @internal
@@ -942,7 +950,7 @@ export class Parser {
 }
 
 function ensureNested(parser: NestedParser | Parser): NestedParser {
-  return (parser as any).startParse ? {parse: (parser as any).startParse.bind(parser)} : parser as NestedParser
+  return (parser as any).startParse ? parser : parser as NestedParser
 }
 
 function pair(data: Readonly<Uint16Array>, off: number) { return data[off] | (data[off + 1] << 16) }
