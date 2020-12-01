@@ -24,18 +24,6 @@ export interface IncrementalParse {
   forceFinish(): Tree
 }
 
-/// Generic interface for parsers.
-export interface IncrementalParser {
-  /// Start a parse.
-  startParse(input: Input, options?: {
-    /// The position to start parsing at. Defaults to 0. The returned
-    /// tree should start at this position.
-    startPos?: number,
-    /// Fragments to reuse, if any.
-    fragments?: readonly TreeFragment[]
-  }): IncrementalParse
-}
-
 /// Used to configure a [nested parse](#lezer.Parser.withNested).
 export type NestedParserSpec = {
   /// The inner parser. Will be passed the input,
@@ -46,7 +34,14 @@ export type NestedParserSpec = {
   ///
   /// When this property isn't given, the inner region is simply
   /// skipped over intead of parsed.
-  parser?: IncrementalParser
+  parse?(input: Input, options?: {
+    /// The position to start parsing at. Defaults to 0. The returned
+    /// tree should start at this position.
+    startPos?: number,
+    /// Fragments to reuse, if any.
+    fragments?: readonly TreeFragment[]
+  }): IncrementalParse
+
   /// When given, an additional node will be wrapped around the
   /// part of the tree produced by this inner parse.
   wrapType?: NodeType | number
@@ -559,9 +554,9 @@ export class ParseContext implements IncrementalParse {
     this.stacks = [stack]
     this.nestEnd = this.scanForNestEnd(stack, info.end, spec.filterEnd)
     this.nestWrap = typeof spec.wrapType == "number" ? this.parser.nodeSet.types[spec.wrapType] : spec.wrapType || null
-    if (spec.parser) {
-      this.nested = spec.parser.startParse(this.input.clip(this.nestEnd),
-                                           {startPos: stack.pos, fragments: this.fragments?.fragments})
+    if (spec.parse) {
+      this.nested = spec.parse(this.input.clip(this.nestEnd),
+                               {startPos: stack.pos, fragments: this.fragments?.fragments})
     } else {
       this.finishNested(stack)
     }
@@ -645,7 +640,7 @@ type NestInfo = {
 
 /// A parser holds the parse tables for a given grammar, as generated
 /// by `lezer-generator`.
-export class Parser implements IncrementalParser {
+export class Parser {
   /// The parse states for this grammar @internal
   readonly states: Readonly<Uint32Array>
   /// A blob of data that the parse states, as well as some
@@ -874,7 +869,7 @@ export class Parser implements IncrementalParser {
     /// The nested grammars to use. This can be used to, for example,
     /// swap in a different language for a nested grammar or fill in a
     /// nested grammar that was left blank by the original grammar.
-    nested?: {[name: string]: NestedParser | IncrementalParser},
+    nested?: {[name: string]: NestedParser | Parser},
     /// Replace the given external tokenizers with new ones.
     tokenizers?: {from: ExternalTokenizer, to: ExternalTokenizer}[]
   }) {
@@ -946,8 +941,8 @@ export class Parser implements IncrementalParser {
   }
 }
 
-function ensureNested(parser: NestedParser | IncrementalParser): NestedParser {
-  return (parser as any).startParse ? {parser: parser as IncrementalParser} : parser as NestedParser
+function ensureNested(parser: NestedParser | Parser): NestedParser {
+  return (parser as any).startParse ? {parse: (parser as any).startParse.bind(parser)} : parser as NestedParser
 }
 
 function pair(data: Readonly<Uint16Array>, off: number) { return data[off] | (data[off + 1] << 16) }
