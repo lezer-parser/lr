@@ -34,14 +34,7 @@ export type NestedParserSpec = {
   ///
   /// When this property isn't given, the inner region is simply
   /// skipped over intead of parsed.
-  startParse?(input: Input, options?: {
-    /// The position to start parsing at. Defaults to 0. The returned
-    /// tree should start at this position.
-    startPos?: number,
-    /// The parse context.
-    context?: ParseContext
-  }): IncrementalParse
-
+  startParse?(input: Input, startPos?: number, context?: ParseContext): IncrementalParse
   /// When given, an additional node will be wrapped around the
   /// part of the tree produced by this inner parse.
   wrapType?: NodeType | number
@@ -246,22 +239,6 @@ export interface ParseContext {
   fragments?: readonly TreeFragment[]
 }
 
-/// Options that can be passed to control parsing.
-export interface ParseOptions {
-  /// The input position to start parsing from.
-  startPos?: number
-  /// When true, the parser will raise an exception, rather than run
-  /// its error-recovery strategies, when the input doesn't match the
-  /// grammar.
-  strict?: boolean
-  /// The maximum length of the TreeBuffers generated in the output
-  /// tree. Defaults to 1024.
-  bufferLength?: number
-  /// A context, which may provide tree fragments to reuse, and will
-  /// be passed through to nested parsers.
-  context?: ParseContext
-}
-
 const enum Rec {
   Distance = 5,
   MaxRemainingPerStep = 3,
@@ -279,7 +256,6 @@ export class Parse implements IncrementalParse {
   pos = 0
   recovering = 0
   fragments: FragmentCursor | null
-  strict: boolean
   nextStackID = 0x2654
   nested: IncrementalParse | null = null
   nestEnd = 0
@@ -287,24 +263,17 @@ export class Parse implements IncrementalParse {
 
   reused: (Tree | TreeBuffer)[] = []
   tokens: TokenCache
-  maxBufferLength: number
   topTerm: number
-  startPos: number
-  context: ParseContext | undefined
 
   constructor(
     public parser: Parser,
     public input: Input,
-    options: ParseOptions = {}
+    public startPos: number,
+    public context: ParseContext | undefined
   ) {
-    let {context = undefined, strict = false, bufferLength = DefaultBufferLength} = options
     this.tokens = new TokenCache(parser)
     this.topTerm = parser.top[1]
-    this.maxBufferLength = bufferLength
-    this.startPos = options.startPos || 0
     this.stacks = [Stack.start(this, parser.top[0], this.startPos)]
-    this.strict = strict
-    this.context = context
     let fragments = context?.fragments
     this.fragments = fragments && fragments.length ? new FragmentCursor(fragments) : null
   }
@@ -363,7 +332,7 @@ export class Parse implements IncrementalParse {
       let finished = stopped && findFinished(stopped)
       if (finished) return this.stackToTree(finished)
 
-      if (this.strict) {
+      if (this.parser.strict) {
         if (verbose && stopped)
           console.log("Stuck with token " + this.parser.getName(this.tokens.mainToken.value))
         throw new SyntaxError("No parse at " + pos)
@@ -543,7 +512,7 @@ export class Parse implements IncrementalParse {
     return Tree.build({buffer: StackBufferCursor.create(stack),
                        nodeSet: this.parser.nodeSet,
                        topID: this.topTerm,
-                       maxBufferLength: this.maxBufferLength,
+                       maxBufferLength: this.parser.bufferLength,
                        reused: this.reused,
                        start: this.startPos,
                        length: pos - this.startPos,
@@ -564,7 +533,7 @@ export class Parse implements IncrementalParse {
     this.nestEnd = this.scanForNestEnd(stack, info.end, spec.filterEnd)
     this.nestWrap = typeof spec.wrapType == "number" ? this.parser.nodeSet.types[spec.wrapType] : spec.wrapType || null
     if (spec.startParse) {
-      this.nested = spec.startParse(this.input.clip(this.nestEnd), {startPos: stack.pos, context: this.context})
+      this.nested = spec.startParse(this.input.clip(this.nestEnd), stack.pos, this.context)
     } else {
       this.finishNested(stack)
     }
@@ -646,6 +615,30 @@ type NestInfo = {
   placeholder: number
 }
 
+/// Configuration options to pass to a parser.
+export interface ParserConfig {
+  /// Node props to add to the parser's node set.
+  props?: readonly NodePropSource[],
+  /// The name of the @top declaration to parse from. If not
+  /// specified, the first @top declaration is used.
+  top?: string,
+  /// A space-separated string of dialects to enable.
+  dialect?: string,
+  /// The nested grammars to use. This can be used to, for example,
+  /// swap in a different language for a nested grammar or fill in a
+  /// nested grammar that was left blank by the original grammar.
+  nested?: {[name: string]: NestedParser | Parser},
+  /// Replace the given external tokenizers with new ones.
+  tokenizers?: {from: ExternalTokenizer, to: ExternalTokenizer}[],
+  /// When true, the parser will raise an exception, rather than run
+  /// its error-recovery strategies, when the input doesn't match the
+  /// grammar.
+  strict?: boolean
+  /// The maximum length of the TreeBuffers generated in the output
+  /// tree. Defaults to 1024.
+  bufferLength?: number
+}
+
 /// A parser holds the parse tables for a given grammar, as generated
 /// by `lezer-generator`.
 export class Parser {
@@ -691,6 +684,10 @@ export class Parser {
   readonly dialect: Dialect
   /// @internal
   readonly top: [number, number]
+  /// @internal
+  readonly bufferLength = DefaultBufferLength
+  /// @internal
+  readonly strict = false
 
   private nextStateCache: (readonly number[] | null)[] = []
   private cachedDialect: Dialect | null = null
@@ -758,9 +755,9 @@ export class Parser {
   }
 
   /// Parse a given string or stream.
-  parse(input: Input | string, options?: ParseOptions) {
+  parse(input: Input | string, startPos: number = 0, context?: ParseContext) {
     if (typeof input == "string") input = stringInput(input)
-    let cx = new Parse(this, input, options)
+    let cx = new Parse(this, input, startPos, context)
     for (;;) {
       let done = cx.advance()
       if (done) return done
@@ -768,9 +765,9 @@ export class Parser {
   }
 
   /// Start an incremental parse.
-  startParse(input: Input | string, options?: ParseOptions): IncrementalParse {
+  startParse(input: Input | string, startPos: number = 0, context?: ParseContext): IncrementalParse {
     if (typeof input == "string") input = stringInput(input)
-    return new Parse(this, input, options)
+    return new Parse(this, input, startPos, context)
   }
 
   /// Get a goto table entry @internal
@@ -866,21 +863,7 @@ export class Parser {
   /// Configure the parser. Returns a new parser instance that has the
   /// given settings modified. Settings not provided in `config` are
   /// kept from the original parser.
-  configure(config: {
-    /// Node props to add to the parser's node set.
-    props?: readonly NodePropSource[],
-    /// The name of the @top declaration to parse from. If not
-    /// specified, the first @top declaration is used.
-    top?: string,
-    /// A space-separated string of dialects to enable.
-    dialect?: string,
-    /// The nested grammars to use. This can be used to, for example,
-    /// swap in a different language for a nested grammar or fill in a
-    /// nested grammar that was left blank by the original grammar.
-    nested?: {[name: string]: NestedParser | Parser},
-    /// Replace the given external tokenizers with new ones.
-    tokenizers?: {from: ExternalTokenizer, to: ExternalTokenizer}[]
-  }) {
+  configure(config: ParserConfig) {
     // Hideous reflection-based kludge to make it easy to create a
     // slightly modified copy of a parser.
     let copy = Object.assign(Object.create(Parser.prototype), this)
@@ -903,6 +886,10 @@ export class Parser {
         if (!Object.prototype.hasOwnProperty.call(config.nested, obj.name)) return obj
         return {name: obj.name, value: ensureNested(config.nested![obj.name]), end: obj.end, placeholder: obj.placeholder}
       })
+    if (config.strict != null)
+      copy.strict = config.strict
+    if (config.bufferLength != null)
+      copy.bufferLength = config.bufferLength
     return copy as Parser
   }
 
