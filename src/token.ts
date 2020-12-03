@@ -1,3 +1,4 @@
+import {Input} from "lezer-tree"
 import {Stack} from "./stack"
 
 /// Tokenizers write the tokens they read into instances of this class.
@@ -18,50 +19,6 @@ export class Token {
     this.value = value
     this.end = end
   }
-}
-
-/// This is the interface the parser uses to access the document. It
-/// exposes a sequence of UTF16 code units. Most (but not _all_)
-/// access, especially through `get`, will be sequential, so
-/// implementations can optimize for that.
-export interface Input {
-  /// The end of the stream.
-  length: number
-  /// Get the code unit at the given position. Will return -1 when
-  /// asked for a point below 0 or beyond the end of the stream.
-  get(pos: number): number
-  /// Returns the string between `pos` and the next newline character
-  /// or the end of the document. Not used by the built-in tokenizers,
-  /// but can be useful in custom tokenizers or completely custom
-  /// parsers.
-  lineAfter(pos: number): string
-  /// Read part of the stream as a string
-  read(from: number, to: number): string
-  /// Return a new `Input` over the same data, but with a lower
-  /// `length`. Used, for example, when nesting grammars to give the
-  /// inner grammar a narrower view of the input.
-  clip(at: number): Input
-}
-
-// Creates an `Input` that is backed by a single, flat string.
-export function stringInput(input: string): Input { return new StringInput(input) }
-
-class StringInput implements Input {
-  constructor(readonly string: string, readonly length = string.length) {}
-
-  get(pos: number) {
-    return pos < 0 || pos >= this.length ? -1 : this.string.charCodeAt(pos)
-  }
-
-  lineAfter(pos: number) {
-    if (pos < 0) return ""
-    let end = this.string.indexOf("\n", pos)
-    return this.string.slice(pos, end < 0 ? this.length : Math.min(end, this.length))
-  }
-  
-  read(from: number, to: number): string { return this.string.slice(from, Math.min(this.length, to)) }
-
-  clip(at: number) { return new StringInput(this.string, at) }
 }
 
 export interface Tokenizer {

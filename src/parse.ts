@@ -1,7 +1,8 @@
+import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource,
+        Input, stringInput, IncrementalParse, StartParse, ParseContext} from "lezer-tree"
 import {Stack, StackBufferCursor} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
-import {Input, Token, stringInput, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
-import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource} from "lezer-tree"
+import {Token, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
 import {decodeArray} from "./decode"
 
 // FIXME find some way to reduce recovery work done when the input
@@ -11,18 +12,6 @@ import {decodeArray} from "./decode"
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
 
 let stackIDs: WeakMap<Stack, string> | null = null
-
-/// Interface that a parser that is used as a nested incremental
-/// parser must conform to.
-export interface IncrementalParse {
-  /// Advance the parse state by some amount.
-  advance(): Tree | null
-  /// The current parse position.
-  pos: number
-  /// Get the currently parsed content as a tree, even though the
-  /// parse hasn't finished yet.
-  forceFinish(): Tree
-}
 
 /// Used to configure a [nested parse](#lezer.Parser.withNested).
 export type NestedParserSpec = {
@@ -34,7 +23,7 @@ export type NestedParserSpec = {
   ///
   /// When this property isn't given, the inner region is simply
   /// skipped over intead of parsed.
-  startParse?(input: Input, startPos?: number, context?: ParseContext): IncrementalParse
+  startParse?: StartParse
   /// When given, an additional node will be wrapped around the
   /// part of the tree produced by this inner parse.
   wrapType?: NodeType | number
@@ -51,9 +40,23 @@ export type NestedParserSpec = {
 /// grammar's fallback expression should be used).
 export type NestedParser = NestedParserSpec | ((input: Input, stack: Stack) => NestedParserSpec | null)
 
+function cutAt(tree: Tree, pos: number, side: 1 | -1) {
+  let cursor = tree.cursor(pos)
+  for (;;) {
+    if (!(side < 0 ? cursor.childBefore(pos) : cursor.childAfter(pos))) for (;;) {
+      if ((side < 0 ? cursor.to <= pos : cursor.from >= pos) && !cursor.type.isError)
+        return side < 0 ? cursor.to - 1 : cursor.from + 1
+      if (side < 0 ? cursor.prevSibling() : cursor.nextSibling()) break
+      if (!cursor.parent()) return side < 0 ? 0 : tree.length
+    }
+  }
+}
+
 class FragmentCursor {
   i = 0
   fragment: TreeFragment | null = null
+  safeFrom = -1
+  safeTo = -1
   trees: Tree[] = []
   start: number[] = []
   index: number[] = []
@@ -64,13 +67,15 @@ class FragmentCursor {
   }
 
   nextFragment() {
-    this.fragment = this.i == this.fragments.length ? null : this.fragments[this.i++]
-    if (this.fragment) {
+    let fr = this.fragment = this.i == this.fragments.length ? null : this.fragments[this.i++]
+    if (fr) {
+      this.safeFrom = fr.openStart ? cutAt(fr.tree, fr.from + fr.offset, 1) - fr.offset : fr.from
+      this.safeTo = fr.openEnd ? cutAt(fr.tree, fr.to + fr.offset, -1) - fr.offset : fr.to
       while (this.trees.length) { this.trees.pop(); this.start.pop(); this.index.pop() }
-      this.trees.push(this.fragment.tree)
-      this.start.push(-this.fragment.offset)
+      this.trees.push(fr.tree)
+      this.start.push(-fr.offset)
       this.index.push(0)
-      this.nextStart = this.fragment.safeFrom
+      this.nextStart = this.safeFrom
     } else {
       this.nextStart = 1e9
     }
@@ -79,7 +84,7 @@ class FragmentCursor {
   // `pos` must be >= any previously given `pos` for this cursor
   nodeAt(pos: number): Tree | TreeBuffer | null {
     if (pos < this.nextStart) return null
-    while (this.fragment && this.fragment.safeTo <= pos) this.nextFragment()
+    while (this.fragment && this.safeTo <= pos) this.nextFragment()
     if (!this.fragment) return null
 
     for (;;) {
@@ -100,8 +105,8 @@ class FragmentCursor {
       if (start > pos) {
         this.nextStart = start
         return null
-      } else if (start == pos && start + next.length <= this.fragment.safeTo) {
-        return start == pos && start >= this.fragment.safeFrom ? next : null
+      } else if (start == pos && start + next.length <= this.safeTo) {
+        return start == pos && start >= this.safeFrom ? next : null
       }
       if (next instanceof TreeBuffer) {
         this.index[last]++
@@ -225,18 +230,6 @@ class TokenCache {
     }
     return index
   }
-}
-
-export interface ParseContext {
-  /// A set of fragments from a previous parse to be used for incremental
-  /// parsing. These should be aligned with the current document
-  /// (through a call to
-  /// [`TreeFragment.applyChanges`](#tree.TreeFragment^applyChanges))
-  /// if any changes were made since they were produced. The parser
-  /// will try to reuse nodes from the fragments in the new parse,
-  /// greatly speeding up the parse when it can do so for most of the
-  /// document.
-  fragments?: readonly TreeFragment[]
 }
 
 const enum Rec {
