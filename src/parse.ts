@@ -620,7 +620,7 @@ export interface ParserConfig {
   /// The nested grammars to use. This can be used to, for example,
   /// swap in a different language for a nested grammar or fill in a
   /// nested grammar that was left blank by the original grammar.
-  nested?: {[name: string]: NestedParser | Parser},
+  nested?: {[name: string]: NestedParser},
   /// Replace the given external tokenizers with new ones.
   tokenizers?: {from: ExternalTokenizer, to: ExternalTokenizer}[],
   /// When true, the parser will raise an exception, rather than run
@@ -734,7 +734,7 @@ export class Parser {
     this.tokenizers = spec.tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value)
     this.topRules = spec.topRules
     this.nested = (spec.nested || []).map(([name, value, endToken, placeholder]) => {
-      return {name, value: ensureNested(value), end: new TokenGroup(decodeArray(endToken), 0), placeholder}
+      return {name, value, end: new TokenGroup(decodeArray(endToken), 0), placeholder}
     })
     this.dialects = spec.dialects || {}
     this.dynamicPrecedences = spec.dynamicPrecedences || null
@@ -877,7 +877,7 @@ export class Parser {
     if (config.nested)
       copy.nested = this.nested.map(obj => {
         if (!Object.prototype.hasOwnProperty.call(config.nested, obj.name)) return obj
-        return {name: obj.name, value: ensureNested(config.nested![obj.name]), end: obj.end, placeholder: obj.placeholder}
+        return {name: obj.name, value: config.nested![obj.name], end: obj.end, placeholder: obj.placeholder}
       })
     if (config.strict != null)
       copy.strict = config.strict
@@ -927,10 +927,6 @@ export class Parser {
   static deserialize(spec: ParserSpec) {
     return new Parser(spec)
   }
-}
-
-function ensureNested(parser: NestedParser | Parser): NestedParser {
-  return (parser as any).startParse ? parser : parser as NestedParser
 }
 
 function pair(data: Readonly<Uint16Array>, off: number) { return data[off] | (data[off + 1] << 16) }

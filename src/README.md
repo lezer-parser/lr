@@ -1,12 +1,8 @@
 ### Parsing
 
-@ParseOptions
-
 @Parser
 
-@IncrementalParse
-
-@IncrementalParser
+@ParserConfig
 
 @NestedParser
 
@@ -15,8 +11,6 @@
 @Stack
 
 ### Tokenizers
-
-@Input
 
 @Token
 
@@ -28,6 +22,8 @@ These come from `lezer-tree`, but are exported from this module as
 well for convenience.
 
 @Tree
+
+@Input
 
 @SyntaxNode
 

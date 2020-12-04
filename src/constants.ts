@@ -105,5 +105,5 @@ export const enum Encode {
 }
 
 export const enum File {
-  Version = 12
+  Version = 13
 }
