@@ -1,5 +1,5 @@
 import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource,
-        Input, stringInput, IncrementalParse, StartParse, ParseContext} from "lezer-tree"
+        Input, stringInput, PartialParse, ParseContext} from "lezer-tree"
 import {Stack, StackBufferCursor} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {Token, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
@@ -23,7 +23,7 @@ export type NestedParserSpec = {
   ///
   /// When this property isn't given, the inner region is simply
   /// skipped over intead of parsed.
-  startParse?: StartParse
+  startParse?: (input: Input, startPos: number, context: ParseContext) => PartialParse
   /// When given, an additional node will be wrapped around the
   /// part of the tree produced by this inner parse.
   wrapType?: NodeType | number
@@ -242,7 +242,7 @@ const enum Rec {
 /// A parse context can be used for step-by-step parsing. After
 /// creating it, you repeatedly call `.advance()` until it returns a
 /// tree to indicate it has reached the end of the parse.
-export class Parse implements IncrementalParse {
+export class Parse implements PartialParse {
   // Active parse stacks.
   stacks: Stack[]
   // The position to which the parse has advanced.
@@ -250,7 +250,7 @@ export class Parse implements IncrementalParse {
   recovering = 0
   fragments: FragmentCursor | null
   nextStackID = 0x2654
-  nested: IncrementalParse | null = null
+  nested: PartialParse | null = null
   nestEnd = 0
   nestWrap: NodeType | null = null
 
@@ -262,7 +262,7 @@ export class Parse implements IncrementalParse {
     public parser: Parser,
     public input: Input,
     public startPos: number,
-    public context: ParseContext | undefined
+    public context: ParseContext
   ) {
     this.tokens = new TokenCache(parser)
     this.topTerm = parser.top[1]
@@ -748,7 +748,7 @@ export class Parser {
   }
 
   /// Parse a given string or stream.
-  parse(input: Input | string, startPos: number = 0, context?: ParseContext) {
+  parse(input: Input | string, startPos: number = 0, context: ParseContext = {}) {
     if (typeof input == "string") input = stringInput(input)
     let cx = new Parse(this, input, startPos, context)
     for (;;) {
@@ -758,7 +758,7 @@ export class Parser {
   }
 
   /// Start an incremental parse.
-  startParse(input: Input | string, startPos: number = 0, context?: ParseContext): IncrementalParse {
+  startParse(input: Input | string, startPos: number = 0, context: ParseContext = {}): PartialParse {
     if (typeof input == "string") input = stringInput(input)
     return new Parse(this, input, startPos, context)
   }
