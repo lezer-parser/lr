@@ -1,3 +1,27 @@
+## 0.13.0 (2020-12-04)
+
+### Breaking changes
+
+`Parser.group` is now called `Parser.nodeSet`.
+
+Nested parsers now work differently. They don't have to be Lezer parsers, but have to produce object conforoming to the `PartialParse` interface. The interface with which non-trivial nested parsers are specified also changed—see the `NestedParser` type.
+
+Parser objects no longer have a `topType` property (scan their node set for types with `isTop` set instead).
+
+`Parser` objects no longer have `withProps`, `withNested`, and `withTokenizer` methods (use `configure` instead).
+
+Both `Parser.parse` and `Parser.startParse` now take an optional start position as second parameter and an optional parse context as third. `startParse` returns an instance of the `PartialParse` interface instead of the old `ParseContext` class (whose name is now used for something else). Parse _options_ are no longer passed to these methods, but configured in advance through `Parser.configure`.
+
+During incremental parsing, instead of passing a tree as the `cache` option, reusable subtrees (see `TreeFragment` from lezer-tree) are now retrieved from the `fragments` property of the parse context object, if provided.
+
+`Parser.parse` and `Parser.startParse` no longer take an options parameter. Instead, `bufferLength` and `strict` can be configured with `Parser.configure` now, and the start position and context are passed as optional arguments.
+
+The `InputStream` type has been replaced by `Input` from the lezer-tree package (which has the same interface but a more appropriate name).
+
+### New features
+
+The `Parser` class now has a `configure` method that is used to create a parser instance with a more specific configuration.
+
 ## 0.12.1 (2020-11-19)
 
 ### Bug fixes
