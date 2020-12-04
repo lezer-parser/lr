@@ -1,3 +1,9 @@
+## 0.13.1 (2020-12-04)
+
+### Bug fixes
+
+Fix versions of lezer packages depended on.
+
 ## 0.13.0 (2020-12-04)
 
 ### Breaking changes
