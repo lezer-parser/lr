@@ -45,7 +45,7 @@ function cutAt(tree: Tree, pos: number, side: 1 | -1) {
   for (;;) {
     if (!(side < 0 ? cursor.childBefore(pos) : cursor.childAfter(pos))) for (;;) {
       if ((side < 0 ? cursor.to <= pos : cursor.from >= pos) && !cursor.type.isError)
-        return side < 0 ? cursor.to - 1 : cursor.from + 1
+        return side < 0 ? Math.max(0, Math.min(cursor.to - 1, pos - 5)) : Math.min(tree.length, Math.max(cursor.from + 1, pos + 5))
       if (side < 0 ? cursor.prevSibling() : cursor.nextSibling()) break
       if (!cursor.parent()) return side < 0 ? 0 : tree.length
     }
