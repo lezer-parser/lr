@@ -1,5 +1,5 @@
 import {Action, Term, StateFlag, ParseState, Seq} from "./constants"
-import {Parse} from "./parse"
+import {Parse, ContextTracker} from "./parse"
 import {Tree, TreeBuffer, BufferCursor} from "lezer-tree"
 
 /// A parse stack. These are used internally by the parser to track
@@ -41,11 +41,8 @@ export class Stack {
     // starts writing.
     /// @internal
     readonly bufferBase: number,
-    /// The stack's current [context](#lezer.ContextTracker) value, if
-    /// any. Its type will depend on the context tracker's type
-    /// parameter, or it will be `null` if there is no context
-    /// tracker.
-    public context: any,
+    /// @internal
+    public curContext: StackContext,
     // A parent stack from which this was split off, if any. This is
     // set up so that it always points to a stack that has some
     // additional buffer content, never to a stack with an equal
@@ -62,8 +59,15 @@ export class Stack {
   // Start an empty stack
   /// @internal
   static start(p: Parse, state: number, pos = 0) {
-    return new Stack(p, [], state, pos, pos, 0, [], 0, p.parser.context ? p.parser.context.start : null, null)
+    let cx = p.parser.context
+    return new Stack(p, [], state, pos, pos, 0, [], 0, cx ? new StackContext(cx, cx.start) : null, null)
   }
+
+  /// The stack's current [context](#lezer.ContextTracker) value, if
+  /// any. Its type will depend on the context tracker's type
+  /// parameter, or it will be `null` if there is no context
+  /// tracker.
+  get context() { return this.curContext ? this.curContext.context : null }
 
   // Push a state onto the stack, tracking its start position as well
   // as the buffer base at that point.
@@ -189,7 +193,7 @@ export class Stack {
     this.reducePos = this.pos = start + value.length
     this.pushState(next, start)
     this.buffer.push(index, start, this.reducePos, -1 /* size < 0 means this is a reused value */)
-    if (this.p.parser.context) this.updateContext(this.p.parser.context.reuse(this.context, value, this.p.input, this))
+    if (this.curContext) this.updateContext(this.curContext.tracker.reuse(this.curContext.context, value, this.p.input, this))
   }
 
   // Split the stack. Due to the buffer sharing and the fact
@@ -208,7 +212,7 @@ export class Stack {
     // Make sure parent points to an actual parent with content, if there is such a parent.
     while (parent && base == parent.bufferBase) parent = parent.parent
     return new Stack(this.p, this.stack.slice(), this.state, this.reducePos, this.pos,
-                     this.score, buffer, base, this.context, parent)
+                     this.score, buffer, base, this.curContext, parent)
   }
 
   // Try to recover from an error by 'deleting' (ignoring) one token.
@@ -373,27 +377,34 @@ export class Stack {
   dialectEnabled(dialectID: number) { return this.p.parser.dialect.flags[dialectID] }
 
   private shiftContext(term: number) {
-    if (this.p.parser.context)
-      this.updateContext(this.p.parser.context.shift(this.context, term, this.p.input, this))
+    if (this.curContext)
+      this.updateContext(this.curContext.tracker.shift(this.curContext.context, term, this.p.input, this))
   }
 
   private reduceContext(term: number) {
-    if (this.p.parser.context)
-      this.updateContext(this.p.parser.context.reduce(this.context, term, this.p.input, this))
+    if (this.curContext)
+      this.updateContext(this.curContext.tracker.reduce(this.curContext.context, term, this.p.input, this))
   }
 
   /// @internal
   emitContext() {
     let last = this.buffer.length - 1
     if (last < 0 || this.buffer[last] != -2)
-      this.buffer.push(this.p.parser.context!.hash(this.context), this.reducePos, this.reducePos, -2)
+      this.buffer.push(this.curContext!.hash, this.reducePos, this.reducePos, -2)
   }
 
   private updateContext(context: any) {
-    if (context != this.context) {
+    if (context != this.curContext!.context) {
       this.emitContext()
-      this.context = context
+      this.curContext = new StackContext(this.curContext.tracker, context)
     }
+  }
+}
+
+class StackContext {
+  readonly hash: number
+  constructor(readonly tracker: ContextTracker<any>, readonly context: any) {
+    this.hash = tracker.hash(context)
   }
 }
 

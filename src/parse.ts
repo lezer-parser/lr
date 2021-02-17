@@ -152,7 +152,7 @@ class TokenCache {
     let {parser} = stack.p, {tokenizers} = parser
 
     let mask = parser.stateSlot(stack.state, ParseState.TokenizerMask)
-    let context = parser.context ? parser.context.hash(stack.context) : 0
+    let context = stack.curContext ? stack.curContext.hash : 0
     for (let i = 0; i < tokenizers.length; i++) {
       if (((1 << i) & mask) == 0) continue
       let tokenizer = tokenizers[i], token = this.tokens[i]
@@ -386,8 +386,7 @@ export class Parse implements PartialParse {
       for (let cached = this.fragments.nodeAt(start); cached;) {
         let match = this.parser.nodeSet.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
         if (match > -1 && cached.length &&
-            ((cached as any).contextHash == null ||
-             this.parser.context && this.parser.context.hash(stack.context) == (cached as any).contextHash)) {
+            ((cached as any).contextHash || 0) == (stack.curContext ? stack.curContext.hash : 0)) {
           stack.useNode(cached, match)
           if (verbose) console.log(base + this.stackID(stack) + ` (via reuse of ${parser.getName(cached.type.id)})`)
           return true
