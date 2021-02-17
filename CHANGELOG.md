@@ -1,3 +1,9 @@
+## 0.13.3 (2021-02-17)
+
+### New features
+
+Context trackers can now disable strictness in node reuse.
+
 ## 0.13.2 (2021-02-17)
 
 ### New features
