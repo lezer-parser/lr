@@ -269,6 +269,10 @@ export class Stack {
   ///
   /// When `before` is given, this keeps scanning up the stack until
   /// it finds a match that starts before that position.
+  ///
+  /// Note that you have to be careful when using this in tokenizers,
+  /// since it's relatively easy to introduce data dependencies that
+  /// break incremental parsing by using this method.
   startOf(types: readonly number[], before?: number) {
     let state = this.state, frame = this.stack.length, {parser} = this.p
     for (;;) {
