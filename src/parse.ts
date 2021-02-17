@@ -383,10 +383,10 @@ export class Parse implements PartialParse {
     let base = verbose ? this.stackID(stack) + " -> " : ""
 
     if (this.fragments) {
+      let strictCx = stack.curContext && stack.curContext.tracker.strict, cxHash = strictCx ? stack.curContext!.hash : 0
       for (let cached = this.fragments.nodeAt(start); cached;) {
         let match = this.parser.nodeSet.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
-        if (match > -1 && cached.length &&
-            ((cached as any).contextHash || 0) == (stack.curContext ? stack.curContext.hash : 0)) {
+        if (match > -1 && cached.length && (!strictCx || ((cached as any).contextHash || 0) == cxHash)) {
           stack.useNode(cached, match)
           if (verbose) console.log(base + this.stackID(stack) + ` (via reuse of ${parser.getName(cached.type.id)})`)
           return true
@@ -601,6 +601,8 @@ export class ContextTracker<T> {
   reuse: (context: T, node: Tree | TreeBuffer, input: Input, stack: Stack) => T
   /// @internal
   hash: (context: T) => number
+  /// @internal
+  strict: boolean
 
   /// The export used in a `@context` declaration should be of this
   /// type.
@@ -619,12 +621,18 @@ export class ContextTracker<T> {
     /// Reduce a context value to a number (for cheap storage and
     /// comparison).
     hash(context: T): number
+    /// By default, nodes can only be reused during incremental
+    /// parsing if they were created in the same context as the one in
+    /// which they are reused. Set this to false to disable that
+    /// check.
+    strict?: boolean
   }) {
     this.start = spec.start
     this.shift = spec.shift || id
     this.reduce = spec.reduce || id
     this.reuse = spec.reuse || id
     this.hash = spec.hash
+    this.strict = spec.strict !== false
   }
 }
 

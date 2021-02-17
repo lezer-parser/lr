@@ -392,9 +392,11 @@ export class Stack {
 
   /// @internal
   emitContext() {
+    let cx = this.curContext!
+    if (!cx.tracker.strict) return
     let last = this.buffer.length - 1
     if (last < 0 || this.buffer[last] != -2)
-      this.buffer.push(this.curContext!.hash, this.reducePos, this.reducePos, -2)
+      this.buffer.push(cx.hash, this.reducePos, this.reducePos, -2)
   }
 
   private updateContext(context: any) {
