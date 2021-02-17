@@ -682,7 +682,6 @@ export class Parser {
   /// @internal
   readonly strict = false
 
-  private nextStateCache: (readonly number[] | null)[] = []
   private cachedDialect: Dialect | null = null
 
   /// @internal
@@ -741,7 +740,6 @@ export class Parser {
     this.tokenPrecTable = spec.tokenPrec
     this.termNames = spec.termNames || null
     this.maxNode = this.nodeSet.types.length - 1
-    for (let i = 0, l = this.states.length / ParseState.Size; i < l; i++) this.nextStateCache[i] = null
 
     this.dialect = this.parseDialect()
     this.top = this.topRules[Object.keys(this.topRules)[0]]
@@ -824,8 +822,6 @@ export class Parser {
   /// Get the states that can follow this one through shift actions or
   /// goto jumps. @internal
   nextStates(state: number): readonly number[] {
-    let cached = this.nextStateCache[state]
-    if (cached) return cached
     let result: number[] = []
     for (let i = this.stateSlot(state, ParseState.Actions);; i += 3) {
       if (this.data[i] == Seq.End) {
@@ -835,16 +831,7 @@ export class Parser {
       if ((this.data[i + 2] & (Action.ReduceFlag >> 16)) == 0 && result.indexOf(this.data[i + 1]) < 0)
         result.push(this.data[i + 1])
     }
-    let table = this.goto, max = table[0]
-    for (let term = 0; term < max; term++) {
-      for (let pos = table[term + 1];;) {
-        let groupTag = table[pos++], target = table[pos++]
-        for (let end = pos + (groupTag >> 1); pos < end; pos++)
-          if (table[pos] == state && result.indexOf(target) < 0) result.push(target)
-        if (groupTag & 1) break
-      }
-    }
-    return this.nextStateCache[state] = result
+    return result
   }
 
   /// @internal
