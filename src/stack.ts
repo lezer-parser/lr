@@ -42,7 +42,7 @@ export class Stack {
     /// @internal
     readonly bufferBase: number,
     /// @internal
-    public curContext: StackContext,
+    public curContext: StackContext | null,
     // A parent stack from which this was split off, if any. This is
     // set up so that it always points to a stack that has some
     // additional buffer content, never to a stack with an equal
@@ -399,8 +399,9 @@ export class Stack {
 
   private updateContext(context: any) {
     if (context != this.curContext!.context) {
-      this.emitContext()
-      this.curContext = new StackContext(this.curContext.tracker, context)
+      let newCx = new StackContext(this.curContext!.tracker, context)
+      if (newCx.hash != this.curContext!.hash) this.emitContext()
+      this.curContext = newCx
     }
   }
 }
