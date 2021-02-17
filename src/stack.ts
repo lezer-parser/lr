@@ -9,10 +9,8 @@ import {Tree, TreeBuffer, BufferCursor} from "lezer-tree"
 export class Stack {
   /// @internal
   constructor(
-    /// A group of values that the stack will share with all
-    /// split instances
-    ///@internal
-    readonly cx: Parse,
+    /// A the parse that this stack is part of @internal
+    readonly p: Parse,
     /// Holds state, pos, value stack pos (15 bits array index, 15 bits
     /// buffer index) triplets for all but the top state
     /// @internal
@@ -43,6 +41,11 @@ export class Stack {
     // starts writing.
     /// @internal
     readonly bufferBase: number,
+    /// The stack's current [context](#lezer.ContextTracker) value, if
+    /// any. Its type will depend on the context tracker's type
+    /// parameter, or it will be `null` if there is no context
+    /// tracker.
+    public context: any,
     // A parent stack from which this was split off, if any. This is
     // set up so that it always points to a stack that has some
     // additional buffer content, never to a stack with an equal
@@ -58,8 +61,8 @@ export class Stack {
 
   // Start an empty stack
   /// @internal
-  static start(cx: Parse, state: number, pos = 0) {
-    return new Stack(cx, [], state, pos, pos, 0, [], 0, null)
+  static start(p: Parse, state: number, pos = 0) {
+    return new Stack(p, [], state, pos, pos, 0, [], 0, p.parser.context ? p.parser.context.start : null, null)
   }
 
   // Push a state onto the stack, tracking its start position as well
@@ -74,7 +77,7 @@ export class Stack {
   /// @internal
   reduce(action: number) {
     let depth = action >> Action.ReduceDepthShift, type = action & Action.ValueMask
-    let {parser} = this.cx
+    let {parser} = this.p
 
     let dPrec = parser.dynamicPrecedence(type)
     if (dPrec) this.score += dPrec
@@ -84,6 +87,7 @@ export class Stack {
       // the stack without popping anything off.
       if (type < parser.minRepeatTerm) this.storeNode(type, this.reducePos, this.reducePos, 4, true)
       this.pushState(parser.getGoto(this.state, type, true), this.reducePos)
+      this.reduceContext(type)
       return
     }
 
@@ -107,6 +111,7 @@ export class Stack {
       this.state = parser.getGoto(baseStateID, type, true)
     }
     while (this.stack.length > base) this.stack.pop()
+    this.reduceContext(type)
   }
 
   // Shift a value into the buffer
@@ -150,15 +155,16 @@ export class Stack {
     if (action & Action.GotoFlag) {
       this.pushState(action & Action.ValueMask, this.pos)
     } else if ((action & Action.StayFlag) == 0) { // Regular shift
-      let start = this.pos, nextState = action, {parser} = this.cx
+      let start = this.pos, nextState = action, {parser} = this.p
       if (nextEnd > this.pos || next <= parser.maxNode) {
         this.pos = nextEnd
         if (!parser.stateFlag(nextState, StateFlag.Skipped)) this.reducePos = nextEnd
       }
       this.pushState(nextState, start)
       if (next <= parser.maxNode) this.buffer.push(next, start, nextEnd, 4)
+      this.shiftContext(next)
     } else { // Shift-and-stay, which means this is a skipped token
-      if (next <= this.cx.parser.maxNode) this.buffer.push(next, this.pos, nextEnd, 4)
+      if (next <= this.p.parser.maxNode) this.buffer.push(next, this.pos, nextEnd, 4)
       this.pos = nextEnd
     }
   }
@@ -174,15 +180,16 @@ export class Stack {
   // the result of running a nested parser.
   /// @internal
   useNode(value: Tree | TreeBuffer, next: number) {
-    let index = this.cx.reused.length - 1
-    if (index < 0 || this.cx.reused[index] != value) {
-      this.cx.reused.push(value)
+    let index = this.p.reused.length - 1
+    if (index < 0 || this.p.reused[index] != value) {
+      this.p.reused.push(value)
       index++
     }
     let start = this.pos
     this.reducePos = this.pos = start + value.length
     this.pushState(next, start)
     this.buffer.push(index, start, this.reducePos, -1 /* size < 0 means this is a reused value */)
+    if (this.p.parser.context) this.updateContext(this.p.parser.context.reuse(this.context, value, this.p.input, this))
   }
 
   // Split the stack. Due to the buffer sharing and the fact
@@ -200,14 +207,14 @@ export class Stack {
     let buffer = parent.buffer.slice(off), base = parent.bufferBase + off
     // Make sure parent points to an actual parent with content, if there is such a parent.
     while (parent && base == parent.bufferBase) parent = parent.parent
-    return new Stack(this.cx, this.stack.slice(), this.state, this.reducePos, this.pos,
-                     this.score, buffer, base, parent)
+    return new Stack(this.p, this.stack.slice(), this.state, this.reducePos, this.pos,
+                     this.score, buffer, base, this.context, parent)
   }
 
   // Try to recover from an error by 'deleting' (ignoring) one token.
   /// @internal
   recoverByDelete(next: number, nextEnd: number) {
-    let isNode = next <= this.cx.parser.maxNode
+    let isNode = next <= this.p.parser.maxNode
     if (isNode) this.storeNode(next, this.pos, nextEnd)
     this.storeNode(Term.Err, this.pos, nextEnd, isNode ? 8 : 4)
     this.pos = this.reducePos = nextEnd
@@ -220,7 +227,7 @@ export class Stack {
   /// given token when it applies.
   canShift(term: number) {
     for (let sim = new SimulatedStack(this);;) {
-      let action = this.cx.parser.stateSlot(sim.top, ParseState.DefaultReduce) || this.cx.parser.hasAction(sim.top, term)
+      let action = this.p.parser.stateSlot(sim.top, ParseState.DefaultReduce) || this.p.parser.hasAction(sim.top, term)
       if ((action & Action.ReduceFlag) == 0) return true
       if (action == 0) return false
       sim.reduce(action)
@@ -230,10 +237,10 @@ export class Stack {
   /// Find the start position of the rule that is currently being parsed.
   get ruleStart() {
     for (let state = this.state, base = this.stack.length;;) {
-      let force = this.cx.parser.stateSlot(state, ParseState.ForcedReduce)
+      let force = this.p.parser.stateSlot(state, ParseState.ForcedReduce)
       if (!(force & Action.ReduceFlag)) return 0
       base -= 3 * (force >> Action.ReduceDepthShift)
-      if ((force & Action.ValueMask) < this.cx.parser.minRepeatTerm)
+      if ((force & Action.ValueMask) < this.p.parser.minRepeatTerm)
         return this.stack[base + 1]
       state = this.stack[base]
     }
@@ -259,7 +266,7 @@ export class Stack {
   /// When `before` is given, this keeps scanning up the stack until
   /// it finds a match that starts before that position.
   startOf(types: readonly number[], before?: number) {
-    let state = this.state, frame = this.stack.length, {parser} = this.cx
+    let state = this.state, frame = this.stack.length, {parser} = this.p
     for (;;) {
       let force = parser.stateSlot(state, ParseState.ForcedReduce)
       let depth = force >> Action.ReduceDepthShift, term = force & Action.ValueMask
@@ -284,20 +291,28 @@ export class Stack {
   recoverByInsert(next: number): Stack[] {
     if (this.stack.length >= Recover.MaxInsertStackDepth) return []
 
-    let nextStates = this.cx.parser.nextStates(this.state)
-    if (nextStates.length > Recover.MaxNext || this.stack.length >= Recover.DampenInsertStackDepth) {
-      let best = nextStates.filter(s => s != this.state && this.cx.parser.hasAction(s, next))
+    let nextStates = this.p.parser.nextStates(this.state)
+    if (nextStates.length > Recover.MaxNext << 1 || this.stack.length >= Recover.DampenInsertStackDepth) {
+      let best = []
+      for (let i = 0, s; i < nextStates.length; i += 2) {
+        if ((s = nextStates[i + 1]) != this.state && this.p.parser.hasAction(s, next))
+          best.push(nextStates[i], s)
+      }
       if (this.stack.length < Recover.DampenInsertStackDepth)
-        for (let i = 0; best.length < Recover.MaxNext && i < nextStates.length; i++)
-          if (best.indexOf(nextStates[i]) < 0) best.push(nextStates[i])
+        for (let i = 0; best.length < Recover.MaxNext << 1 && i < nextStates.length; i += 2) {
+          let s = nextStates[i + 1]
+          if (!best.some((v, i) => (i & 1) && v == s)) best.push(nextStates[i], s)
+        }
       nextStates = best
     }
     let result: Stack[] = []
-    for (let i = 0; i < nextStates.length && result.length < Recover.MaxNext; i++) {
-      if (nextStates[i] == this.state) continue
+    for (let i = 0; i < nextStates.length && result.length < Recover.MaxNext; i += 2) {
+      let s = nextStates[i + 1]
+      if (s == this.state) continue
       let stack = this.split()
       stack.storeNode(Term.Err, stack.pos, stack.pos, 4, true)
-      stack.pushState(nextStates[i], this.pos)
+      stack.pushState(s, this.pos)
+      stack.shiftContext(nextStates[i])
       stack.score -= Recover.Token
       result.push(stack)
     }
@@ -308,9 +323,9 @@ export class Stack {
   // be done.
   /// @internal
   forceReduce() {
-    let reduce = this.cx.parser.stateSlot(this.state, ParseState.ForcedReduce)
+    let reduce = this.p.parser.stateSlot(this.state, ParseState.ForcedReduce)
     if ((reduce & Action.ReduceFlag) == 0) return false
-    if (!this.cx.parser.validAction(this.state, reduce)) {
+    if (!this.p.parser.validAction(this.state, reduce)) {
       this.storeNode(Term.Err, this.reducePos, this.reducePos, 4, true)
       this.score -= Recover.Reduce
     }
@@ -320,7 +335,7 @@ export class Stack {
 
   /// @internal
   forceAll() {
-    while (!this.cx.parser.stateFlag(this.state, StateFlag.Accepting) && this.forceReduce()) {}
+    while (!this.p.parser.stateFlag(this.state, StateFlag.Accepting) && this.forceReduce()) {}
     return this
   }
 
@@ -329,7 +344,7 @@ export class Stack {
   /// somehow). @internal
   get deadEnd() {
     if (this.stack.length != 3) return false
-    let {parser} = this.cx
+    let {parser} = this.p
     return parser.data[parser.stateSlot(this.state, ParseState.Actions)] == Seq.End &&
       !parser.stateSlot(this.state, ParseState.DefaultReduce)
   }
@@ -351,11 +366,35 @@ export class Stack {
   }
 
   /// Get the parser used by this stack.
-  get parser() { return this.cx.parser }
+  get parser() { return this.p.parser }
 
   /// Test whether a given dialect (by numeric ID, as exported from
   /// the terms file) is enabled.
-  dialectEnabled(dialectID: number) { return this.cx.parser.dialect.flags[dialectID] }
+  dialectEnabled(dialectID: number) { return this.p.parser.dialect.flags[dialectID] }
+
+  private shiftContext(term: number) {
+    if (this.p.parser.context)
+      this.updateContext(this.p.parser.context.shift(this.context, term, this.p.input, this))
+  }
+
+  private reduceContext(term: number) {
+    if (this.p.parser.context)
+      this.updateContext(this.p.parser.context.reduce(this.context, term, this.p.input, this))
+  }
+
+  /// @internal
+  emitContext() {
+    let last = this.buffer.length - 1
+    if (last < 0 || this.buffer[last] != -2)
+      this.buffer.push(this.p.parser.context!.hash(this.context), this.reducePos, this.reducePos, -2)
+  }
+
+  private updateContext(context: any) {
+    if (context != this.context) {
+      this.emitContext()
+      this.context = context
+    }
+  }
 }
 
 export const enum Recover {
@@ -388,7 +427,7 @@ class SimulatedStack {
     } else {
       this.offset -= (depth - 1) * 3
     }
-    let goto = this.stack.cx.parser.getGoto(this.rest[this.offset - 3], term, true)
+    let goto = this.stack.p.parser.getGoto(this.rest[this.offset - 3], term, true)
     this.top = goto
   }
 }

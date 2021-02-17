@@ -24,7 +24,7 @@
     "typescript": "^3.7.2"
   },
   "dependencies": {
-    "lezer-tree": "^0.13.0"
+    "lezer-tree": "^0.13.2"
   },
   "files": ["dist"],
   "scripts": {

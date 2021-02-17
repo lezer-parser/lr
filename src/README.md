@@ -16,6 +16,8 @@
 
 @ExternalTokenizer
 
+@ContextTracker
+
 ### Re-exports
 
 These come from `lezer-tree`, but are exported from this module as

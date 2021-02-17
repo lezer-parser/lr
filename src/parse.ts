@@ -126,6 +126,7 @@ class FragmentCursor {
 class CachedToken extends Token {
   extended = -1
   mask = 0
+  context = 0
 
   clear(start: number) {
     this.start = start
@@ -148,16 +149,18 @@ class TokenCache {
   getActions(stack: Stack, input: Input) {
     let actionIndex = 0
     let main: Token | null = null
-    let {parser} = stack.cx, {tokenizers} = parser
+    let {parser} = stack.p, {tokenizers} = parser
 
     let mask = parser.stateSlot(stack.state, ParseState.TokenizerMask)
+    let context = parser.context ? parser.context.hash(stack.context) : 0
     for (let i = 0; i < tokenizers.length; i++) {
       if (((1 << i) & mask) == 0) continue
       let tokenizer = tokenizers[i], token = this.tokens[i]
       if (main && !tokenizer.fallback) continue
-      if (tokenizer.contextual || token.start != stack.pos || token.mask != mask) {
+      if (tokenizer.contextual || token.start != stack.pos || token.mask != mask || token.context != context) {
         this.updateCachedToken(token, tokenizer, stack, input)
         token.mask = mask
+        token.context = context
       }
 
       if (token.value != Term.Err) {
@@ -175,7 +178,7 @@ class TokenCache {
     if (!main) {
       main = dummyToken
       main.start = stack.pos
-      if (stack.pos == input.length) main.accept(stack.cx.parser.eofTerm, stack.pos)
+      if (stack.pos == input.length) main.accept(stack.p.parser.eofTerm, stack.pos)
       else main.accept(Term.Err, stack.pos + 1)
     }
     this.mainToken = main
@@ -186,18 +189,18 @@ class TokenCache {
     token.clear(stack.pos)
     tokenizer.token(input, token, stack)
     if (token.value > -1) {
-      let {parser} = stack.cx
+      let {parser} = stack.p
 
       for (let i = 0; i < parser.specialized.length; i++) if (parser.specialized[i] == token.value) {
         let result = parser.specializers[i](input.read(token.start, token.end), stack)
-        if (result >= 0 && stack.cx.parser.dialect.allows(result >> 1)) {
+        if (result >= 0 && stack.p.parser.dialect.allows(result >> 1)) {
           if ((result & 1) == Specialize.Specialize) token.value = result >> 1
           else token.extended = result >> 1
           break
         }
       }
     } else if (stack.pos == input.length) {
-      token.accept(stack.cx.parser.eofTerm, stack.pos)
+      token.accept(stack.p.parser.eofTerm, stack.pos)
     } else {
       token.accept(Term.Err, stack.pos + 1)
     }
@@ -213,7 +216,7 @@ class TokenCache {
   }
 
   addActions(stack: Stack, token: number, end: number, index: number) {
-    let {state} = stack, {parser} = stack.cx, {data} = parser
+    let {state} = stack, {parser} = stack.p, {data} = parser
     for (let set = 0; set < 2; set++) {
       for (let i = parser.stateSlot(state, set ? ParseState.Skip : ParseState.Actions);; i += 3) {
         if (data[i] == Seq.End) {
@@ -382,7 +385,9 @@ export class Parse implements PartialParse {
     if (this.fragments) {
       for (let cached = this.fragments.nodeAt(start); cached;) {
         let match = this.parser.nodeSet.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
-        if (match > -1 && cached.length) {
+        if (match > -1 && cached.length &&
+            ((cached as any).contextHash == null ||
+             this.parser.context && this.parser.context.hash(stack.context) == (cached as any).contextHash)) {
           stack.useNode(cached, match)
           if (verbose) console.log(base + this.stackID(stack) + ` (via reuse of ${parser.getName(cached.type.id)})`)
           return true
@@ -502,6 +507,7 @@ export class Parse implements PartialParse {
 
   // Convert the stack's buffer to a syntax tree.
   stackToTree(stack: Stack, pos: number = stack.pos): Tree {
+    if (this.parser.context) stack.emitContext()
     return Tree.build({buffer: StackBufferCursor.create(stack),
                        nodeSet: this.parser.nodeSet,
                        topID: this.topTerm,
@@ -576,6 +582,53 @@ export class Dialect {
   allows(term: number) { return !this.disabled || this.disabled[term] == 0 }
 }
 
+const id: <T>(x: T) => T = x => x
+
+/// Context trackers are used to track stateful context (such as
+/// indentation in the Python grammar, or parent elements in the XML
+/// grammar) needed by external tokenizers. You declare them in a
+/// grammar file as `@context exportName from "module"`.
+///
+/// Context values should be immutable, and can be updated (replaced)
+/// on shift or reduce actions.
+export class ContextTracker<T> {
+  /// @internal
+  start: T
+  /// @internal
+  shift: (context: T, term: number, input: Input, stack: Stack) => T
+  /// @internal
+  reduce: (context: T, term: number, input: Input, stack: Stack) => T
+  /// @internal
+  reuse: (context: T, node: Tree | TreeBuffer, input: Input, stack: Stack) => T
+  /// @internal
+  hash: (context: T) => number
+
+  /// The export used in a `@context` declaration should be of this
+  /// type.
+  constructor(spec: {
+    /// The initial value of the context.
+    start: T,
+    /// Update the context when the parser executes a
+    /// [shift](https://en.wikipedia.org/wiki/LR_parser#Shift_and_reduce_actions)
+    /// action.
+    shift?(context: T, term: number, input: Input, stack: Stack): T
+    /// Update the context when the parser executes a reduce action.
+    reduce?(context: T, term: number, input: Input, stack: Stack): T
+    /// Update the context when the parser reuses a node from a tree
+    /// fragment.
+    reuse?(context: T, node: Tree | TreeBuffer, input: Input, stack: Stack): T
+    /// Reduce a context value to a number (for cheap storage and
+    /// comparison).
+    hash(context: T): number
+  }) {
+    this.start = spec.start
+    this.shift = spec.shift || id
+    this.reduce = spec.reduce || id
+    this.reuse = spec.reuse || id
+    this.hash = spec.hash
+  }
+}
+
 type ParserSpec = {
   version: number,
   states: string | Uint32Array,
@@ -589,6 +642,7 @@ type ParserSpec = {
   tokenData: string,
   tokenizers: (Tokenizer | number)[],
   topRules: {[name: string]: [number, number]},
+  context: ContextTracker<any> | null,
   nested?: [string, NestedParser, string | Uint16Array, number][],
   dialects?: {[name: string]: number},
   dynamicPrecedences?: {[term: number]: number},
@@ -653,6 +707,8 @@ export class Parser {
   readonly tokenizers: readonly Tokenizer[]
   /// Maps top rule names to [state ID, top term ID] pairs.
   readonly topRules: {[name: string]: [number, number]}
+  /// @internal
+  readonly context: ContextTracker<unknown> | null
   /// Metadata about nested grammars used in this grammar @internal
   readonly nested: readonly NestInfo[]
   /// A mapping from dialect names to the tokens that are exclusive
@@ -691,6 +747,7 @@ export class Parser {
     let tokenArray = decodeArray<Uint16Array>(spec.tokenData)
     let nodeNames = spec.nodeNames.split(" ")
     this.minRepeatTerm = nodeNames.length
+    this.context = spec.context
     for (let i = 0; i < spec.repeatNodeCount; i++) nodeNames.push("")
     let nodeProps: [NodeProp<any>, any][][] = []
     for (let i = 0; i < nodeNames.length; i++) nodeProps.push([])
@@ -828,8 +885,10 @@ export class Parser {
         if (this.data[i + 1] == Seq.Next) i = pair(this.data, i + 2)
         else break
       }
-      if ((this.data[i + 2] & (Action.ReduceFlag >> 16)) == 0 && result.indexOf(this.data[i + 1]) < 0)
-        result.push(this.data[i + 1])
+      if ((this.data[i + 2] & (Action.ReduceFlag >> 16)) == 0) {
+        let value = this.data[i + 1]
+        if (!result.some((v, i) => (i & 1) && v == value)) result.push(this.data[i], value)
+      }
     }
     return result
   }
@@ -927,8 +986,8 @@ function findOffset(data: Readonly<Uint16Array>, start: number, term: number) {
 function findFinished(stacks: Stack[]) {
   let best: Stack | null = null
   for (let stack of stacks) {
-    if (stack.pos == stack.cx.input.length &&
-        stack.cx.parser.stateFlag(stack.state, StateFlag.Accepting) &&
+    if (stack.pos == stack.p.input.length &&
+        stack.p.parser.stateFlag(stack.state, StateFlag.Accepting) &&
         (!best || best.score < stack.score))
       best = stack
   }
