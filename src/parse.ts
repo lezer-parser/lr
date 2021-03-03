@@ -712,7 +712,7 @@ export class Parser {
   readonly minRepeatTerm: number
   /// The tokenizer objects used by the grammar @internal
   readonly tokenizers: readonly Tokenizer[]
-  /// Maps top rule names to [state ID, top term ID] pairs.
+  /// Maps top rule names to [state ID, top term ID] pairs. @internal
   readonly topRules: {[name: string]: [number, number]}
   /// @internal
   readonly context: ContextTracker<unknown> | null
@@ -953,6 +953,9 @@ export class Parser {
 
   /// Tells you whether this grammar has any nested grammars.
   get hasNested() { return this.nested.length > 0 }
+
+  /// The type of top node produced by the parser.
+  get topNode() { return this.nodeSet.types[this.top[1]] }
 
   /// @internal
   dynamicPrecedence(term: number) {
