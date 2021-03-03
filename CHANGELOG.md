@@ -1,3 +1,9 @@
+## 0.13.4 (2021-03-03)
+
+### New features
+
+`Parser` instances now have a `topNode` property that holds the type of the parser's top node.
+
 ## 0.13.3 (2021-02-17)
 
 ### New features
