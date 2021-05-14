@@ -178,8 +178,12 @@ class TokenCache {
     if (!main) {
       main = dummyToken
       main.start = stack.pos
-      if (stack.pos == input.length) main.accept(stack.p.parser.eofTerm, stack.pos)
-      else main.accept(Term.Err, stack.pos + 1)
+      if (stack.pos == input.length) {
+        main.accept(stack.p.parser.eofTerm, stack.pos)
+        actionIndex = this.addActions(stack, main.value, main.end, actionIndex)
+      } else {
+        main.accept(Term.Err, stack.pos + 1)
+      }
     }
     this.mainToken = main
     return this.actions
@@ -199,8 +203,6 @@ class TokenCache {
           break
         }
       }
-    } else if (stack.pos == input.length) {
-      token.accept(stack.p.parser.eofTerm, stack.pos)
     } else {
       token.accept(Term.Err, stack.pos + 1)
     }
