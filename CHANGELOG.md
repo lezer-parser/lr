@@ -1,3 +1,9 @@
+## 0.13.5 (2021-05-14)
+
+### Bug fixes
+
+Fix a bug with overeager reuse of nodes on change boundaries.
+
 ## 0.13.4 (2021-03-03)
 
 ### New features
