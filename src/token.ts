@@ -1,6 +1,76 @@
 import {Input} from "lezer-tree"
 import {Stack} from "./stack"
 
+export class InputStream {
+  chunk = ""
+  chunkOff = 0
+  chunkPos: number
+  next!: number
+  maxPos: number
+
+  constructor(readonly input: Input, public pos: number, public end: number) {
+    this.maxPos = this.chunkPos = pos
+    this.readNext()
+  }
+
+  readNext() {
+    if (this.chunkOff == this.chunk.length) {
+      let nextChunk
+      if (this.pos >= this.end || !(nextChunk = this.input.chunkAfter(this.pos)) || nextChunk.pos >= this.end) {
+        this.next = -1
+        this.chunk = ""
+        this.chunkOff = 0
+        return
+      }
+      let end = nextChunk.pos + nextChunk.text.length
+      this.chunk = end > this.end ? nextChunk.text.slice(0, this.end - nextChunk.pos) : nextChunk.text
+      this.chunkPos = nextChunk.pos
+      if (this.chunkPos > this.pos) {
+        this.pos = this.chunkPos
+        this.chunkOff = 0
+      } else {
+        this.chunkOff = this.pos - this.chunkPos
+      }
+    }
+    this.next = this.chunk.charCodeAt(this.chunkOff)
+  }
+
+  advance() {
+    if (this.next < 0) return
+    this.chunkOff++
+    this.pos++
+    if (this.pos > this.maxPos) this.maxPos = this.pos
+    this.readNext()
+  }
+
+  reset(pos: number) {
+    if (this.pos == pos) return this
+    // FIXME keep a prev chunk to avoid have to re-query the input every time at the end of a chunk
+    this.pos = pos
+    if (pos >= this.chunkPos && pos < this.chunkPos + this.chunk.length) {
+      this.chunkOff = pos - this.chunkPos
+    } else {
+      this.chunk = ""
+      this.chunkOff = 0
+    }
+    this.readNext()
+    return this
+  }
+
+  read(from: number, to: number) {
+    if (from >= this.chunkPos && to <= this.chunkPos + this.chunk.length)
+      return this.chunk.slice(from - this.chunkPos, to - this.chunkPos)
+    let result = ""
+    for (let pos = from; pos < to;) {
+      let next = this.input.chunkAfter(pos)
+      if (!next) break
+      result += next.text.slice(Math.max(0, from - next.pos), Math.min(next.text.length, to - next.pos))
+      pos = next.pos + next.text.length
+    }
+    return result
+  }
+}
+
 /// Tokenizers write the tokens they read into instances of this class.
 export class Token {
   /// The start of the token. This is set by the parser, and should not
@@ -22,7 +92,7 @@ export class Token {
 }
 
 export interface Tokenizer {
-  token(input: Input, token: Token, stack: Stack): void
+  token(input: InputStream, token: Token, stack: Stack): void
   contextual: boolean
   fallback: boolean
   extend: boolean
@@ -36,7 +106,7 @@ export class TokenGroup implements Tokenizer {
 
   constructor(readonly data: Readonly<Uint16Array>, readonly id: number) {}
 
-  token(input: Input, token: Token, stack: Stack) { readToken(this.data, input, token, stack, this.id) }
+  token(input: InputStream, token: Token, stack: Stack) { readToken(this.data, input, token, stack, this.id) }
 }
 
 TokenGroup.prototype.contextual = TokenGroup.prototype.fallback = TokenGroup.prototype.extend = false
@@ -60,12 +130,9 @@ interface ExternalOptions {
 
 /// Exports that are used for `@external tokens` in the grammar should
 /// export an instance of this class.
-export class ExternalTokenizer {
-  /// @internal
+export class ExternalTokenizer implements Tokenizer {
   contextual: boolean
-  /// @internal
   fallback: boolean
-  /// @internal
   extend: boolean
 
   /// Create a tokenizer. The first argument is the function that,
@@ -74,8 +141,7 @@ export class ExternalTokenizer {
   /// token. `token.start` should be used as the start position to
   /// scan from.
   constructor(
-    /// @internal
-    readonly token: (input: Input, token: Token, stack: Stack) => void,
+    readonly token: (input: InputStream, token: Token, stack: Stack) => void,
     options: ExternalOptions = {}
   ) {
     this.contextual = !!options.contextual
@@ -105,12 +171,12 @@ export class ExternalTokenizer {
 // long as new states with the a matching group mask can be reached,
 // and updating `token` when it matches a token.
 function readToken(data: Readonly<Uint16Array>,
-                   input: Input,
+                   input: InputStream,
                    token: Token,
                    stack: Stack,
                    group: number) {
   let state = 0, groupMask = 1 << group, dialect = stack.p.parser.dialect
-  scan: for (let pos = token.start;;) {
+  scan: for (;;) {
     if ((groupMask & data[state]) == 0) break
     let accEnd = data[state + 1]
     // Check whether this state can lead to a token in the current group
@@ -120,19 +186,18 @@ function readToken(data: Readonly<Uint16Array>,
       let term = data[i]
       if (dialect.allows(term) &&
           (token.value == -1 || token.value == term || stack.p.parser.overrides(term, token.value))) {
-        token.accept(term, pos)
+        token.accept(term, input.pos)
         break
       }
     }
-    let next = input.get(pos++)
     // Do a binary search on the state's edges
-    for (let low = 0, high = data[state + 2]; low < high;) {
+    for (let next = input.next, low = 0, high = data[state + 2]; low < high;) {
       let mid = (low + high) >> 1
       let index = accEnd + mid + (mid << 1)
       let from = data[index], to = data[index + 1]
       if (next < from) high = mid
       else if (next >= to) low = mid + 1
-      else { state = data[index + 2]; continue scan }
+      else { state = data[index + 2]; input.advance(); continue scan }
     }
     break
   }

@@ -2,7 +2,7 @@ import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, 
         Input, stringInput, PartialParse, ParseContext} from "lezer-tree"
 import {Stack, StackBufferCursor} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
-import {Token, Tokenizer, TokenGroup, ExternalTokenizer} from "./token"
+import {Token, Tokenizer, TokenGroup, ExternalTokenizer, InputStream} from "./token"
 import {decodeArray} from "./decode"
 
 // FIXME find some way to reduce recovery work done when the input
@@ -12,6 +12,12 @@ import {decodeArray} from "./decode"
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
 
 let stackIDs: WeakMap<Stack, string> | null = null
+
+export interface ParseSpec {
+  from?: number,
+  to?: number,
+  context?: ParseContext
+}
 
 /// Used to configure a [nested parse](#lezer.Parser.withNested).
 export type NestedParserSpec = {
@@ -23,7 +29,7 @@ export type NestedParserSpec = {
   ///
   /// When this property isn't given, the inner region is simply
   /// skipped over intead of parsed.
-  startParse?: (input: Input, startPos: number, context: ParseContext) => PartialParse
+  startParse?: (input: Input, spec: ParseSpec) => PartialParse
   /// When given, an additional node will be wrapped around the
   /// part of the tree produced by this inner parse.
   wrapType?: NodeType | number
@@ -38,7 +44,7 @@ export type NestedParserSpec = {
 /// given an input document and a stack, returns such a spec or `null`
 /// to indicate that the nested parse should not happen (and the
 /// grammar's fallback expression should be used).
-export type NestedParser = NestedParserSpec | ((input: Input, stack: Stack) => NestedParserSpec | null)
+export type NestedParser = NestedParserSpec | ((input: InputStream, stack: Stack) => NestedParserSpec | null)
 
 function cutAt(tree: Tree, pos: number, side: 1 | -1) {
   let cursor = tree.cursor(pos)
@@ -142,11 +148,11 @@ class TokenCache {
 
   actions: number[] = []
 
-  constructor(parser: Parser) {
+  constructor(parser: Parser, readonly stream: InputStream) {
     this.tokens = parser.tokenizers.map(_ => new CachedToken)
   }
 
-  getActions(stack: Stack, input: Input) {
+  getActions(stack: Stack) {
     let actionIndex = 0
     let main: Token | null = null
     let {parser} = stack.p, {tokenizers} = parser
@@ -158,7 +164,7 @@ class TokenCache {
       let tokenizer = tokenizers[i], token = this.tokens[i]
       if (main && !tokenizer.fallback) continue
       if (tokenizer.contextual || token.start != stack.pos || token.mask != mask || token.context != context) {
-        this.updateCachedToken(token, tokenizer, stack, input)
+        this.updateCachedToken(token, tokenizer, stack)
         token.mask = mask
         token.context = context
       }
@@ -178,7 +184,7 @@ class TokenCache {
     if (!main) {
       main = dummyToken
       main.start = stack.pos
-      if (stack.pos == input.length) {
+      if (stack.pos == this.stream.end) {
         main.accept(stack.p.parser.eofTerm, stack.pos)
         actionIndex = this.addActions(stack, main.value, main.end, actionIndex)
       } else {
@@ -189,14 +195,14 @@ class TokenCache {
     return this.actions
   }
 
-  updateCachedToken(token: CachedToken, tokenizer: Tokenizer, stack: Stack, input: Input) {
+  updateCachedToken(token: CachedToken, tokenizer: Tokenizer, stack: Stack) {
     token.clear(stack.pos)
-    tokenizer.token(input, token, stack)
+    tokenizer.token(this.stream.reset(stack.pos), token, stack)
     if (token.value > -1) {
       let {parser} = stack.p
 
       for (let i = 0; i < parser.specialized.length; i++) if (parser.specialized[i] == token.value) {
-        let result = parser.specializers[i](input.read(token.start, token.end), stack)
+        let result = parser.specializers[i](this.stream.read(token.start, token.end), stack)
         if (result >= 0 && stack.p.parser.dialect.allows(result >> 1)) {
           if ((result & 1) == Specialize.Specialize) token.value = result >> 1
           else token.extended = result >> 1
@@ -263,16 +269,24 @@ export class Parse implements PartialParse {
   tokens: TokenCache
   topTerm: number
 
+  public input: Input
+  public startPos: number
+  public endPos: number
+  public context: ParseContext
+
   constructor(
     public parser: Parser,
-    public input: Input,
-    public startPos: number,
-    public context: ParseContext
+    input: Input | string,
+    spec: ParseSpec
   ) {
-    this.tokens = new TokenCache(parser)
+    this.input = typeof input == "string" ? stringInput(input) : input
+    this.startPos = spec.from ?? 0
+    this.endPos = spec.to ?? this.input.length
+    this.context = spec.context || {}
+    this.tokens = new TokenCache(parser, new InputStream(this.input, this.startPos, this.endPos))
     this.topTerm = parser.top[1]
     this.stacks = [Stack.start(this, parser.top[0], this.startPos)]
-    let fragments = context?.fragments
+    let fragments = this.context.fragments
     this.fragments = fragments && fragments.length ? new FragmentCursor(fragments) : null
   }
 
@@ -381,7 +395,7 @@ export class Parse implements PartialParse {
   // given, stacks split off by ambiguous operations will be pushed to
   // `split`, or added to `stacks` if they move `pos` forward.
   private advanceStack(stack: Stack, stacks: null | Stack[], split: null | Stack[]) {
-    let start = stack.pos, {input, parser} = this
+    let start = stack.pos, {parser} = this
     let base = verbose ? this.stackID(stack) + " -> " : ""
 
     if (this.fragments) {
@@ -408,7 +422,7 @@ export class Parse implements PartialParse {
       return true
     }
 
-    let actions = this.tokens.getActions(stack, input)
+    let actions = this.tokens.getActions(stack)
     for (let i = 0; i < actions.length;) {
       let action = actions[i++], term = actions[i++], end = actions[i++]
       let last = i == actions.length || !split
@@ -477,7 +491,7 @@ export class Parse implements PartialParse {
         this.advanceFully(insert, newStacks)
       }
 
-      if (this.input.length > stack.pos) {
+      if (this.endPos > stack.pos) {
         if (tokenEnd == stack.pos) {
           tokenEnd++
           token = Term.Err
@@ -523,7 +537,7 @@ export class Parse implements PartialParse {
     let info = this.parser.findNested(stack.state)
     if (!info) return null
     let spec: NestedParser | null = info.value
-    if (typeof spec == "function") spec = spec(this.input, stack)
+    if (typeof spec == "function") spec = spec(this.tokens.stream, stack)
     return spec ? {stack, info, spec} : null
   }
 
@@ -533,7 +547,7 @@ export class Parse implements PartialParse {
     this.nestEnd = this.scanForNestEnd(stack, info.end, spec.filterEnd)
     this.nestWrap = typeof spec.wrapType == "number" ? this.parser.nodeSet.types[spec.wrapType] : spec.wrapType || null
     if (spec.startParse) {
-      this.nested = spec.startParse(this.input.clip(this.nestEnd), stack.pos, this.context)
+      this.nested = spec.startParse(this.input, {from: stack.pos, to: this.nestEnd, context: this.context})
     } else {
       this.finishNested(stack)
     }
@@ -543,8 +557,8 @@ export class Parse implements PartialParse {
     for (let pos = stack.pos; pos < this.input.length; pos++) {
       dummyToken.start = pos
       dummyToken.value = -1
-      endToken.token(this.input, dummyToken, stack)
-      if (dummyToken.value > -1 && (!filter || filter(this.input.read(pos, dummyToken.end)))) return pos
+      endToken.token(this.tokens.stream.reset(pos), dummyToken, stack)
+      if (dummyToken.value > -1 && (!filter || filter(this.tokens.stream.read(pos, dummyToken.end)))) return pos
     }
     return this.input.length
   }
@@ -812,9 +826,8 @@ export class Parser {
   }
 
   /// Parse a given string or stream.
-  parse(input: Input | string, startPos: number = 0, context: ParseContext = {}) {
-    if (typeof input == "string") input = stringInput(input)
-    let cx = new Parse(this, input, startPos, context)
+  parse(input: Input | string, spec: ParseSpec = {}) {
+    let cx = new Parse(this, input, spec)
     for (;;) {
       let done = cx.advance()
       if (done) return done
@@ -822,9 +835,8 @@ export class Parser {
   }
 
   /// Start an incremental parse.
-  startParse(input: Input | string, startPos: number = 0, context: ParseContext = {}): PartialParse {
-    if (typeof input == "string") input = stringInput(input)
-    return new Parse(this, input, startPos, context)
+  startParse(input: Input | string, spec: ParseSpec = {}): PartialParse {
+    return new Parse(this, input, spec)
   }
 
   /// Get a goto table entry @internal
