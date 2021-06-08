@@ -402,7 +402,8 @@ export class Parse implements PartialParse {
       let strictCx = stack.curContext && stack.curContext.tracker.strict, cxHash = strictCx ? stack.curContext!.hash : 0
       for (let cached = this.fragments.nodeAt(start); cached;) {
         let match = this.parser.nodeSet.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
-        if (match > -1 && cached.length && (!strictCx || ((cached as any).contextHash || 0) == cxHash)) {
+        if (match > -1 && cached.length &&
+            (!strictCx || cached instanceof Tree && (cached.prop(NodeProp.contextHash) || 0) == cxHash)) {
           stack.useNode(cached, match)
           if (verbose) console.log(base + this.stackID(stack) + ` (via reuse of ${parser.getName(cached.type.id)})`)
           return true
