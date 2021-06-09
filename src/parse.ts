@@ -1,6 +1,6 @@
 import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource,
         Input, stringInput, PartialParse, ParseContext} from "lezer-tree"
-import {Stack, StackBufferCursor} from "./stack"
+import {Stack, StackBufferCursor, CanNest} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {Token, Tokenizer, TokenGroup, ExternalTokenizer, InputStream} from "./token"
 import {decodeArray} from "./decode"
@@ -525,15 +525,10 @@ export class Parse implements PartialParse {
   }
 
   private checkNest(stack: Stack) {
-    let table = this.parser.nested
-    if (!table) return null
-    let buf = stack.buffer, top = buf.length, nest, parser
-    if (top == 0 && stack.parent) {
-      top = stack.bufferBase - stack.parent.bufferBase
-      buf = stack.parent.buffer
-    }
-    if (!top || !(nest = table[buf[top - 4]]) || !(parser = nest(this.input, buf[top - 3], buf[top - 2]))) return null
-    return {stack, from: buf[top - 3], to: buf[top - 2], parser}
+    let found = CanNest.get(stack)
+    if (!found) return null
+    CanNest.delete(stack)
+    return {stack, ...found}
   }
 
   private startNested({stack, from, to, parser}: {stack: Stack, from: number, to: number, parser: NestedParser}) {
@@ -653,25 +648,25 @@ type ParserSpec = {
 /// Configuration options to pass to a parser.
 export interface ParserConfig {
   /// Node props to add to the parser's node set.
-  props?: readonly NodePropSource[],
+  props?: readonly NodePropSource[]
   /// The name of the @top declaration to parse from. If not
   /// specified, the first @top declaration is used.
-  top?: string,
+  top?: string
   /// A space-separated string of dialects to enable.
-  dialect?: string,
+  dialect?: string
   /// The nested grammars to use. This can be used to associate nested
   /// parsers with specific node types. The functions passed here will
   /// be called when such a node is created and, if they return a
   /// parser, that parser will be used to parse the extent of that
   /// node.
-  nested?: NestRecord,
+  nested?: NestRecord
   /// Add new nested parsers to the existing set already present in
   /// the parser (as opposed to
   /// [`nested`](#lezer.ParserConfig.nexted), which replaces all
   /// existing nested parsers).
-  addNested?: NestRecord,
+  addNested?: NestRecord
   /// Replace the given external tokenizers with new ones.
-  tokenizers?: {from: ExternalTokenizer, to: ExternalTokenizer}[],
+  tokenizers?: {from: ExternalTokenizer, to: ExternalTokenizer}[]
   /// When true, the parser will raise an exception, rather than run
   /// its error-recovery strategies, when the input doesn't match the
   /// grammar.

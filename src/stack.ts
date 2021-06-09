@@ -1,6 +1,8 @@
 import {Action, Term, StateFlag, ParseState, Seq} from "./constants"
-import {Parse, ContextTracker} from "./parse"
+import {Parse, ContextTracker, NestedParser} from "./parse"
 import {Tree, TreeBuffer, BufferCursor, NodeProp} from "lezer-tree"
+
+export const CanNest: WeakMap<Stack, {from: number, to: number, parser: NestedParser}> = new WeakMap
 
 /// A parse stack. These are used internally by the parser to track
 /// parsing progress. They also provide some properties and methods
@@ -151,6 +153,7 @@ export class Stack {
       this.buffer[index + 2] = end
       this.buffer[index + 3] = size
     }
+    this.checkNesting(term, start, end)
   }
 
   // Apply a shift action
@@ -165,12 +168,24 @@ export class Stack {
         if (!parser.stateFlag(nextState, StateFlag.Skipped)) this.reducePos = nextEnd
       }
       this.pushState(nextState, start)
-      if (next <= parser.maxNode) this.buffer.push(next, start, nextEnd, 4)
+      if (next <= parser.maxNode) {
+        this.buffer.push(next, start, nextEnd, 4)
+        this.checkNesting(next, start, nextEnd)
+      }
       this.shiftContext(next)
     } else { // Shift-and-stay, which means this is a skipped token
-      if (next <= this.p.parser.maxNode) this.buffer.push(next, this.pos, nextEnd, 4)
+      if (next <= this.p.parser.maxNode) {
+        this.buffer.push(next, this.pos, nextEnd, 4)
+        this.checkNesting(next, this.pos, nextEnd)
+      }
       this.pos = nextEnd
     }
+  }
+
+  private checkNesting(term: number, from: number, to: number) {
+    let table = this.p.parser.nested, nest, parser
+    if (table && (nest = table[term]) && (parser = nest(this.p.input, from, to)))
+      CanNest.set(this, {from, to, parser})
   }
 
   // Apply an action
