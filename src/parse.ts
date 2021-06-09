@@ -20,7 +20,7 @@ export interface ParseSpec {
 }
 
 /// Used to configure a [nested parse](#lezer.Parser.withNested).
-export type NestedParserSpec = {
+export type NestedParser = {
   /// The inner parser. Will be passed the input,
   /// [clipped](#lezer.Input.clip) to the size of the parseable
   /// region, the start position of the inner region as `startPos`,
@@ -29,22 +29,12 @@ export type NestedParserSpec = {
   ///
   /// When this property isn't given, the inner region is simply
   /// skipped over intead of parsed.
-  startParse?: (input: Input, spec: ParseSpec) => PartialParse
-  /// When given, an additional node will be wrapped around the
-  /// part of the tree produced by this inner parse.
-  wrapType?: NodeType | number
-  /// When given, this will be called with the token that ends the
-  /// inner region. It can return `false` to cause a given end token
-  /// to be ignored.
-  filterEnd?(endToken: string): boolean
+  startParse: (input: Input, spec: ParseSpec) => PartialParse
 }
 
-/// This type is used to specify a nested parser. It may directly be a
-/// nested parse [spec](#lezer.NestedParseSpec), or a function that,
-/// given an input document and a stack, returns such a spec or `null`
-/// to indicate that the nested parse should not happen (and the
-/// grammar's fallback expression should be used).
-export type NestedParser = NestedParserSpec | ((input: InputStream, stack: Stack) => NestedParserSpec | null)
+type NestRecord = {
+  [term: number]: (input: Input, from: number, to: number) => NestedParser | null
+}
 
 function cutAt(tree: Tree, pos: number, side: 1 | -1) {
   let cursor = tree.cursor(pos)
@@ -256,16 +246,15 @@ const enum Rec {
 export class Parse implements PartialParse {
   // Active parse stacks.
   stacks: Stack[]
-  // The position to which the parse has advanced.
+  // The position to which the parse has advanced. FIXME needs to be reconceptualized
   pos = 0
   recovering = 0
   fragments: FragmentCursor | null
   nextStackID = 0x2654
   nested: PartialParse | null = null
-  nestEnd = 0
-  nestWrap: NodeType | null = null
 
   reused: (Tree | TreeBuffer)[] = []
+  propValues: any[] = []
   tokens: TokenCache
   topTerm: number
 
@@ -529,46 +518,32 @@ export class Parse implements PartialParse {
                        topID: this.topTerm,
                        maxBufferLength: this.parser.bufferLength,
                        reused: this.reused,
+                       propValues: this.propValues,
                        start: this.startPos,
                        length: pos - this.startPos,
                        minRepeatType: this.parser.minRepeatTerm})
   }
 
   private checkNest(stack: Stack) {
-    let info = this.parser.findNested(stack.state)
-    if (!info) return null
-    let spec: NestedParser | null = info.value
-    if (typeof spec == "function") spec = spec(this.tokens.stream, stack)
-    return spec ? {stack, info, spec} : null
+    let table = this.parser.nested
+    if (!table) return null
+    let buf = stack.buffer, top = buf.length, nest, parser
+    if (top == 0 && stack.parent) {
+      top = stack.bufferBase - stack.parent.bufferBase
+      buf = stack.parent.buffer
+    }
+    if (!top || !(nest = table[buf[top - 4]]) || !(parser = nest(this.input, buf[top - 3], buf[top - 2]))) return null
+    return {stack, from: buf[top - 3], to: buf[top - 2], parser}
   }
 
-  private startNested(nest: {stack: Stack, info: NestInfo, spec: NestedParserSpec}) {
-    let {stack, info, spec} = nest
+  private startNested({stack, from, to, parser}: {stack: Stack, from: number, to: number, parser: NestedParser}) {
+    // FIXME somehow give the inner parser access to tree fragments from mounted nodes, if available
+    this.nested = parser.startParse(this.input, {from, to, context: this.context})
     this.stacks = [stack]
-    this.nestEnd = this.scanForNestEnd(stack, info.end, spec.filterEnd)
-    this.nestWrap = typeof spec.wrapType == "number" ? this.parser.nodeSet.types[spec.wrapType] : spec.wrapType || null
-    if (spec.startParse) {
-      this.nested = spec.startParse(this.input, {from: stack.pos, to: this.nestEnd, context: this.context})
-    } else {
-      this.finishNested(stack)
-    }
   }
 
-  private scanForNestEnd(stack: Stack, endToken: TokenGroup, filter?: (token: string) => boolean) {
-    for (let pos = stack.pos; pos < this.input.length; pos++) {
-      dummyToken.start = pos
-      dummyToken.value = -1
-      endToken.token(this.tokens.stream.reset(pos), dummyToken, stack)
-      if (dummyToken.value > -1 && (!filter || filter(this.tokens.stream.read(pos, dummyToken.end)))) return pos
-    }
-    return this.input.length
-  }
-
-  private finishNested(stack: Stack, tree?: Tree) {
-    if (this.nestWrap) tree = new Tree(this.nestWrap, tree ? [tree] : [], tree ? [0] : [], this.nestEnd - stack.pos)
-    else if (!tree) tree = new Tree(NodeType.none, [], [], this.nestEnd - stack.pos)
-    let info = this.parser.findNested(stack.state)!
-    stack.useNode(tree, this.parser.getGoto(stack.state, info.placeholder, true))
+  private finishNested(stack: Stack, tree: Tree) {
+    stack.mount(tree)
     if (verbose) console.log(this.stackID(stack) + ` (via unnest)`)
   }
 
@@ -667,23 +642,12 @@ type ParserSpec = {
   tokenizers: (Tokenizer | number)[],
   topRules: {[name: string]: [number, number]},
   context: ContextTracker<any> | null,
-  nested?: [string, NestedParser, string | Uint16Array, number][],
+  nested?: NestRecord,
   dialects?: {[name: string]: number},
   dynamicPrecedences?: {[term: number]: number},
   specialized?: {term: number, get: (value: string, stack: Stack) => number}[],
   tokenPrec: number,
   termNames?: {[id: number]: string}
-}
-
-type NestInfo = {
-  // A name, used by `withNested`
-  name: string,
-  value: NestedParser,
-  // A token-recognizing automaton for the end of the nesting
-  end: TokenGroup,
-  // The id of the placeholder term that appears in the grammar at
-  // the position of this nesting
-  placeholder: number
 }
 
 /// Configuration options to pass to a parser.
@@ -695,10 +659,17 @@ export interface ParserConfig {
   top?: string,
   /// A space-separated string of dialects to enable.
   dialect?: string,
-  /// The nested grammars to use. This can be used to, for example,
-  /// swap in a different language for a nested grammar or fill in a
-  /// nested grammar that was left blank by the original grammar.
-  nested?: {[name: string]: NestedParser},
+  /// The nested grammars to use. This can be used to associate nested
+  /// parsers with specific node types. The functions passed here will
+  /// be called when such a node is created and, if they return a
+  /// parser, that parser will be used to parse the extent of that
+  /// node.
+  nested?: NestRecord,
+  /// Add new nested parsers to the existing set already present in
+  /// the parser (as opposed to
+  /// [`nested`](#lezer.ParserConfig.nexted), which replaces all
+  /// existing nested parsers).
+  addNested?: NestRecord,
   /// Replace the given external tokenizers with new ones.
   tokenizers?: {from: ExternalTokenizer, to: ExternalTokenizer}[],
   /// When true, the parser will raise an exception, rather than run
@@ -734,7 +705,7 @@ export class Parser {
   /// @internal
   readonly context: ContextTracker<unknown> | null
   /// Metadata about nested grammars used in this grammar @internal
-  readonly nested: readonly NestInfo[]
+  readonly nested: null | NestRecord
   /// A mapping from dialect names to the tokens that are exclusive
   /// to them. @internal
   readonly dialects: {[name: string]: number}
@@ -813,9 +784,7 @@ export class Parser {
     this.maxTerm = spec.maxTerm
     this.tokenizers = spec.tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value)
     this.topRules = spec.topRules
-    this.nested = (spec.nested || []).map(([name, value, endToken, placeholder]) => {
-      return {name, value, end: new TokenGroup(decodeArray(endToken), 0), placeholder}
-    })
+    this.nested = spec.nested || null
     this.dialects = spec.dialects || {}
     this.dynamicPrecedences = spec.dynamicPrecedences || null
     this.tokenPrecTable = spec.tokenPrec
@@ -881,12 +850,6 @@ export class Parser {
   }
 
   /// @internal
-  findNested(state: number) {
-    let flags = this.stateSlot(state, ParseState.Flags)
-    return flags & StateFlag.StartNest ? this.nested[flags >> StateFlag.NestShift] : null
-  }
-
-  /// @internal
   validAction(state: number, action: number) {
     if (action == this.stateSlot(state, ParseState.DefaultReduce)) return true
     for (let i = this.stateSlot(state, ParseState.Actions);; i += 3) {
@@ -942,16 +905,25 @@ export class Parser {
       })
     if (config.dialect)
       copy.dialect = this.parseDialect(config.dialect)
-    if (config.nested)
-      copy.nested = this.nested.map(obj => {
-        if (!Object.prototype.hasOwnProperty.call(config.nested, obj.name)) return obj
-        return {name: obj.name, value: config.nested![obj.name], end: obj.end, placeholder: obj.placeholder}
-      })
+    if (config.nested) {
+      let count = this.checkNested(config.nested)
+      copy.nested = count ? config.nested : null
+    }
+    if (config.addNested) {
+      this.checkNested(config.addNested)
+      copy.nested = Object.assign(Object.create(null), config.nested, config.addNested)
+    }
     if (config.strict != null)
       copy.strict = config.strict
     if (config.bufferLength != null)
       copy.bufferLength = config.bufferLength
     return copy as Parser
+  }
+
+  private checkNested(nested: {[id: number]: any}) {
+    let keys = Object.keys(nested)
+    for (let k of keys) if (+k > this.maxNode) throw new Error("Anonymous terms cannot be used for nesting")
+    return keys.length
   }
 
   /// Returns the name associated with a given term. This will only
@@ -967,7 +939,7 @@ export class Parser {
   get eofTerm() { return this.maxNode + 1 }
 
   /// Tells you whether this grammar has any nested grammars.
-  get hasNested() { return this.nested.length > 0 }
+  get hasNested() { return !!this.nested }
 
   /// The type of top node produced by the parser.
   get topNode() { return this.nodeSet.types[this.top[1]] }

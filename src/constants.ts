@@ -49,12 +49,7 @@ export const enum StateFlag {
   // after them).
   Skipped = 1,
   // Indicates whether this is an accepting state.
-  Accepting = 2,
-  // States that start a nested grammar have `StartNest` set and store
-  // the index into `parser.nested` for the nested grammar used in the
-  // bits after `NestShift`.
-  StartNest = 4,
-  NestShift = 10
+  Accepting = 2
 }
 
 // The lowest bit of the values stored in `parser.specializations`

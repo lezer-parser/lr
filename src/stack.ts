@@ -1,6 +1,6 @@
 import {Action, Term, StateFlag, ParseState, Seq} from "./constants"
 import {Parse, ContextTracker} from "./parse"
-import {Tree, TreeBuffer, BufferCursor} from "lezer-tree"
+import {Tree, TreeBuffer, BufferCursor, NodeProp} from "lezer-tree"
 
 /// A parse stack. These are used internally by the parser to track
 /// parsing progress. They also provide some properties and methods
@@ -194,6 +194,11 @@ export class Stack {
     this.pushState(next, start)
     this.buffer.push(index, start, this.reducePos, -1 /* size < 0 means this is a reused value */)
     if (this.curContext) this.updateContext(this.curContext.tracker.reuse(this.curContext.context, value, this.p.input, this))
+  }
+
+  mount(tree: Tree) {
+    this.buffer.push(this.p.propValues.length, (NodeProp.mountedTree as any).id, 0, -2)
+    this.p.propValues.push(tree)
   }
 
   // Split the stack. Due to the buffer sharing and the fact
