@@ -207,7 +207,7 @@ export class Stack {
     let start = this.pos
     this.reducePos = this.pos = start + value.length
     this.pushState(next, start)
-    this.buffer.push(index, start, this.reducePos, -1 /* size < 0 means this is a reused value */)
+    this.buffer.push(index, start, this.reducePos, -1 /* size == -1 means this is a reused value */)
     if (this.curContext) this.updateContext(this.curContext.tracker.reuse(this.curContext.context, value, this.p.input, this))
   }
 

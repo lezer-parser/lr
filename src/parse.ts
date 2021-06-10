@@ -58,7 +58,9 @@ class FragmentCursor {
   index: number[] = []
   nextStart!: number
 
-  constructor(readonly fragments: readonly TreeFragment[]) {
+  constructor(readonly fragments: readonly TreeFragment[],
+              readonly nodeSet: NodeSet,
+              readonly from: number, readonly to: number) {
     this.nextFragment()
   }
 
@@ -78,7 +80,7 @@ class FragmentCursor {
   }
 
   // `pos` must be >= any previously given `pos` for this cursor
-  nodeAt(pos: number): Tree | TreeBuffer | null {
+  nodeAt(pos: number): Tree | null {
     if (pos < this.nextStart) return null
     while (this.fragment && this.safeTo <= pos) this.nextFragment()
     if (!this.fragment) return null
@@ -101,16 +103,16 @@ class FragmentCursor {
       if (start > pos) {
         this.nextStart = start
         return null
-      } else if (start == pos && start + next.length <= this.safeTo) {
-        return start == pos && start >= this.safeFrom ? next : null
       }
       if (next instanceof TreeBuffer) {
         this.index[last]++
         this.nextStart = start + next.length
       } else {
+        if (start == pos && start + next.length <= this.safeTo)
+          return start >= this.safeFrom ? next as Tree : null
         this.index[last]++
         if (start + next.length >= pos) { // Enter this node
-          this.trees.push(next)
+          this.trees.push(next as Tree)
           this.start.push(start)
           this.index.push(0)
         }
@@ -276,7 +278,7 @@ export class Parse implements PartialParse {
     this.topTerm = parser.top[1]
     this.stacks = [Stack.start(this, parser.top[0], this.startPos)]
     let fragments = this.context.fragments
-    this.fragments = fragments && fragments.length ? new FragmentCursor(fragments) : null
+    this.fragments = fragments && fragments.length ? new FragmentCursor(fragments, parser.nodeSet, this.startPos, this.endPos) : null
   }
 
   // Move the parser forward. This will process all parse stacks at
@@ -391,6 +393,7 @@ export class Parse implements PartialParse {
       let strictCx = stack.curContext && stack.curContext.tracker.strict, cxHash = strictCx ? stack.curContext!.hash : 0
       for (let cached = this.fragments.nodeAt(start); cached;) {
         let match = this.parser.nodeSet.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
+        if (cached.type != NodeType.none)
         if (match > -1 && cached.length &&
             (!strictCx || cached instanceof Tree && (cached.prop(NodeProp.contextHash) || 0) == cxHash)) {
           stack.useNode(cached, match)
@@ -532,7 +535,6 @@ export class Parse implements PartialParse {
   }
 
   private startNested({stack, from, to, parser}: {stack: Stack, from: number, to: number, parser: NestedParser}) {
-    // FIXME somehow give the inner parser access to tree fragments from mounted nodes, if available
     this.nested = parser.startParse(this.input, {from, to, context: this.context})
     this.stacks = [stack]
   }
