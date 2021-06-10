@@ -37,7 +37,8 @@ type NestRecord = {
 }
 
 function cutAt(tree: Tree, pos: number, side: 1 | -1) {
-  let cursor = tree.cursor(pos)
+  let cursor = tree.fullCursor()
+  cursor.moveTo(pos)
   for (;;) {
     if (!(side < 0 ? cursor.childBefore(pos) : cursor.childAfter(pos))) for (;;) {
       if ((side < 0 ? cursor.to < pos : cursor.from > pos) && !cursor.type.isError)
@@ -108,10 +109,15 @@ class FragmentCursor {
         this.index[last]++
         this.nextStart = start + next.length
       } else {
+        let mounted = next.prop(NodeProp.mountedTree)
+        // Enter mounted trees if this node doesn't occur in the parser's node set or it covers the entire parse.
+        if (mounted && (next.type != this.nodeSet.types[next.type.id] ||
+                        this.from >= start && this.to <= start + next.length))
+          next = mounted
         if (start == pos && start + next.length <= this.safeTo)
           return start >= this.safeFrom ? next as Tree : null
         this.index[last]++
-        if (start + next.length >= pos) { // Enter this node
+        if (start + next.length >= Math.max(this.safeFrom, pos)) { // Enter this node
           this.trees.push(next as Tree)
           this.start.push(start)
           this.index.push(0)
@@ -278,7 +284,8 @@ export class Parse implements PartialParse {
     this.topTerm = parser.top[1]
     this.stacks = [Stack.start(this, parser.top[0], this.startPos)]
     let fragments = this.context.fragments
-    this.fragments = fragments && fragments.length ? new FragmentCursor(fragments, parser.nodeSet, this.startPos, this.endPos) : null
+    this.fragments = fragments && fragments.length && this.endPos - this.startPos > parser.bufferLength << 2
+      ? new FragmentCursor(fragments, parser.nodeSet, this.startPos, this.endPos) : null
   }
 
   // Move the parser forward. This will process all parse stacks at
@@ -393,7 +400,6 @@ export class Parse implements PartialParse {
       let strictCx = stack.curContext && stack.curContext.tracker.strict, cxHash = strictCx ? stack.curContext!.hash : 0
       for (let cached = this.fragments.nodeAt(start); cached;) {
         let match = this.parser.nodeSet.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
-        if (cached.type != NodeType.none)
         if (match > -1 && cached.length &&
             (!strictCx || cached instanceof Tree && (cached.prop(NodeProp.contextHash) || 0) == cxHash)) {
           stack.useNode(cached, match)
