@@ -15,32 +15,28 @@ export class InputStream {
 
   readNext() {
     if (this.chunkOff == this.chunk.length) {
-      let nextChunk
-      if (this.pos >= this.end || !(nextChunk = this.input.chunkAfter(this.pos)) || nextChunk.pos >= this.end) {
+      if (this.pos >= this.end) {
         this.next = -1
         this.chunk = ""
         this.chunkOff = 0
         return
       }
-      let end = nextChunk.pos + nextChunk.text.length
-      this.chunk = end > this.end ? nextChunk.text.slice(0, this.end - nextChunk.pos) : nextChunk.text
-      this.chunkPos = nextChunk.pos
-      if (this.chunkPos > this.pos) {
-        this.pos = this.chunkPos
-        this.chunkOff = 0
-      } else {
-        this.chunkOff = this.pos - this.chunkPos
-      }
+      let nextChunk = this.input.chunk(this.pos)
+      let end = this.pos + nextChunk.length
+      this.chunk = end > this.end ? nextChunk.slice(0, this.end - this.pos) : nextChunk
+      this.chunkPos = this.pos
+      this.chunkOff = 0
     }
     this.next = this.chunk.charCodeAt(this.chunkOff)
   }
 
   advance() {
-    if (this.next < 0) return
+    if (this.next < 0) return false
     this.chunkOff++
     this.pos++
     if (this.pos > this.maxPos) this.maxPos = this.pos
     this.readNext()
+    return true
   }
 
   reset(pos: number) {
@@ -58,16 +54,9 @@ export class InputStream {
   }
 
   read(from: number, to: number) {
-    if (from >= this.chunkPos && to <= this.chunkPos + this.chunk.length)
-      return this.chunk.slice(from - this.chunkPos, to - this.chunkPos)
-    let result = ""
-    for (let pos = from; pos < to;) {
-      let next = this.input.chunkAfter(pos)
-      if (!next) break
-      result += next.text.slice(Math.max(0, from - next.pos), Math.min(next.text.length, to - next.pos))
-      pos = next.pos + next.text.length
-    }
-    return result
+    return from >= this.chunkPos && to <= this.chunkPos + this.chunk.length
+      ? this.chunk.slice(from - this.chunkPos, to - this.chunkPos)
+      : this.input.read(from, to)
   }
 }
 
