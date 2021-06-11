@@ -1,32 +1,77 @@
-import {Input} from "lezer-tree"
+import {Input, Tree} from "lezer-tree"
 import {Stack} from "./stack"
+
+export class InputGap {
+  constructor(
+    readonly from: number,
+    readonly to: number,
+    readonly mount?: Tree
+  ) {}
+
+  static inner(
+    from: number, to: number, outer: readonly InputGap[] | undefined, add?: readonly InputGap[]
+  ): readonly InputGap[] | undefined {
+    if (!outer) return add
+    let rest = outer.filter(g => g.from >= from && g.to <= to)
+    return !rest.length ? add : add ? rest.concat(add).sort((a, b) => a.from - b.from) : rest
+  }
+}
 
 export class InputStream {
   chunk = ""
   chunkOff = 0
   chunkPos: number
-  next!: number
+  next: number = -1
   maxPos: number
+  gaps!: null | readonly InputGap[]
 
-  constructor(readonly input: Input, public pos: number, public end: number) {
+  constructor(readonly input: Input, public pos: number, public end: number, gaps: undefined | readonly InputGap[]) {
     this.maxPos = this.chunkPos = pos
+    if (gaps && gaps.length) this.gaps = gaps
     this.readNext()
   }
 
-  readNext() {
-    if (this.chunkOff == this.chunk.length) {
-      if (this.pos >= this.end) {
-        this.next = -1
-        this.chunk = ""
-        this.chunkOff = 0
-        return
-      }
-      let nextChunk = this.input.chunk(this.pos)
-      let end = this.pos + nextChunk.length
-      this.chunk = end > this.end ? nextChunk.slice(0, this.end - this.pos) : nextChunk
-      this.chunkPos = this.pos
+  getChunk() {
+    if (this.pos >= this.end) {
+      this.next = -1
+      this.chunk = ""
       this.chunkOff = 0
+      return false
     }
+    let nextChunk = this.input.chunk(this.pos)
+    let end = this.pos + nextChunk.length
+    this.chunk = end > this.end ? nextChunk.slice(0, this.end - this.pos) : nextChunk
+    this.chunkPos = this.pos
+    this.chunkOff = 0
+    return this.gaps ? this.removeGapsFromChunk() : true
+  }
+
+  private removeGapsFromChunk(): boolean {
+    let from = this.pos, to = this.pos + this.chunk.length
+    for (let g of this.gaps!) {
+      if (g.from >= to) break
+      if (g.to > from) {
+        if (from < g.from) {
+          this.chunk = this.chunk.slice(0, g.from - from)
+          return true
+        } else {
+          this.pos = this.chunkPos = g.to
+          if (to > g.to) {
+            this.chunk = this.chunk.slice(g.to - from)
+            from = g.to
+          } else {
+            this.chunk = ""
+            return this.getChunk()
+          }
+        }
+      }
+    }
+    return true
+  }
+
+  readNext() {
+    if (this.chunkOff == this.chunk.length)
+      if (!this.getChunk()) return
     this.next = this.chunk.charCodeAt(this.chunkOff)
   }
 
@@ -42,7 +87,7 @@ export class InputStream {
   reset(pos: number) {
     if (this.pos == pos) return this
     // FIXME keep a prev chunk to avoid have to re-query the input every time at the end of a chunk
-    this.pos = pos
+    this.pos = this.maxPos = pos
     if (pos >= this.chunkPos && pos < this.chunkPos + this.chunk.length) {
       this.chunkOff = pos - this.chunkPos
     } else {
@@ -54,11 +99,21 @@ export class InputStream {
   }
 
   read(from: number, to: number) {
-    return from >= this.chunkPos && to <= this.chunkPos + this.chunk.length
+    let val = from >= this.chunkPos && to <= this.chunkPos + this.chunk.length
       ? this.chunk.slice(from - this.chunkPos, to - this.chunkPos)
       : this.input.read(from, to)
+    if (this.gaps) {
+      for (let i = this.gaps.length - 1; i >= 0; i--) {
+        let g = this.gaps[i]
+        if (g.to > from && g.from < to)
+          val = val.slice(0, Math.max(0, g.from - from)) + val.slice(Math.min(val.length, g.to - from))
+      }
+    }
+    return val
   }
 }
+
+InputStream.prototype.gaps = null
 
 /// Tokenizers write the tokens they read into instances of this class.
 export class Token {

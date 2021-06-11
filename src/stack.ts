@@ -1,14 +1,19 @@
 import {Action, Term, StateFlag, ParseState, Seq} from "./constants"
+import {InputGap} from "./token"
 import {Parse, ContextTracker, NestedParser} from "./parse"
-import {Tree, TreeBuffer, BufferCursor, NodeProp} from "lezer-tree"
+import {Tree, TreeBuffer, BufferCursor, NodeProp, NodeType} from "lezer-tree"
 
 export const CanNest: WeakMap<Stack, {from: number, to: number, parser: NestedParser}> = new WeakMap
+
+const PlaceHolder = NodeType.define({id: 0, name: "<placeholder>"})
 
 /// A parse stack. These are used internally by the parser to track
 /// parsing progress. They also provide some properties and methods
 /// that external code such as a tokenizer can use to get information
 /// about the parse state.
 export class Stack {
+  gaps!: null | readonly InputGap[]
+
   /// @internal
   constructor(
     /// A the parse that this stack is part of @internal
@@ -50,8 +55,12 @@ export class Stack {
     // additional buffer content, never to a stack with an equal
     // `bufferBase`.
     /// @internal
-    readonly parent: Stack | null
-  ) {}
+    readonly parent: Stack | null,
+    /// @internal
+    gaps: readonly InputGap[] | null
+  ) {
+    if (gaps && gaps.length) this.gaps = gaps
+  }
 
   /// @internal
   toString() {
@@ -60,9 +69,9 @@ export class Stack {
 
   // Start an empty stack
   /// @internal
-  static start(p: Parse, state: number, pos = 0) {
+  static start(p: Parse, state: number, pos = 0, gaps: readonly InputGap[] | null) {
     let cx = p.parser.context
-    return new Stack(p, [], state, pos, pos, 0, [], 0, cx ? new StackContext(cx, cx.start) : null, null)
+    return new Stack(p, [], state, pos, pos, 0, [], 0, cx ? new StackContext(cx, cx.start) : null, null, gaps)
   }
 
   /// The stack's current [context](#lezer.ContextTracker) value, if
@@ -159,6 +168,7 @@ export class Stack {
   // Apply a shift action
   /// @internal
   shift(action: number, next: number, nextEnd: number) {
+    let size = 4 + (this.gaps ? this.maybeInsertGapNode(nextEnd) : 0)
     if (action & Action.GotoFlag) {
       this.pushState(action & Action.ValueMask, this.pos)
     } else if ((action & Action.StayFlag) == 0) { // Regular shift
@@ -169,13 +179,13 @@ export class Stack {
       }
       this.pushState(nextState, start)
       if (next <= parser.maxNode) {
-        this.buffer.push(next, start, nextEnd, 4)
+        this.buffer.push(next, start, nextEnd, size)
         this.checkNesting(next, start, nextEnd)
       }
       this.shiftContext(next)
     } else { // Shift-and-stay, which means this is a skipped token
       if (next <= this.p.parser.maxNode) {
-        this.buffer.push(next, this.pos, nextEnd, 4)
+        this.buffer.push(next, this.pos, nextEnd, size)
         this.checkNesting(next, this.pos, nextEnd)
       }
       this.pos = nextEnd
@@ -232,17 +242,31 @@ export class Stack {
     // Make sure parent points to an actual parent with content, if there is such a parent.
     while (parent && base == parent.bufferBase) parent = parent.parent
     return new Stack(this.p, this.stack.slice(), this.state, this.reducePos, this.pos,
-                     this.score, buffer, base, this.curContext, parent)
+                     this.score, buffer, base, this.curContext, parent, this.gaps)
   }
 
   // Try to recover from an error by 'deleting' (ignoring) one token.
   /// @internal
   recoverByDelete(next: number, nextEnd: number) {
+    let size = 4 + (this.gaps ? this.maybeInsertGapNode(nextEnd) : 0)
     let isNode = next <= this.p.parser.maxNode
-    if (isNode) this.storeNode(next, this.pos, nextEnd)
-    this.storeNode(Term.Err, this.pos, nextEnd, isNode ? 8 : 4)
+    if (isNode) this.storeNode(next, this.pos, nextEnd, size)
+    this.storeNode(Term.Err, this.pos, nextEnd, size + (isNode ? 4 : 0))
     this.pos = this.reducePos = nextEnd
     this.score -= Recover.Delete
+  }
+
+  private maybeInsertGapNode(end: number) {
+    let start = this.pos, size = 0
+    for (let g of this.gaps!) {
+      if (g.to >= end) break
+      if (g.to >= start) {
+        let index = this.p.reused.push(new Tree(PlaceHolder, [], [], g.to - g.from, [[NodeProp.mountedTree, g.mount]])) - 1
+        this.buffer.push(index, g.from, g.to, -1)
+        size += 4
+      }
+    }
+    return size
   }
 
   /// Check if the given term would be able to be shifted (optionally
@@ -427,6 +451,8 @@ export class Stack {
     }
   }
 }
+
+Stack.prototype.gaps = null
 
 class StackContext {
   readonly hash: number

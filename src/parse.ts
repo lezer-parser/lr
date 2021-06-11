@@ -2,7 +2,7 @@ import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, 
         Input, stringInput, PartialParse, ParseContext} from "lezer-tree"
 import {Stack, StackBufferCursor, CanNest} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
-import {Token, Tokenizer, TokenGroup, ExternalTokenizer, InputStream} from "./token"
+import {Token, Tokenizer, TokenGroup, ExternalTokenizer, InputStream, InputGap} from "./token"
 import {decodeArray} from "./decode"
 
 // FIXME find some way to reduce recovery work done when the input
@@ -16,6 +16,7 @@ let stackIDs: WeakMap<Stack, string> | null = null
 export interface ParseSpec {
   from?: number,
   to?: number,
+  gaps?: readonly InputGap[]
   context?: ParseContext
 }
 
@@ -265,6 +266,7 @@ export class Parse implements PartialParse {
   propValues: any[] = []
   tokens: TokenCache
   topTerm: number
+  gaps: readonly InputGap[] | undefined
 
   public input: Input
   public startPos: number
@@ -277,12 +279,13 @@ export class Parse implements PartialParse {
     spec: ParseSpec
   ) {
     this.input = typeof input == "string" ? stringInput(input) : input
+    this.gaps = spec.gaps
     this.startPos = spec.from ?? 0
     this.endPos = spec.to ?? this.input.length
     this.context = spec.context || {}
-    this.tokens = new TokenCache(parser, new InputStream(this.input, this.startPos, this.endPos))
+    this.tokens = new TokenCache(parser, new InputStream(this.input, this.startPos, this.endPos, spec.gaps))
     this.topTerm = parser.top[1]
-    this.stacks = [Stack.start(this, parser.top[0], this.startPos)]
+    this.stacks = [Stack.start(this, parser.top[0], this.startPos, spec.gaps ? spec.gaps.filter(g => g.mount) : null)]
     let fragments = this.context.fragments
     this.fragments = fragments && fragments.length && this.endPos - this.startPos > parser.bufferLength << 2
       ? new FragmentCursor(fragments, parser.nodeSet, this.startPos, this.endPos) : null
@@ -541,7 +544,11 @@ export class Parse implements PartialParse {
   }
 
   private startNested({stack, from, to, parser}: {stack: Stack, from: number, to: number, parser: NestedParser}) {
-    this.nested = parser.startParse(this.input, {from, to, context: this.context})
+    this.nested = parser.startParse(this.input, {
+      from, to,
+      context: this.context,
+      gaps: this.gaps ? InputGap.inner(from, to, this.gaps) : undefined
+    })
     this.stacks = [stack]
   }
 
