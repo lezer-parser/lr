@@ -34,7 +34,7 @@ export type NestedParser = {
 }
 
 type NestRecord = {
-  [term: number]: (input: Input, from: number, to: number) => NestedParser | null
+  [term: number]: (input: Input, from: number, to: number) => NestedParser | ((node: Tree) => NestedParser) | null
 }
 
 function cutAt(tree: Tree, pos: number, side: 1 | -1) {
@@ -262,7 +262,7 @@ export class Parse implements PartialParse {
   nextStackID = 0x2654
   nested: PartialParse | null = null
 
-  reused: (Tree | TreeBuffer)[] = []
+  reused: Tree[] = []
   propValues: any[] = []
   tokens: TokenCache
   topTerm: number
@@ -543,7 +543,12 @@ export class Parse implements PartialParse {
     return {stack, ...found}
   }
 
-  private startNested({stack, from, to, parser}: {stack: Stack, from: number, to: number, parser: NestedParser}) {
+  private startNested({stack, from, to, parser}: {
+    stack: Stack,
+    from: number, to: number,
+    parser: NestedParser | ((node: Tree) => NestedParser)
+  }) {
+    if (typeof parser == "function") parser = parser(stack.materializeTopNode())
     this.nested = parser.startParse(this.input, {
       from, to,
       context: this.context,

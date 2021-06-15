@@ -1,9 +1,9 @@
 import {Action, Term, StateFlag, ParseState, Seq} from "./constants"
 import {InputGap} from "./token"
 import {Parse, ContextTracker, NestedParser} from "./parse"
-import {Tree, TreeBuffer, BufferCursor, NodeProp, NodeType} from "lezer-tree"
+import {Tree, BufferCursor, NodeProp, NodeType} from "lezer-tree"
 
-export const CanNest: WeakMap<Stack, {from: number, to: number, parser: NestedParser}> = new WeakMap
+export const CanNest: WeakMap<Stack, {from: number, to: number, parser: NestedParser | ((node: Tree) => NestedParser)}> = new WeakMap
 
 const PlaceHolder = NodeType.define({id: 0, name: "<placeholder>"})
 
@@ -40,14 +40,14 @@ export class Stack {
     // representing nodes created by the parser, where `size` is
     // amount of buffer array entries covered by this node.
     /// @internal
-    readonly buffer: number[],
+    public buffer: number[],
     // The base offset of the buffer. When stacks are split, the split
     // instance shared the buffer history with its parent up to
     // `bufferBase`, which is the absolute offset (including the
     // offset of previous splits) into the buffer at which this stack
     // starts writing.
     /// @internal
-    readonly bufferBase: number,
+    public bufferBase: number,
     /// @internal
     public curContext: StackContext | null,
     // A parent stack from which this was split off, if any. This is
@@ -55,7 +55,7 @@ export class Stack {
     // additional buffer content, never to a stack with an equal
     // `bufferBase`.
     /// @internal
-    readonly parent: Stack | null,
+    public parent: Stack | null,
     /// @internal
     gaps: readonly InputGap[] | null
   ) {
@@ -208,7 +208,7 @@ export class Stack {
   // Add a prebuilt node into the buffer. This may be a reused node or
   // the result of running a nested parser.
   /// @internal
-  useNode(value: Tree | TreeBuffer, next: number) {
+  useNode(value: Tree, next: number) {
     let index = this.p.reused.length - 1
     if (index < 0 || this.p.reused[index] != value) {
       this.p.reused.push(value)
@@ -219,6 +219,39 @@ export class Stack {
     this.pushState(next, start)
     this.buffer.push(index, start, this.reducePos, -1 /* size == -1 means this is a reused value */)
     if (this.curContext) this.updateContext(this.curContext.tracker.reuse(this.curContext.context, value, this.p.input, this))
+  }
+
+  /// This will parse the last node in the buffer, and replace its
+  /// representation with a use-node record. @internal
+  materializeTopNode() {
+    let before = this.buffer.length - 4
+    let [type, from, to, size] = this.buffer.slice(before)
+    let cx = this.p, cursor = StackBufferCursor.create(this, this.bufferBase + before)
+    let node = Tree.build({
+      buffer: cursor,
+      nodeSet: cx.parser.nodeSet,
+      topID: type,
+      maxBufferLength: cx.parser.bufferLength,
+      reused: cx.reused,
+      propValues: cx.propValues,
+      start: from,
+      bufferStart: cursor.pos - size,
+      length: to - from,
+      minRepeatType: cx.parser.minRepeatTerm
+    })
+    let at = this as Stack
+    while (at.buffer.length < size) {
+      size -= at.buffer.length
+      at = at.parent!
+    }
+    this.buffer = at.buffer.slice(0, at.buffer.length - size)
+    if (at != this) {
+      this.parent = at.parent
+      this.bufferBase = at.bufferBase
+    }
+    let idx = cx.reused.push(node) - 1
+    this.buffer.push(idx, from, to, -1)
+    return node
   }
 
   mount(tree: Tree) {
@@ -507,8 +540,8 @@ export class StackBufferCursor implements BufferCursor {
     if (this.index == 0) this.maybeNext()
   }
 
-  static create(stack: Stack) {
-    return new StackBufferCursor(stack, stack.bufferBase + stack.buffer.length, stack.buffer.length)
+  static create(stack: Stack, pos = stack.bufferBase + stack.buffer.length) {
+    return new StackBufferCursor(stack, pos, pos - stack.bufferBase)
   }
 
   maybeNext() {
