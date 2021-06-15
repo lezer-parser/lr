@@ -1,5 +1,5 @@
 import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource,
-        Input, stringInput, PartialParse, ParseContext, Parser, InputGap, ParseSpec} from "lezer-tree"
+        Input, PartialParse, Parser, InputGap, ParseSpec, FullParseSpec} from "lezer-tree"
 import {Stack, StackBufferCursor, CanNest} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {Token, Tokenizer, TokenGroup, ExternalTokenizer, InputStream} from "./token"
@@ -13,21 +13,8 @@ const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LO
 
 let stackIDs: WeakMap<Stack, string> | null = null
 
-/// Used to configure a [nested parse](#lezer.Parser.withNested).
-export type NestedParser = {
-  /// The inner parser. Will be passed the input,
-  /// [clipped](#lezer.Input.clip) to the size of the parseable
-  /// region, the start position of the inner region as `startPos`,
-  /// and an optional array of tree fragments from a previous parse
-  /// that can be reused.
-  ///
-  /// When this property isn't given, the inner region is simply
-  /// skipped over intead of parsed.
-  startParse: (input: Input, spec: ParseSpec) => PartialParse
-}
-
 type NestRecord = {
-  [term: number]: (input: Input, from: number, to: number) => NestedParser | ((node: Tree) => NestedParser) | null
+  [term: number]: (input: Input, from: number, to: number) => Parser | ((node: Tree) => Parser) | null
 }
 
 function cutAt(tree: Tree, pos: number, side: 1 | -1) {
@@ -259,29 +246,19 @@ export class Parse implements PartialParse {
   propValues: any[] = []
   tokens: TokenCache
   topTerm: number
-  gaps: readonly InputGap[] | undefined
 
   public input: Input
-  public startPos: number
-  public endPos: number
-  public context: ParseContext
 
   constructor(
     public parser: LRParser,
-    input: Input | string,
-    spec: ParseSpec
+    readonly spec: FullParseSpec
   ) {
-    this.input = typeof input == "string" ? stringInput(input) : input
-    this.gaps = spec.gaps
-    this.startPos = spec.from ?? 0
-    this.endPos = spec.to ?? this.input.length
-    this.context = spec.context || {}
-    this.tokens = new TokenCache(parser, new InputStream(this.input, this.startPos, this.endPos, spec.gaps))
+    this.input = spec.input
+    this.tokens = new TokenCache(parser, new InputStream(this.input, this.spec.from, this.spec.to, spec.gaps))
     this.topTerm = parser.top[1]
-    this.stacks = [Stack.start(this, parser.top[0], this.startPos, spec.gaps ? spec.gaps.filter(g => g.mount) : null)]
-    let fragments = this.context.fragments
-    this.fragments = fragments && fragments.length && this.endPos - this.startPos > parser.bufferLength << 2
-      ? new FragmentCursor(fragments, parser.nodeSet, this.startPos, this.endPos) : null
+    this.stacks = [Stack.start(this, parser.top[0], this.spec.from, spec.gaps ? spec.gaps.filter(g => g.mount) : null)]
+    this.fragments = spec.fragments.length && spec.to - spec.from > parser.bufferLength * 4
+      ? new FragmentCursor(spec.fragments, parser.nodeSet, this.spec.from, this.spec.to) : null
   }
 
   // Move the parser forward. This will process all parse stacks at
@@ -486,7 +463,7 @@ export class Parse implements PartialParse {
         this.advanceFully(insert, newStacks)
       }
 
-      if (this.endPos > stack.pos) {
+      if (this.spec.to > stack.pos) {
         if (tokenEnd == stack.pos) {
           tokenEnd++
           token = Term.Err
@@ -524,8 +501,8 @@ export class Parse implements PartialParse {
                        maxBufferLength: this.parser.bufferLength,
                        reused: this.reused,
                        propValues: this.propValues,
-                       start: this.startPos,
-                       length: pos - this.startPos,
+                       start: this.spec.from,
+                       length: pos - this.spec.from,
                        minRepeatType: this.parser.minRepeatTerm})
   }
 
@@ -539,13 +516,13 @@ export class Parse implements PartialParse {
   private startNested({stack, from, to, parser}: {
     stack: Stack,
     from: number, to: number,
-    parser: NestedParser | ((node: Tree) => NestedParser)
+    parser: Parser | ((node: Tree) => Parser)
   }) {
     if (typeof parser == "function") parser = parser(stack.materializeTopNode())
-    this.nested = parser.startParse(this.input, {
+    this.nested = parser.startParse({
+      ...this.spec,
       from, to,
-      context: this.context,
-      gaps: this.gaps ? InputGap.inner(from, to, this.gaps) : undefined
+      gaps: this.spec.gaps ? InputGap.inner(from, to, this.spec.gaps) : undefined
     })
     this.stacks = [stack]
   }
@@ -691,7 +668,7 @@ export interface ParserConfig {
 
 /// A parser holds the parse tables for a given grammar, as generated
 /// by `lezer-generator`.
-export class LRParser extends Parser {
+export class LRParser implements Parser {
   /// The parse states for this grammar @internal
   readonly states: Readonly<Uint32Array>
   /// A blob of data that the parse states, as well as some
@@ -745,7 +722,6 @@ export class LRParser extends Parser {
 
   /// @internal
   constructor(spec: ParserSpec) {
-    super()
     if (spec.version != File.Version)
       throw new RangeError(`Parser version (${spec.version}) doesn't match runtime version (${File.Version})`)
     let tokenArray = decodeArray<Uint16Array>(spec.tokenData)
@@ -804,8 +780,8 @@ export class LRParser extends Parser {
     this.top = this.topRules[Object.keys(this.topRules)[0]]
   }
 
-  startParse(input: Input | string, spec: ParseSpec = {}): PartialParse {
-    return new Parse(this, input, spec)
+  startParse(spec: ParseSpec): PartialParse {
+    return new Parse(this, new FullParseSpec(spec))
   }
 
   /// Get a goto table entry @internal
@@ -916,7 +892,7 @@ export class LRParser extends Parser {
       copy.strict = config.strict
     if (config.bufferLength != null)
       copy.bufferLength = config.bufferLength
-    return copy as Parser
+    return copy as LRParser
   }
 
   private checkNested(nested: {[id: number]: any}) {
