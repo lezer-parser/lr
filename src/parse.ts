@@ -1,8 +1,8 @@
 import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource,
-        Input, stringInput, PartialParse, ParseContext} from "lezer-tree"
+        Input, stringInput, PartialParse, ParseContext, Parser, InputGap, ParseSpec} from "lezer-tree"
 import {Stack, StackBufferCursor, CanNest} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
-import {Token, Tokenizer, TokenGroup, ExternalTokenizer, InputStream, InputGap} from "./token"
+import {Token, Tokenizer, TokenGroup, ExternalTokenizer, InputStream} from "./token"
 import {decodeArray} from "./decode"
 
 // FIXME find some way to reduce recovery work done when the input
@@ -12,13 +12,6 @@ import {decodeArray} from "./decode"
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
 
 let stackIDs: WeakMap<Stack, string> | null = null
-
-export interface ParseSpec {
-  from?: number,
-  to?: number,
-  gaps?: readonly InputGap[]
-  context?: ParseContext
-}
 
 /// Used to configure a [nested parse](#lezer.Parser.withNested).
 export type NestedParser = {
@@ -147,7 +140,7 @@ class TokenCache {
 
   actions: number[] = []
 
-  constructor(parser: Parser, readonly stream: InputStream) {
+  constructor(parser: LRParser, readonly stream: InputStream) {
     this.tokens = parser.tokenizers.map(_ => new CachedToken)
   }
 
@@ -274,7 +267,7 @@ export class Parse implements PartialParse {
   public context: ParseContext
 
   constructor(
-    public parser: Parser,
+    public parser: LRParser,
     input: Input | string,
     spec: ParseSpec
   ) {
@@ -698,7 +691,7 @@ export interface ParserConfig {
 
 /// A parser holds the parse tables for a given grammar, as generated
 /// by `lezer-generator`.
-export class Parser {
+export class LRParser extends Parser {
   /// The parse states for this grammar @internal
   readonly states: Readonly<Uint32Array>
   /// A blob of data that the parse states, as well as some
@@ -752,6 +745,7 @@ export class Parser {
 
   /// @internal
   constructor(spec: ParserSpec) {
+    super()
     if (spec.version != File.Version)
       throw new RangeError(`Parser version (${spec.version}) doesn't match runtime version (${File.Version})`)
     let tokenArray = decodeArray<Uint16Array>(spec.tokenData)
@@ -810,16 +804,6 @@ export class Parser {
     this.top = this.topRules[Object.keys(this.topRules)[0]]
   }
 
-  /// Parse a given string or stream.
-  parse(input: Input | string, spec: ParseSpec = {}) {
-    let cx = new Parse(this, input, spec)
-    for (;;) {
-      let done = cx.advance()
-      if (done) return done
-    }
-  }
-
-  /// Start an incremental parse.
   startParse(input: Input | string, spec: ParseSpec = {}): PartialParse {
     return new Parse(this, input, spec)
   }
@@ -905,7 +889,7 @@ export class Parser {
   configure(config: ParserConfig) {
     // Hideous reflection-based kludge to make it easy to create a
     // slightly modified copy of a parser.
-    let copy = Object.assign(Object.create(Parser.prototype), this)
+    let copy = Object.assign(Object.create(LRParser.prototype), this)
     if (config.props)
       copy.nodeSet = this.nodeSet.extend(...config.props)
     if (config.top) {
@@ -983,7 +967,7 @@ export class Parser {
 
   /// (used by the output of the parser generator) @internal
   static deserialize(spec: ParserSpec) {
-    return new Parser(spec)
+    return new LRParser(spec)
   }
 }
 

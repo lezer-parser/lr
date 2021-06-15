@@ -1,21 +1,5 @@
-import {Input, Tree} from "lezer-tree"
+import {Input, InputGap} from "lezer-tree"
 import {Stack} from "./stack"
-
-export class InputGap {
-  constructor(
-    readonly from: number,
-    readonly to: number,
-    readonly mount?: Tree
-  ) {}
-
-  static inner(
-    from: number, to: number, outer: readonly InputGap[] | undefined, add?: readonly InputGap[]
-  ): readonly InputGap[] | undefined {
-    if (!outer) return add
-    let rest = outer.filter(g => g.from >= from && g.to <= to)
-    return !rest.length ? add : add ? rest.concat(add).sort((a, b) => a.from - b.from) : rest
-  }
-}
 
 export class InputStream {
   chunk = ""
