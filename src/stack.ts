@@ -222,7 +222,7 @@ export class Stack {
     if (isNode) this.storeNode(next, this.pos, nextEnd)
     this.storeNode(Term.Err, this.pos, nextEnd, isNode ? 8 : 4)
     this.pos = this.reducePos = nextEnd
-    this.score -= Recover.Token
+    this.score -= Recover.Delete
   }
 
   /// Check if the given term would be able to be shifted (optionally
@@ -321,7 +321,7 @@ export class Stack {
       stack.storeNode(Term.Err, stack.pos, stack.pos, 4, true)
       stack.pushState(s, this.pos)
       stack.shiftContext(nextStates[i])
-      stack.score -= Recover.Token
+      stack.score -= Recover.Insert
       result.push(stack)
     }
     return result
@@ -416,7 +416,8 @@ class StackContext {
 }
 
 export const enum Recover {
-  Token = 200,
+  Insert = 200,
+  Delete = 190,
   Reduce = 100,
   MaxNext = 4,
   MaxInsertStackDepth = 300,
