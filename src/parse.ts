@@ -247,6 +247,7 @@ export class Parse implements PartialParse {
   propValues: any[] = []
   tokens: TokenCache
   topTerm: number
+  gaps: readonly InputGap[] | null
 
   public input: Input
 
@@ -257,7 +258,8 @@ export class Parse implements PartialParse {
     this.input = spec.input
     this.tokens = new TokenCache(parser, new InputStream(this.input, this.spec.from, this.spec.to, spec.gaps))
     this.topTerm = parser.top[1]
-    this.stacks = [Stack.start(this, parser.top[0], this.spec.from, spec.gaps ? spec.gaps.filter(g => g.mount) : null)]
+    this.gaps = spec.gaps ? spec.gaps.filter(g => g.mount) : null
+    this.stacks = [Stack.start(this, parser.top[0], this.spec.from)]
     this.fragments = spec.fragments.length && spec.to - spec.from > parser.bufferLength * 4
       ? new FragmentCursor(spec.fragments, parser.nodeSet, this.spec.from, this.spec.to) : null
   }
