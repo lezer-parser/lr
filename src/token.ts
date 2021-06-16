@@ -1,21 +1,41 @@
 import {Input, InputGap} from "lezer-tree"
-import {Stack} from "./stack"
+import {LRParser} from "./parse"
+
+export type Token = {
+  start: number
+  end: number
+  value: number
+}
 
 export class InputStream {
+  /// @internal
   chunk = ""
+  /// @internal
   chunkOff = 0
+  /// @internal
   chunkPos: number
   next: number = -1
+  /// @internal
   maxPos: number
-  gaps!: null | readonly InputGap[]
+  /// @internal
+  gaps: null | readonly InputGap[]
 
+  /// @internal
+  token = {start: 0, value: 0, end: 0}
+
+  /// @internal
   constructor(readonly input: Input, public pos: number, public end: number, gaps: undefined | readonly InputGap[]) {
     this.maxPos = this.chunkPos = pos
-    if (gaps && gaps.length) this.gaps = gaps
+    this.gaps = gaps && gaps.length ? gaps : null
     this.readNext()
   }
 
-  getChunk() {
+  acceptToken(token: number) {
+    this.token.value = token
+    this.token.end = this.pos
+  }
+
+  private getChunk() {
     if (this.pos >= this.end) {
       this.next = -1
       this.chunk = ""
@@ -53,7 +73,7 @@ export class InputStream {
     return true
   }
 
-  readNext() {
+  private readNext() {
     if (this.chunkOff == this.chunk.length)
       if (!this.getChunk()) return
     this.next = this.chunk.charCodeAt(this.chunkOff)
@@ -68,8 +88,12 @@ export class InputStream {
     return true
   }
 
-  reset(pos: number) {
-    if (this.pos == pos) return this
+  /// @internal
+  reset(pos: number, token: Token) {
+    this.token = token
+    token.start = pos
+    token.value = -1
+    if (this.pos == pos) return
     // FIXME keep a prev chunk to avoid have to re-query the input every time at the end of a chunk
     this.pos = this.maxPos = pos
     if (pos >= this.chunkPos && pos < this.chunkPos + this.chunk.length) {
@@ -79,9 +103,9 @@ export class InputStream {
       this.chunkOff = 0
     }
     this.readNext()
-    return this
   }
 
+  /// @internal
   read(from: number, to: number) {
     let val = from >= this.chunkPos && to <= this.chunkPos + this.chunk.length
       ? this.chunk.slice(from - this.chunkPos, to - this.chunkPos)
@@ -97,30 +121,8 @@ export class InputStream {
   }
 }
 
-InputStream.prototype.gaps = null
-
-/// Tokenizers write the tokens they read into instances of this class.
-export class Token {
-  /// The start of the token. This is set by the parser, and should not
-  /// be mutated by the tokenizer.
-  start = -1
-  /// This starts at -1, and should be updated to a term id when a
-  /// matching token is found.
-  value = -1
-  /// When setting `.value`, you should also set `.end` to the end
-  /// position of the token. (You'll usually want to use the `accept`
-  /// method.)
-  end = -1
-
-  /// Accept a token, setting `value` and `end` to the given values.
-  accept(value: number, end: number) {
-    this.value = value
-    this.end = end
-  }
-}
-
 export interface Tokenizer {
-  token(input: InputStream, token: Token, stack: Stack): void
+  token(input: InputStream, parser: LRParser): void
   contextual: boolean
   fallback: boolean
   extend: boolean
@@ -134,7 +136,7 @@ export class TokenGroup implements Tokenizer {
 
   constructor(readonly data: Readonly<Uint16Array>, readonly id: number) {}
 
-  token(input: InputStream, token: Token, stack: Stack) { readToken(this.data, input, token, stack, this.id) }
+  token(input: InputStream, parser: LRParser) { readToken(this.data, input, parser, this.id) }
 }
 
 TokenGroup.prototype.contextual = TokenGroup.prototype.fallback = TokenGroup.prototype.extend = false
@@ -169,7 +171,7 @@ export class ExternalTokenizer implements Tokenizer {
   /// token. `token.start` should be used as the start position to
   /// scan from.
   constructor(
-    readonly token: (input: InputStream, token: Token, stack: Stack) => void,
+    readonly token: (input: InputStream, parser: LRParser) => void,
     options: ExternalOptions = {}
   ) {
     this.contextual = !!options.contextual
@@ -200,10 +202,9 @@ export class ExternalTokenizer implements Tokenizer {
 // and updating `token` when it matches a token.
 function readToken(data: Readonly<Uint16Array>,
                    input: InputStream,
-                   token: Token,
-                   stack: Stack,
+                   parser: LRParser,
                    group: number) {
-  let state = 0, groupMask = 1 << group, dialect = stack.p.parser.dialect
+  let state = 0, groupMask = 1 << group, {dialect} = parser
   scan: for (;;) {
     if ((groupMask & data[state]) == 0) break
     let accEnd = data[state + 1]
@@ -213,8 +214,8 @@ function readToken(data: Readonly<Uint16Array>,
     for (let i = state + 3; i < accEnd; i += 2) if ((data[i + 1] & groupMask) > 0) {
       let term = data[i]
       if (dialect.allows(term) &&
-          (token.value == -1 || token.value == term || stack.p.parser.overrides(term, token.value))) {
-        token.accept(term, input.pos)
+          (input.token.value == -1 || input.token.value == term || parser.overrides(term, input.token.value))) {
+        input.acceptToken(term)
         break
       }
     }

@@ -2,7 +2,7 @@ import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, 
         Input, PartialParse, Parser, InputGap, ParseSpec, FullParseSpec} from "lezer-tree"
 import {Stack, StackBufferCursor, CanNest} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
-import {Token, Tokenizer, TokenGroup, ExternalTokenizer, InputStream} from "./token"
+import {Tokenizer, Token, TokenGroup, ExternalTokenizer, InputStream} from "./token"
 import {decodeArray} from "./decode"
 
 // FIXME find some way to reduce recovery work done when the input
@@ -108,18 +108,16 @@ class FragmentCursor {
   }
 }
 
-class CachedToken extends Token {
+class CachedToken implements Token {
+  start = -1
+  value = -1
+  end = -1
   extended = -1
   mask = 0
   context = 0
-
-  clear(start: number) {
-    this.start = start
-    this.value = this.extended = -1
-  }
 }
 
-const dummyToken = new Token
+const dummyToken = new CachedToken
 
 class TokenCache {
   tokens: CachedToken[] = []
@@ -164,10 +162,12 @@ class TokenCache {
       main = dummyToken
       main.start = stack.pos
       if (stack.pos == this.stream.end) {
-        main.accept(stack.p.parser.eofTerm, stack.pos)
+        main.value = stack.p.parser.eofTerm
+        main.end = stack.pos
         actionIndex = this.addActions(stack, main.value, main.end, actionIndex)
       } else {
-        main.accept(Term.Err, stack.pos + 1)
+        main.value = Term.Err
+        main.end = stack.pos + 1
       }
     }
     this.mainToken = main
@@ -175,8 +175,8 @@ class TokenCache {
   }
 
   updateCachedToken(token: CachedToken, tokenizer: Tokenizer, stack: Stack) {
-    token.clear(stack.pos)
-    tokenizer.token(this.stream.reset(stack.pos), token, stack)
+    this.stream.reset(stack.pos, token)
+    tokenizer.token(this.stream, stack.p.parser)
     if (token.value > -1) {
       let {parser} = stack.p
 
@@ -189,7 +189,8 @@ class TokenCache {
         }
       }
     } else {
-      token.accept(Term.Err, stack.pos + 1)
+      token.value = Term.Err
+      token.end = stack.pos + 1
     }
   }
 
