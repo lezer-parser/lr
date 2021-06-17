@@ -15,7 +15,15 @@ export class InputStream {
   chunkOff = 0
   /// @internal
   chunkPos: number
+  /// The character code of the next code unit in the input, or -1
+  /// when the stream is at the end of the input.
   next: number = -1
+
+  /// The character code of the previous code unit in the input.
+  get prev() {
+    return this.chunkOff ? this.chunk.charCodeAt(this.chunkOff - 1) : this.pos ? this.read(this.pos - 1, this.pos).charCodeAt(0) : -1
+  }
+
   /// @internal
   gaps: null | readonly InputGap[]
 
