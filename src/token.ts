@@ -5,6 +5,7 @@ export type Token = {
   start: number
   end: number
   value: number
+  lookAhead: number
 }
 
 export class InputStream {
@@ -16,16 +17,14 @@ export class InputStream {
   chunkPos: number
   next: number = -1
   /// @internal
-  maxPos: number
-  /// @internal
   gaps: null | readonly InputGap[]
 
   /// @internal
-  token = {start: 0, value: 0, end: 0}
+  token = {start: 0, value: 0, end: 0, lookAhead: 0}
 
   /// @internal
   constructor(readonly input: Input, public pos: number, public end: number, gaps: undefined | readonly InputGap[]) {
-    this.maxPos = this.chunkPos = pos
+    this.chunkPos = pos
     this.gaps = gaps && gaps.length ? gaps : null
     this.readNext()
   }
@@ -83,7 +82,7 @@ export class InputStream {
     if (this.next < 0) return false
     this.chunkOff++
     this.pos++
-    if (this.pos > this.maxPos) this.maxPos = this.pos
+    if (this.pos > this.token.lookAhead) this.token.lookAhead = this.pos
     this.readNext()
     return true
   }
@@ -91,11 +90,11 @@ export class InputStream {
   /// @internal
   reset(pos: number, token: Token) {
     this.token = token
-    token.start = pos
+    token.start = token.lookAhead = pos
     token.value = -1
     if (this.pos == pos) return
     // FIXME keep a prev chunk to avoid have to re-query the input every time at the end of a chunk
-    this.pos = this.maxPos = pos
+    this.pos = pos
     if (pos >= this.chunkPos && pos < this.chunkPos + this.chunk.length) {
       this.chunkOff = pos - this.chunkPos
     } else {

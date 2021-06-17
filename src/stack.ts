@@ -47,12 +47,14 @@ export class Stack {
     public bufferBase: number,
     /// @internal
     public curContext: StackContext | null,
+    /// @internal
+    public lookAhead = 0,
     // A parent stack from which this was split off, if any. This is
     // set up so that it always points to a stack that has some
     // additional buffer content, never to a stack with an equal
     // `bufferBase`.
     /// @internal
-    public parent: Stack | null,
+    public parent: Stack | null
   ) {}
 
   /// @internal
@@ -64,7 +66,7 @@ export class Stack {
   /// @internal
   static start(p: Parse, state: number, pos = 0) {
     let cx = p.parser.context
-    return new Stack(p, [], state, pos, pos, 0, [], 0, cx ? new StackContext(cx, cx.start) : null, null)
+    return new Stack(p, [], state, pos, pos, 0, [], 0, cx ? new StackContext(cx, cx.start) : null, 0, null)
   }
 
   /// The stack's current [context](#lezer.ContextTracker) value, if
@@ -268,7 +270,7 @@ export class Stack {
     // Make sure parent points to an actual parent with content, if there is such a parent.
     while (parent && base == parent.bufferBase) parent = parent.parent
     return new Stack(this.p, this.stack.slice(), this.state, this.reducePos, this.pos,
-                     this.score, buffer, base, this.curContext, parent)
+                     this.score, buffer, base, this.curContext, this.lookAhead, parent)
   }
 
   // Try to recover from an error by 'deleting' (ignoring) one token.
@@ -461,12 +463,17 @@ export class Stack {
   }
 
   /// @internal
-  emitContext() {
-    let cx = this.curContext!
-    if (!cx.tracker.strict) return
+  private emitContext() {
     let last = this.buffer.length - 1
-    if (last < 0 || this.buffer[last] != -2)
-      this.buffer.push(cx.hash, this.reducePos, this.reducePos, -2)
+    if (last < 0 || this.buffer[last] != -3)
+      this.buffer.push(this.curContext!.hash, this.reducePos, this.reducePos, -3)
+  }
+
+  /// @internal
+  emitLookAhead() {
+    let last = this.buffer.length - 1
+    if (last < 0 || this.buffer[last] != -4)
+      this.buffer.push(this.lookAhead, this.reducePos, this.reducePos, -4)
   }
 
   private updateContext(context: any) {
@@ -476,6 +483,21 @@ export class Stack {
       this.curContext = newCx
     }
   }
+
+  /// @internal
+  setLookAhead(lookAhead: number) {
+    if (lookAhead > this.lookAhead) {
+      this.emitLookAhead()
+      this.lookAhead = lookAhead
+    }
+  }
+
+  /// @internal
+  close() {
+    if (this.curContext && this.curContext!.tracker.strict) this.emitContext()
+    if (this.lookAhead > 0) this.emitLookAhead()
+  }
+
 }
 
 class StackContext {

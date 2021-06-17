@@ -17,13 +17,16 @@ type NestRecord = {
   [term: number]: (input: Input, from: number, to: number) => Parser | ((node: Tree) => Parser) | null
 }
 
+const enum Safety { Margin = 25 }
+
 function cutAt(tree: Tree, pos: number, side: 1 | -1) {
   let cursor = tree.fullCursor()
   cursor.moveTo(pos)
   for (;;) {
     if (!(side < 0 ? cursor.childBefore(pos) : cursor.childAfter(pos))) for (;;) {
       if ((side < 0 ? cursor.to < pos : cursor.from > pos) && !cursor.type.isError)
-        return side < 0 ? Math.max(0, Math.min(cursor.to - 1, pos - 5)) : Math.min(tree.length, Math.max(cursor.from + 1, pos + 5))
+        return side < 0 ? Math.max(0, Math.min(cursor.to - 1, pos - Safety.Margin))
+          : Math.min(tree.length, Math.max(cursor.from + 1, pos + Safety.Margin))
       if (side < 0 ? cursor.prevSibling() : cursor.nextSibling()) break
       if (!cursor.parent()) return side < 0 ? 0 : tree.length
     }
@@ -95,8 +98,14 @@ class FragmentCursor {
         if (mounted && (next.type != this.nodeSet.types[next.type.id] ||
                         this.from >= start && this.to <= start + next.length))
           next = mounted
-        if (start == pos && start + next.length <= this.safeTo)
-          return start >= this.safeFrom ? next as Tree : null
+        if (start == pos) {
+          if (start < this.safeFrom) return null
+          let end = start + next.length
+          if (end <= this.safeTo) {
+            let lookAhead = (next as Tree).prop(NodeProp.lookAhead)
+            if (!lookAhead || end + lookAhead < this.fragment.to) return next as Tree
+          }
+        }
         this.index[last]++
         if (start + next.length >= Math.max(this.safeFrom, pos)) { // Enter this node
           this.trees.push(next as Tree)
@@ -113,6 +122,7 @@ class CachedToken implements Token {
   value = -1
   end = -1
   extended = -1
+  lookAhead = 0
   mask = 0
   context = 0
 }
@@ -136,6 +146,7 @@ class TokenCache {
 
     let mask = parser.stateSlot(stack.state, ParseState.TokenizerMask)
     let context = stack.curContext ? stack.curContext.hash : 0
+    let lookAhead = 0
     for (let i = 0; i < tokenizers.length; i++) {
       if (((1 << i) & mask) == 0) continue
       let tokenizer = tokenizers[i], token = this.tokens[i]
@@ -145,6 +156,8 @@ class TokenCache {
         token.mask = mask
         token.context = context
       }
+      if (token.lookAhead > token.end + Safety.Margin)
+        lookAhead = Math.max(token.lookAhead, lookAhead)
 
       if (token.value != Term.Err) {
         let startIndex = actionIndex
@@ -158,6 +171,7 @@ class TokenCache {
     }
 
     while (this.actions.length > actionIndex) this.actions.pop()
+    if (lookAhead) stack.setLookAhead(lookAhead)
     if (!main) {
       main = dummyToken
       main.start = stack.pos
@@ -497,7 +511,7 @@ export class Parse implements PartialParse {
 
   // Convert the stack's buffer to a syntax tree.
   stackToTree(stack: Stack, pos: number = stack.pos): Tree {
-    if (this.parser.context) stack.emitContext()
+    stack.close()
     return Tree.build({buffer: StackBufferCursor.create(stack),
                        nodeSet: this.parser.nodeSet,
                        topID: this.topTerm,
