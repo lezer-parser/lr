@@ -1,5 +1,5 @@
 import {Input, InputGap} from "lezer-tree"
-import {LRParser} from "./parse"
+import {Stack} from "./stack"
 
 export type Token = {
   start: number
@@ -129,7 +129,7 @@ export class InputStream {
 }
 
 export interface Tokenizer {
-  token(input: InputStream, parser: LRParser): void
+  token(input: InputStream, stack: Stack): void
   contextual: boolean
   fallback: boolean
   extend: boolean
@@ -143,7 +143,7 @@ export class TokenGroup implements Tokenizer {
 
   constructor(readonly data: Readonly<Uint16Array>, readonly id: number) {}
 
-  token(input: InputStream, parser: LRParser) { readToken(this.data, input, parser, this.id) }
+  token(input: InputStream, stack: Stack) { readToken(this.data, input, stack, this.id) }
 }
 
 TokenGroup.prototype.contextual = TokenGroup.prototype.fallback = TokenGroup.prototype.extend = false
@@ -178,7 +178,7 @@ export class ExternalTokenizer implements Tokenizer {
   /// token. `token.start` should be used as the start position to
   /// scan from.
   constructor(
-    readonly token: (input: InputStream, parser: LRParser) => void,
+    readonly token: (input: InputStream, stack: Stack) => void,
     options: ExternalOptions = {}
   ) {
     this.contextual = !!options.contextual
@@ -209,9 +209,9 @@ export class ExternalTokenizer implements Tokenizer {
 // and updating `token` when it matches a token.
 function readToken(data: Readonly<Uint16Array>,
                    input: InputStream,
-                   parser: LRParser,
+                   stack: Stack,
                    group: number) {
-  let state = 0, groupMask = 1 << group, {dialect} = parser
+  let state = 0, groupMask = 1 << group, {parser} = stack.p, {dialect} = parser
   scan: for (;;) {
     if ((groupMask & data[state]) == 0) break
     let accEnd = data[state + 1]

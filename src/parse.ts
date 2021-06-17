@@ -190,7 +190,7 @@ class TokenCache {
 
   updateCachedToken(token: CachedToken, tokenizer: Tokenizer, stack: Stack) {
     this.stream.reset(stack.pos, token)
-    tokenizer.token(this.stream, stack.p.parser)
+    tokenizer.token(this.stream, stack)
     if (token.value > -1) {
       let {parser} = stack.p
 
