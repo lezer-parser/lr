@@ -15,14 +15,10 @@ export class InputStream {
   chunkOff = 0
   /// @internal
   chunkPos: number
+
   /// The character code of the next code unit in the input, or -1
   /// when the stream is at the end of the input.
   next: number = -1
-
-  /// The character code of the previous code unit in the input.
-  get prev() {
-    return this.chunkOff ? this.chunk.charCodeAt(this.chunkOff - 1) : this.pos ? this.read(this.pos - 1, this.pos).charCodeAt(0) : -1
-  }
 
   /// @internal
   gaps: null | readonly InputGap[]
@@ -37,9 +33,51 @@ export class InputStream {
     this.readNext()
   }
 
-  acceptToken(token: number) {
+  private resolvePos(pos: number, offset: number) {
+    if (!this.gaps || !offset) return pos + offset
+    if (offset < 0) {
+      for (let i = this.gaps.length - 1; i >= 0; i--) {
+        let gap = this.gaps[i]
+        if (gap.to <= pos - offset) break
+        if (gap.to <= pos) offset -= gap.to - gap.from
+      }
+    } else {
+      for (let gap of this.gaps) {
+        if (gap.from > pos + offset) break
+        if (gap.from > pos) offset += gap.to - gap.from
+      }
+    }
+    return pos + offset
+  }
+
+  /// Look at a code unit near the stream position. `.peek(0)` equals
+  /// `.next`, `.peek(-1)` gives you the previous character, and so
+  /// on.
+  ///
+  /// Note that looking around during tokenizing creates dependencies
+  /// on potentially far-away content, which may hamper incremental
+  /// parsing (when looking forward) or even break it (when looking
+  /// backward more than 25 code units, since the library does not
+  /// track lookbehind dependency).
+  peek(offset: number) {
+    let idx = this.chunkOff + offset, pos, result
+    if (idx >= 0 && idx < this.chunk.length) {
+      pos = this.pos + offset
+      result = this.chunk.charCodeAt(idx)
+    } else {
+      pos = this.resolvePos(this.pos, offset)
+      result = pos < 0 || pos >= this.input.length ? -1 : this.input.read(pos, pos + 1).charCodeAt(0)
+    }
+    if (pos > this.token.lookAhead) this.token.lookAhead = pos
+    return result
+  }
+
+  /// Accept a token. By default, the end of the token is set to the
+  /// current stream position, but you can pass an offset (relative to
+  /// the stream position) to change that.
+  acceptToken(token: number, endOffset = 0) {
     this.token.value = token
-    this.token.end = this.pos
+    this.token.end = this.resolvePos(this.pos, endOffset)
   }
 
   private getChunk() {
@@ -81,18 +119,21 @@ export class InputStream {
   }
 
   private readNext() {
-    if (this.chunkOff == this.chunk.length)
+    if (this.chunkOff == this.chunk.length) {
       if (!this.getChunk()) return
+    }
     this.next = this.chunk.charCodeAt(this.chunkOff)
   }
 
+  /// Move the stream forward one code unit. Returns the new value of
+  /// [`next`](#lezer.InputStream.next).
   advance() {
-    if (this.next < 0) return false
+    if (this.next < 0) return -1
     this.chunkOff++
     this.pos++
     if (this.pos > this.token.lookAhead) this.token.lookAhead = this.pos
     this.readNext()
-    return true
+    return this.next
   }
 
   /// @internal
