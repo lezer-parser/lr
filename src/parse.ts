@@ -589,7 +589,7 @@ export class ContextTracker<T> {
   /// @internal
   start: T
   /// @internal
-  shift: (context: T, term: number, input: Input, stack: Stack) => T
+  shift: (context: T, term: number, input: Input, stack: Stack, from: number, to: number) => T
   /// @internal
   reduce: (context: T, term: number, input: Input, stack: Stack) => T
   /// @internal
@@ -614,8 +614,8 @@ export class ContextTracker<T> {
     /// fragment.
     reuse?(context: T, node: Tree | TreeBuffer, input: Input, stack: Stack): T
     /// Reduce a context value to a number (for cheap storage and
-    /// comparison).
-    hash(context: T): number
+    /// comparison). Only needed for strict contexts.
+    hash?(context: T): number
     /// By default, nodes can only be reused during incremental
     /// parsing if they were created in the same context as the one in
     /// which they are reused. Set this to false to disable that
@@ -626,7 +626,7 @@ export class ContextTracker<T> {
     this.shift = spec.shift || id
     this.reduce = spec.reduce || id
     this.reuse = spec.reuse || id
-    this.hash = spec.hash
+    this.hash = spec.hash || (() => 0)
     this.strict = spec.strict !== false
   }
 }

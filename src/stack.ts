@@ -163,11 +163,11 @@ export class Stack {
   // Apply a shift action
   /// @internal
   shift(action: number, next: number, nextEnd: number) {
-    let size = 4 + (this.p.gaps ? this.maybeInsertGapNode(nextEnd) : 0)
+    let size = 4 + (this.p.gaps ? this.maybeInsertGapNode(nextEnd) : 0), start = this.pos
     if (action & Action.GotoFlag) {
       this.pushState(action & Action.ValueMask, this.pos)
     } else if ((action & Action.StayFlag) == 0) { // Regular shift
-      let start = this.pos, nextState = action, {parser} = this.p
+      let nextState = action, {parser} = this.p
       if (nextEnd > this.pos || next <= parser.maxNode) {
         this.pos = nextEnd
         if (!parser.stateFlag(nextState, StateFlag.Skipped)) this.reducePos = nextEnd
@@ -177,13 +177,14 @@ export class Stack {
         this.buffer.push(next, start, nextEnd, size)
         this.checkNesting(next, start, nextEnd)
       }
-      this.shiftContext(next)
+      this.shiftContext(next, start)
     } else { // Shift-and-stay, which means this is a skipped token
       if (next <= this.p.parser.maxNode) {
         this.buffer.push(next, this.pos, nextEnd, size)
         this.checkNesting(next, this.pos, nextEnd)
       }
       this.pos = nextEnd
+      this.shiftContext(next, start)
     }
   }
 
@@ -392,7 +393,7 @@ export class Stack {
       let stack = this.split()
       stack.storeNode(Term.Err, stack.pos, stack.pos, 4, true)
       stack.pushState(s, this.pos)
-      stack.shiftContext(nextStates[i])
+      stack.shiftContext(nextStates[i], this.pos)
       stack.score -= Recover.Insert
       result.push(stack)
     }
@@ -452,9 +453,9 @@ export class Stack {
   /// the terms file) is enabled.
   dialectEnabled(dialectID: number) { return this.p.parser.dialect.flags[dialectID] }
 
-  private shiftContext(term: number) {
+  private shiftContext(term: number, start: number) {
     if (this.curContext)
-      this.updateContext(this.curContext.tracker.shift(this.curContext.context, term, this.p.input, this))
+      this.updateContext(this.curContext.tracker.shift(this.curContext.context, term, this.p.input, this, start, this.pos))
   }
 
   private reduceContext(term: number) {
@@ -503,7 +504,7 @@ export class Stack {
 class StackContext {
   readonly hash: number
   constructor(readonly tracker: ContextTracker<any>, readonly context: any) {
-    this.hash = tracker.hash(context)
+    this.hash = tracker.strict ? tracker.hash(context) : 0
   }
 }
 
