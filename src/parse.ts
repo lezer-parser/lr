@@ -189,6 +189,7 @@ class TokenCache {
   }
 
   updateCachedToken(token: CachedToken, tokenizer: Tokenizer, stack: Stack) {
+    token.extended = -1
     this.stream.reset(stack.pos, token)
     tokenizer.token(this.stream, stack)
     if (token.value > -1) {
