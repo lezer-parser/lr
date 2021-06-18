@@ -97,7 +97,7 @@ export class Stack {
       // the stack without popping anything off.
       if (type < parser.minRepeatTerm) this.storeNode(type, this.reducePos, this.reducePos, 4, true)
       this.pushState(parser.getGoto(this.state, type, true), this.reducePos)
-      this.reduceContext(type)
+      this.reduceContext(type, this.reducePos)
       return
     }
 
@@ -121,7 +121,7 @@ export class Stack {
       this.state = parser.getGoto(baseStateID, type, true)
     }
     while (this.stack.length > base) this.stack.pop()
-    this.reduceContext(type)
+    this.reduceContext(type, start)
   }
 
   // Shift a value into the buffer
@@ -214,7 +214,9 @@ export class Stack {
     this.reducePos = this.pos = start + value.length
     this.pushState(next, start)
     this.buffer.push(index, start, this.reducePos, -1 /* size == -1 means this is a reused value */)
-    if (this.curContext) this.updateContext(this.curContext.tracker.reuse(this.curContext.context, value, this.p.input, this))
+    if (this.curContext)
+      this.updateContext(this.curContext.tracker.reuse(this.curContext.context, value, this,
+                                                       this.p.stream.reset(this.pos - value.length)))
   }
 
   /// This will parse the last node in the buffer, and replace its
@@ -455,12 +457,12 @@ export class Stack {
 
   private shiftContext(term: number, start: number) {
     if (this.curContext)
-      this.updateContext(this.curContext.tracker.shift(this.curContext.context, term, this.p.input, this, start, this.pos))
+      this.updateContext(this.curContext.tracker.shift(this.curContext.context, term, this, this.p.stream.reset(start)))
   }
 
-  private reduceContext(term: number) {
+  private reduceContext(term: number, start: number) {
     if (this.curContext)
-      this.updateContext(this.curContext.tracker.reduce(this.curContext.context, term, this.p.input, this))
+      this.updateContext(this.curContext.tracker.reduce(this.curContext.context, term, this, this.p.stream.reset(start)))
   }
 
   /// @internal

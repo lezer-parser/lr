@@ -1,12 +1,17 @@
 import {Input, InputGap} from "lezer-tree"
 import {Stack} from "./stack"
 
-export type Token = {
-  start: number
-  end: number
-  value: number
-  lookAhead: number
+export class CachedToken {
+  start = -1
+  value = -1
+  end = -1
+  extended = -1
+  lookAhead = 0
+  mask = 0
+  context = 0
 }
+
+const nullToken = new CachedToken
 
 export class InputStream {
   /// @internal
@@ -24,11 +29,24 @@ export class InputStream {
   gaps: null | readonly InputGap[]
 
   /// @internal
-  token = {start: 0, value: 0, end: 0, lookAhead: 0}
+  token = nullToken
+
+  /// The current position of the stream. Note that, due to
+  /// [gaps](#lezer.ParseSpec.gaps), advancing the stream does not
+  /// always mean its position moves a single unit.
+  pos: number
 
   /// @internal
-  constructor(readonly input: Input, public pos: number, public end: number, gaps: undefined | readonly InputGap[]) {
-    this.chunkPos = pos
+  constructor(
+    /// @internal
+    readonly input: Input,
+    /// @internal
+    readonly start: number,
+    /// @internal
+    public end: number,
+    gaps: undefined | readonly InputGap[]
+  ) {
+    this.pos = this.chunkPos = start
     this.gaps = gaps && gaps.length ? gaps : null
     this.readNext()
   }
@@ -66,7 +84,7 @@ export class InputStream {
       result = this.chunk.charCodeAt(idx)
     } else {
       pos = this.resolvePos(this.pos, offset)
-      result = pos < 0 || pos >= this.input.length ? -1 : this.input.read(pos, pos + 1).charCodeAt(0)
+      result = pos < this.start || pos >= this.end ? -1 : this.input.read(pos, pos + 1).charCodeAt(0)
     }
     if (pos > this.token.lookAhead) this.token.lookAhead = pos
     return result
@@ -125,32 +143,40 @@ export class InputStream {
     this.next = this.chunk.charCodeAt(this.chunkOff)
   }
 
-  /// Move the stream forward one code unit. Returns the new value of
-  /// [`next`](#lezer.InputStream.next).
-  advance() {
-    if (this.next < 0) return -1
-    this.chunkOff++
-    this.pos++
-    if (this.pos > this.token.lookAhead) this.token.lookAhead = this.pos
-    this.readNext()
+  /// Move the stream forward N (defaults to 1) code units. Returns
+  /// the new value of [`next`](#lezer.InputStream.next).
+  advance(n = 1) {
+    for (let i = 0; i < n; i++) {
+      if (this.next < 0) return -1
+      this.chunkOff++
+      this.pos++
+      if (this.pos > this.token.lookAhead) this.token.lookAhead = this.pos
+      this.readNext()
+    }
     return this.next
   }
 
   /// @internal
-  reset(pos: number, token: Token) {
-    this.token = token
-    token.start = token.lookAhead = pos
-    token.value = -1
-    if (this.pos == pos) return
-    // FIXME keep a prev chunk to avoid have to re-query the input every time at the end of a chunk
-    this.pos = pos
-    if (pos >= this.chunkPos && pos < this.chunkPos + this.chunk.length) {
-      this.chunkOff = pos - this.chunkPos
+  reset(pos: number, token?: CachedToken) {
+    if (token) {
+      this.token = token
+      token.start = token.lookAhead = pos
+      token.value = -1
     } else {
-      this.chunk = ""
-      this.chunkOff = 0
+      this.token = nullToken
     }
-    this.readNext()
+    if (this.pos != pos) {
+      // FIXME keep a prev chunk to avoid have to re-query the input every time at the end of a chunk
+      this.pos = pos
+      if (pos >= this.chunkPos && pos < this.chunkPos + this.chunk.length) {
+        this.chunkOff = pos - this.chunkPos
+      } else {
+        this.chunk = ""
+        this.chunkOff = 0
+      }
+      this.readNext()
+    }
+    return this
   }
 
   /// @internal

@@ -2,7 +2,7 @@ import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, 
         Input, PartialParse, Parser, InputGap, ParseSpec, FullParseSpec} from "lezer-tree"
 import {Stack, StackBufferCursor, CanNest} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
-import {Tokenizer, Token, TokenGroup, ExternalTokenizer, InputStream} from "./token"
+import {Tokenizer, TokenGroup, ExternalTokenizer, CachedToken, InputStream} from "./token"
 import {decodeArray} from "./decode"
 
 // FIXME find some way to reduce recovery work done when the input
@@ -117,21 +117,11 @@ class FragmentCursor {
   }
 }
 
-class CachedToken implements Token {
-  start = -1
-  value = -1
-  end = -1
-  extended = -1
-  lookAhead = 0
-  mask = 0
-  context = 0
-}
-
 const dummyToken = new CachedToken
 
 class TokenCache {
   tokens: CachedToken[] = []
-  mainToken: Token = dummyToken
+  mainToken: CachedToken = dummyToken
 
   actions: number[] = []
 
@@ -141,7 +131,7 @@ class TokenCache {
 
   getActions(stack: Stack) {
     let actionIndex = 0
-    let main: Token | null = null
+    let main: CachedToken | null = null
     let {parser} = stack.p, {tokenizers} = parser
 
     let mask = parser.stateSlot(stack.state, ParseState.TokenizerMask)
@@ -189,9 +179,7 @@ class TokenCache {
   }
 
   updateCachedToken(token: CachedToken, tokenizer: Tokenizer, stack: Stack) {
-    token.extended = -1
-    this.stream.reset(stack.pos, token)
-    tokenizer.token(this.stream, stack)
+    tokenizer.token(this.stream.reset(stack.pos, token), stack)
     if (token.value > -1) {
       let {parser} = stack.p
 
@@ -260,6 +248,7 @@ export class Parse implements PartialParse {
 
   reused: Tree[] = []
   propValues: any[] = []
+  stream: InputStream
   tokens: TokenCache
   topTerm: number
   gaps: readonly InputGap[] | null
@@ -271,7 +260,8 @@ export class Parse implements PartialParse {
     readonly spec: FullParseSpec
   ) {
     this.input = spec.input
-    this.tokens = new TokenCache(parser, new InputStream(this.input, this.spec.from, this.spec.to, spec.gaps))
+    this.stream = new InputStream(this.input, this.spec.from, this.spec.to, spec.gaps)
+    this.tokens = new TokenCache(parser, this.stream)
     this.topTerm = parser.top[1]
     this.gaps = spec.gaps ? spec.gaps.filter(g => g.mount) : null
     this.stacks = [Stack.start(this, parser.top[0], this.spec.from)]
@@ -589,11 +579,11 @@ export class ContextTracker<T> {
   /// @internal
   start: T
   /// @internal
-  shift: (context: T, term: number, input: Input, stack: Stack, from: number, to: number) => T
+  shift: (context: T, term: number, stack: Stack, input: InputStream) => T
   /// @internal
-  reduce: (context: T, term: number, input: Input, stack: Stack) => T
+  reduce: (context: T, term: number, stack: Stack, input: InputStream) => T
   /// @internal
-  reuse: (context: T, node: Tree | TreeBuffer, input: Input, stack: Stack) => T
+  reuse: (context: T, node: Tree | TreeBuffer, stack: Stack, input: InputStream) => T
   /// @internal
   hash: (context: T) => number
   /// @internal
@@ -607,12 +597,12 @@ export class ContextTracker<T> {
     /// Update the context when the parser executes a
     /// [shift](https://en.wikipedia.org/wiki/LR_parser#Shift_and_reduce_actions)
     /// action.
-    shift?(context: T, term: number, input: Input, stack: Stack): T
+    shift?(context: T, term: number, stack: Stack, input: InputStream): T
     /// Update the context when the parser executes a reduce action.
-    reduce?(context: T, term: number, input: Input, stack: Stack): T
+    reduce?(context: T, term: number, stack: Stack, input: InputStream): T
     /// Update the context when the parser reuses a node from a tree
     /// fragment.
-    reuse?(context: T, node: Tree | TreeBuffer, input: Input, stack: Stack): T
+    reuse?(context: T, node: Tree | TreeBuffer, stack: Stack, input: InputStream): T
     /// Reduce a context value to a number (for cheap storage and
     /// comparison). Only needed for strict contexts.
     hash?(context: T): number
