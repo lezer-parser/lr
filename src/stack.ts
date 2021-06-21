@@ -313,18 +313,6 @@ export class Stack {
     }
   }
 
-  /// Find the start position of the rule that is currently being parsed.
-  get ruleStart() {
-    for (let state = this.state, base = this.stack.length;;) {
-      let force = this.p.parser.stateSlot(state, ParseState.ForcedReduce)
-      if (!(force & Action.ReduceFlag)) return 0
-      base -= 3 * (force >> Action.ReduceDepthShift)
-      if ((force & Action.ValueMask) < this.p.parser.minRepeatTerm)
-        return this.stack[base + 1]
-      state = this.stack[base]
-    }
-  }
-
   /// Find the start position of an instance of any of the given term
   /// types, or return `null` when none of them are found.
   ///
