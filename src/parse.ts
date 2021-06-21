@@ -1,5 +1,5 @@
 import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource,
-        Input, PartialParse, Parser, InputGap, ParseSpec, FullParseSpec} from "lezer-tree"
+        Input, PartialParse, AbstractParser, InputGap, ParseSpec, FullParseSpec} from "lezer-tree"
 import {Stack, StackBufferCursor, CanNest} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {Tokenizer, TokenGroup, ExternalTokenizer, CachedToken, InputStream} from "./token"
@@ -14,7 +14,7 @@ const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LO
 let stackIDs: WeakMap<Stack, string> | null = null
 
 type NestRecord = {
-  [term: number]: (input: Input, from: number, to: number) => Parser | ((node: Tree) => Parser) | null
+  [term: number]: (input: Input, stack: Stack, from: number, to: number) => AbstractParser | ((node: Tree) => AbstractParser) | null
 }
 
 const enum Safety { Margin = 25 }
@@ -125,7 +125,7 @@ class TokenCache {
 
   actions: number[] = []
 
-  constructor(parser: LRParser, readonly stream: InputStream) {
+  constructor(parser: Parser, readonly stream: InputStream) {
     this.tokens = parser.tokenizers.map(_ => new CachedToken)
   }
 
@@ -256,7 +256,7 @@ export class Parse implements PartialParse {
   public input: Input
 
   constructor(
-    public parser: LRParser,
+    public parser: Parser,
     readonly spec: FullParseSpec
   ) {
     this.input = spec.input
@@ -524,7 +524,7 @@ export class Parse implements PartialParse {
   private startNested({stack, from, to, parser}: {
     stack: Stack,
     from: number, to: number,
-    parser: Parser | ((node: Tree) => Parser)
+    parser: AbstractParser | ((node: Tree) => AbstractParser)
   }) {
     if (typeof parser == "function") parser = parser(stack.materializeTopNode())
     this.nested = parser.startParse({
@@ -676,7 +676,7 @@ export interface ParserConfig {
 
 /// A parser holds the parse tables for a given grammar, as generated
 /// by `lezer-generator`.
-export class LRParser implements Parser {
+export class Parser extends AbstractParser {
   /// The parse states for this grammar @internal
   readonly states: Readonly<Uint32Array>
   /// A blob of data that the parse states, as well as some
@@ -730,6 +730,7 @@ export class LRParser implements Parser {
 
   /// @internal
   constructor(spec: ParserSpec) {
+    super()
     if (spec.version != File.Version)
       throw new RangeError(`Parser version (${spec.version}) doesn't match runtime version (${File.Version})`)
     let tokenArray = decodeArray<Uint16Array>(spec.tokenData)
@@ -873,7 +874,7 @@ export class LRParser implements Parser {
   configure(config: ParserConfig) {
     // Hideous reflection-based kludge to make it easy to create a
     // slightly modified copy of a parser.
-    let copy = Object.assign(Object.create(LRParser.prototype), this)
+    let copy = Object.assign(Object.create(Parser.prototype), this)
     if (config.props)
       copy.nodeSet = this.nodeSet.extend(...config.props)
     if (config.top) {
@@ -900,7 +901,7 @@ export class LRParser implements Parser {
       copy.strict = config.strict
     if (config.bufferLength != null)
       copy.bufferLength = config.bufferLength
-    return copy as LRParser
+    return copy as Parser
   }
 
   private checkNested(nested: {[id: number]: any}) {
@@ -951,7 +952,7 @@ export class LRParser implements Parser {
 
   /// (used by the output of the parser generator) @internal
   static deserialize(spec: ParserSpec) {
-    return new LRParser(spec)
+    return new Parser(spec)
   }
 }
 

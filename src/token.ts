@@ -161,7 +161,7 @@ export class InputStream {
     if (token) {
       this.token = token
       token.start = token.lookAhead = pos
-      token.value = -1
+      token.value = token.extended = -1
     } else {
       this.token = nullToken
     }

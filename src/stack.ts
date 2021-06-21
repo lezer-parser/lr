@@ -1,8 +1,11 @@
 import {Action, Term, StateFlag, ParseState, Seq} from "./constants"
 import {Parse, ContextTracker} from "./parse"
-import {Tree, BufferCursor, NodeProp, NodeType, Parser} from "lezer-tree"
+import {Tree, BufferCursor, NodeProp, NodeType, AbstractParser} from "lezer-tree"
 
-export const CanNest: WeakMap<Stack, {from: number, to: number, parser: Parser | ((node: Tree) => Parser)}> = new WeakMap
+export const CanNest: WeakMap<Stack, {
+  from: number, to: number,
+  parser: AbstractParser | ((node: Tree) => AbstractParser)
+}> = new WeakMap
 
 const PlaceHolder = NodeType.define({id: 0, name: "<placeholder>"})
 
@@ -173,24 +176,24 @@ export class Stack {
         if (!parser.stateFlag(nextState, StateFlag.Skipped)) this.reducePos = nextEnd
       }
       this.pushState(nextState, start)
+      this.shiftContext(next, start)
       if (next <= parser.maxNode) {
         this.buffer.push(next, start, nextEnd, size)
         this.checkNesting(next, start, nextEnd)
       }
-      this.shiftContext(next, start)
     } else { // Shift-and-stay, which means this is a skipped token
-      if (next <= this.p.parser.maxNode) {
-        this.buffer.push(next, this.pos, nextEnd, size)
-        this.checkNesting(next, this.pos, nextEnd)
-      }
       this.pos = nextEnd
       this.shiftContext(next, start)
+      if (next <= this.p.parser.maxNode) {
+        this.buffer.push(next, start, nextEnd, size)
+        this.checkNesting(next, start, nextEnd)
+      }
     }
   }
 
   private checkNesting(term: number, from: number, to: number) {
     let table = this.p.parser.nested, nest, parser
-    if (table && (nest = table[term]) && (parser = nest(this.p.input, from, to)))
+    if (table && (nest = table[term]) && (parser = nest(this.p.input, this, from, to)))
       CanNest.set(this, {from, to, parser})
   }
 
