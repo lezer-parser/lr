@@ -239,12 +239,11 @@ const enum Rec {
 export class Parse implements PartialParse {
   // Active parse stacks.
   stacks: Stack[]
-  // The position to which the parse has advanced. FIXME needs to be reconceptualized
-  pos = 0
   recovering = 0
   fragments: FragmentCursor | null
   nextStackID = 0x2654
   nested: PartialParse | null = null
+  minStackPos = 0
 
   reused: Tree[] = []
   propValues: any[] = []
@@ -252,6 +251,7 @@ export class Parse implements PartialParse {
   tokens: TokenCache
   topTerm: number
   gaps: readonly InputGap[] | null
+  stoppedAt: null | number = null
 
   public input: Input
 
@@ -269,6 +269,14 @@ export class Parse implements PartialParse {
       ? new FragmentCursor(spec.fragments, parser.nodeSet, this.spec.from, this.spec.to) : null
   }
 
+  get parsedPos() {
+    if (this.parser.nested) {
+      if (this.nested) return this.nested.parsedPos
+      return this.stacks.map(s => s.mayNestFrom(this.parser.nested!)).reduce((m, v) => Math.min(m, v))
+    }
+    return this.minStackPos
+  }
+
   // Move the parser forward. This will process all parse stacks at
   // `this.pos` and try to advance them to a further position. If no
   // stack for such a position is found, it'll start error-recovery.
@@ -278,7 +286,6 @@ export class Parse implements PartialParse {
   advance() {
     if (this.nested) {
       let result = this.nested.advance()
-      this.pos = this.nested.pos
       if (result) {
         this.finishNested(this.stacks[0], result)
         this.nested = null
@@ -286,7 +293,7 @@ export class Parse implements PartialParse {
       return null
     }
 
-    let stacks = this.stacks, pos = this.pos
+    let stacks = this.stacks, pos = this.minStackPos
     // This will hold stacks beyond `pos`.
     let newStacks: Stack[] = this.stacks = []
     let stopped: Stack[] | undefined, stoppedTokens: number[] | undefined
@@ -364,9 +371,15 @@ export class Parse implements PartialParse {
       }
     }
 
-    this.pos = newStacks[0].pos
-    for (let i = 1; i < newStacks.length; i++) if (newStacks[i].pos < this.pos) this.pos = newStacks[i].pos
+    this.minStackPos = newStacks[0].pos
+    for (let i = 1; i < newStacks.length; i++) if (newStacks[i].pos < this.minStackPos) this.minStackPos = newStacks[i].pos
     return null
+  }
+
+  stopAt(pos: number) {
+    if (this.stoppedAt != null && this.stoppedAt < pos) throw new RangeError("Can't move stoppedAt forward")
+    this.stoppedAt = pos
+    if (this.nested) this.nested.stopAt(pos)
   }
 
   // Returns an updated version of the given stack, or null if the
@@ -376,6 +389,9 @@ export class Parse implements PartialParse {
   private advanceStack(stack: Stack, stacks: null | Stack[], split: null | Stack[]) {
     let start = stack.pos, {parser} = this
     let base = verbose ? this.stackID(stack) + " -> " : ""
+
+    if (this.stoppedAt != null && start > this.stoppedAt)
+      return stack.forceReduce() ? stack : null
 
     if (this.fragments) {
       let strictCx = stack.curContext && stack.curContext.tracker.strict, cxHash = strictCx ? stack.curContext!.hash : 0
@@ -494,12 +510,6 @@ export class Parse implements PartialParse {
     return null
   }
 
-  forceFinish() {
-    let stack = this.stacks[0].split()
-    if (this.nested) this.finishNested(stack, this.nested.forceFinish())
-    return this.stackToTree(stack.forceAll())
-  }
-
   // Convert the stack's buffer to a syntax tree.
   stackToTree(stack: Stack, pos: number = stack.pos): Tree {
     stack.close()
@@ -532,6 +542,7 @@ export class Parse implements PartialParse {
       from, to,
       gaps: this.spec.gaps ? InputGap.inner(from, to, this.spec.gaps) : undefined
     })
+    if (this.stoppedAt != null) this.nested.stopAt(this.stoppedAt)
     this.stacks = [stack]
   }
 

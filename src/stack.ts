@@ -309,7 +309,7 @@ export class Stack {
   /// given token when it applies.
   canShift(term: number) {
     for (let sim = new SimulatedStack(this);;) {
-      let action = this.p.parser.stateSlot(sim.top, ParseState.DefaultReduce) || this.p.parser.hasAction(sim.top, term)
+      let action = this.p.parser.stateSlot(sim.state, ParseState.DefaultReduce) || this.p.parser.hasAction(sim.state, term)
       if ((action & Action.ReduceFlag) == 0) return true
       if (action == 0) return false
       sim.reduce(action)
@@ -345,7 +345,7 @@ export class Stack {
       let force = parser.stateSlot(state, ParseState.ForcedReduce)
       let depth = force >> Action.ReduceDepthShift, term = force & Action.ValueMask
       if (types.indexOf(term) > -1) {
-        let base = frame - (3 * (force >> Action.ReduceDepthShift)), pos = this.stack[base + 1]
+        let base = frame - (3 * depth), pos = this.stack[base + 1]
         if (before == null || before > pos) return pos
       }
       if (frame == 0) return null
@@ -356,6 +356,20 @@ export class Stack {
         frame -= 3 * (depth - 1)
         state = parser.getGoto(this.stack[frame - 3], term, true)
       }
+    }
+  }
+
+  /// @internal
+  mayNestFrom(nested: {[id: number]: any}) {
+    let sim = new SimulatedStack(this), pos = this.pos, {parser} = this.p
+    for (;;) {
+      let force = parser.stateSlot(sim.state, ParseState.ForcedReduce)
+      if (nested[force & Action.ValueMask]) {
+        let base = sim.base - (3 * (force >> Action.ReduceDepthShift))
+        pos = sim.stack[base + 1]
+      }
+      if (sim.base == 0) return pos
+      sim.reduce(force)
     }
   }
 
@@ -513,27 +527,27 @@ export const enum Recover {
 // Used to cheaply run some reductions to scan ahead without mutating
 // an entire stack
 class SimulatedStack {
-  top: number
-  rest: number[]
-  offset: number
+  state: number
+  stack: number[]
+  base: number
 
-  constructor(readonly stack: Stack) {
-    this.top = stack.state
-    this.rest = stack.stack
-    this.offset = this.rest.length
+  constructor(readonly start: Stack) {
+    this.state = start.state
+    this.stack = start.stack
+    this.base = this.stack.length
   }
 
   reduce(action: number) {
     let term = action & Action.ValueMask, depth = action >> Action.ReduceDepthShift
     if (depth == 0) {
-      if (this.rest == this.stack.stack) this.rest = this.rest.slice()
-      this.rest.push(this.top, 0, 0)
-      this.offset += 3
+      if (this.stack == this.start.stack) this.stack = this.stack.slice()
+      this.stack.push(this.state, 0, 0)
+      this.base += 3
     } else {
-      this.offset -= (depth - 1) * 3
+      this.base -= (depth - 1) * 3
     }
-    let goto = this.stack.p.parser.getGoto(this.rest[this.offset - 3], term, true)
-    this.top = goto
+    let goto = this.start.p.parser.getGoto(this.stack[this.base - 3], term, true)
+    this.state = goto
   }
 }
 
