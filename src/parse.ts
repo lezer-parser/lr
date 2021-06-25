@@ -13,7 +13,7 @@ const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LO
 
 let stackIDs: WeakMap<Stack, string> | null = null
 
-type NestRecord = {
+export type NestMap = {
   [term: number]: (input: Input, stack: Stack, from: number, to: number) => Parser | ((node: Tree) => Parser) | null
 }
 
@@ -646,7 +646,7 @@ type ParserSpec = {
   tokenizers: (Tokenizer | number)[],
   topRules: {[name: string]: [number, number]},
   context: ContextTracker<any> | null,
-  nested?: NestRecord,
+  nested?: NestMap,
   dialects?: {[name: string]: number},
   dynamicPrecedences?: {[term: number]: number},
   specialized?: {term: number, get: (value: string, stack: Stack) => number}[],
@@ -668,12 +668,12 @@ export interface ParserConfig {
   /// be called when such a node is created and, if they return a
   /// parser, that parser will be used to parse the extent of that
   /// node.
-  nested?: NestRecord
+  nested?: NestMap
   /// Add new nested parsers to the existing set already present in
   /// the parser (as opposed to
   /// [`nested`](#lezer.ParserConfig.nexted), which replaces all
   /// existing nested parsers).
-  addNested?: NestRecord
+  addNested?: NestMap
   /// Replace the given external tokenizers with new ones.
   tokenizers?: {from: ExternalTokenizer, to: ExternalTokenizer}[]
   /// When true, the parser will raise an exception, rather than run
@@ -709,7 +709,7 @@ export class LRParser extends Parser {
   /// @internal
   readonly context: ContextTracker<unknown> | null
   /// Metadata about nested grammars used in this grammar @internal
-  readonly nested: null | NestRecord
+  readonly nested: null | NestMap
   /// A mapping from dialect names to the tokens that are exclusive
   /// to them. @internal
   readonly dialects: {[name: string]: number}
