@@ -1,4 +1,4 @@
-import {Input, InputGap} from "lezer-tree"
+import {Input, InputGap} from "@lezer/common"
 import {Stack} from "./stack"
 
 export class CachedToken {

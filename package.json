@@ -1,30 +1,30 @@
 {
-  "name": "lezer",
+  "name": "@lezer/lr",
   "version": "0.13.5",
   "description": "Incremental parser",
   "main": "dist/index.cjs",
   "type": "module",
   "exports": {
-    "import": "./dist/index.es.js",
+    "import": "./dist/index.js",
     "require": "./dist/index.cjs"
   },
-  "module": "dist/index.es.js",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "author": "Marijn Haverbeke <marijnh@gmail.com>",
   "license": "MIT",
   "repository": {
     "type" : "git",
-    "url" : "https://github.com/lezer-parser/lezer.git"
+    "url" : "https://github.com/lezer-parser/lr.git"
   },
   "devDependencies": {
-    "rollup": "^2.27.1",
+    "rollup": "^2.52.2",
     "@rollup/plugin-commonjs": "^15.1.0",
     "@rollup/plugin-node-resolve": "^9.0.0",
-    "rollup-plugin-typescript2": "^0.27.2",
-    "typescript": "^3.7.2"
+    "rollup-plugin-typescript2": "^0.30.0",
+    "typescript": "^4.3.4"
   },
   "dependencies": {
-    "lezer-tree": "^0.13.2"
+    "@lezer/common": "^0.13.2"
   },
   "files": ["dist"],
   "scripts": {

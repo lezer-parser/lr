@@ -4,16 +4,14 @@ import commonJS from "@rollup/plugin-commonjs"
 
 export default {
   input: "./src/index.ts",
-  external: ["lezer-tree"],
+  external: ["@lezer/common"],
   output: [{
     format: "cjs",
     file: "./dist/index.cjs",
-    sourcemap: true,
     externalLiveBindings: false
   }, {
     format: "es",
-    file: "./dist/index.es.js",
-    sourcemap: true,
+    file: "./dist/index.js",
     externalLiveBindings: false
   }],
   plugins: [
@@ -24,7 +22,6 @@ export default {
       tsconfigOverride: {
         compilerOptions: {
           lib: ["es5", "es6"],
-          sourceMap: true,
           target: "es6",
           strict: false,
           declaration: true

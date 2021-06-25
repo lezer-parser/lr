@@ -3,9 +3,9 @@
     "lib": ["es2017"],
     "noImplicitReturns": true,
     "noUnusedLocals": true,
-    "sourceMap": true,
     "strict": true,
-    "target": "es5",
+    "target": "es2015",
+    "module": "es2015",
     "newLine": "lf",
     "preserveConstEnums": true,
     "stripInternal": true

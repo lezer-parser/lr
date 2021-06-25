@@ -1,5 +1,5 @@
 import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource,
-        Input, PartialParse, AbstractParser, InputGap, ParseSpec, FullParseSpec} from "lezer-tree"
+        Input, PartialParse, Parser, InputGap, ParseSpec, FullParseSpec} from "@lezer/common"
 import {Stack, StackBufferCursor, CanNest} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {Tokenizer, TokenGroup, ExternalTokenizer, CachedToken, InputStream} from "./token"
@@ -14,7 +14,7 @@ const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LO
 let stackIDs: WeakMap<Stack, string> | null = null
 
 type NestRecord = {
-  [term: number]: (input: Input, stack: Stack, from: number, to: number) => AbstractParser | ((node: Tree) => AbstractParser) | null
+  [term: number]: (input: Input, stack: Stack, from: number, to: number) => Parser | ((node: Tree) => Parser) | null
 }
 
 const enum Safety { Margin = 25 }
@@ -125,7 +125,7 @@ class TokenCache {
 
   actions: number[] = []
 
-  constructor(parser: Parser, readonly stream: InputStream) {
+  constructor(parser: LRParser, readonly stream: InputStream) {
     this.tokens = parser.tokenizers.map(_ => new CachedToken)
   }
 
@@ -256,7 +256,7 @@ export class Parse implements PartialParse {
   public input: Input
 
   constructor(
-    public parser: Parser,
+    public parser: LRParser,
     readonly spec: FullParseSpec
   ) {
     this.input = spec.input
@@ -534,7 +534,7 @@ export class Parse implements PartialParse {
   private startNested({stack, from, to, parser}: {
     stack: Stack,
     from: number, to: number,
-    parser: AbstractParser | ((node: Tree) => AbstractParser)
+    parser: Parser | ((node: Tree) => Parser)
   }) {
     if (typeof parser == "function") parser = parser(stack.materializeTopNode())
     this.nested = parser.startParse({
@@ -687,11 +687,11 @@ export interface ParserConfig {
 
 /// A parser holds the parse tables for a given grammar, as generated
 /// by `lezer-generator`.
-export class Parser extends AbstractParser {
+export class LRParser extends Parser {
   /// The parse states for this grammar @internal
   readonly states: Readonly<Uint32Array>
   /// A blob of data that the parse states, as well as some
-  /// of `Parser`'s fields, point into @internal
+  /// of `LRParser`'s fields, point into @internal
   readonly data: Readonly<Uint16Array>
   /// The goto table. See `computeGotoTable` in
   /// lezer-generator for details on the format @internal
@@ -885,7 +885,7 @@ export class Parser extends AbstractParser {
   configure(config: ParserConfig) {
     // Hideous reflection-based kludge to make it easy to create a
     // slightly modified copy of a parser.
-    let copy = Object.assign(Object.create(Parser.prototype), this)
+    let copy = Object.assign(Object.create(LRParser.prototype), this)
     if (config.props)
       copy.nodeSet = this.nodeSet.extend(...config.props)
     if (config.top) {
@@ -912,7 +912,7 @@ export class Parser extends AbstractParser {
       copy.strict = config.strict
     if (config.bufferLength != null)
       copy.bufferLength = config.bufferLength
-    return copy as Parser
+    return copy as LRParser
   }
 
   private checkNested(nested: {[id: number]: any}) {
@@ -963,7 +963,7 @@ export class Parser extends AbstractParser {
 
   /// (used by the output of the parser generator) @internal
   static deserialize(spec: ParserSpec) {
-    return new Parser(spec)
+    return new LRParser(spec)
   }
 }
 

@@ -1,10 +1,10 @@
 import {Action, Term, StateFlag, ParseState, Seq} from "./constants"
 import {Parse, ContextTracker} from "./parse"
-import {Tree, BufferCursor, NodeProp, NodeType, AbstractParser} from "lezer-tree"
+import {Tree, BufferCursor, NodeProp, NodeType, Parser} from "@lezer/common"
 
 export const CanNest: WeakMap<Stack, {
   from: number, to: number,
-  parser: AbstractParser | ((node: Tree) => AbstractParser)
+  parser: Parser | ((node: Tree) => Parser)
 }> = new WeakMap
 
 const PlaceHolder = NodeType.define({id: 0, name: "<placeholder>"})
