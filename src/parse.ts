@@ -978,7 +978,8 @@ function findOffset(data: Readonly<Uint16Array>, start: number, term: number) {
 function findFinished(stacks: Stack[]) {
   let best: Stack | null = null
   for (let stack of stacks) {
-    if (stack.pos == stack.p.input.length &&
+    let stopped = stack.p.stoppedAt
+    if ((stack.pos == stack.p.spec.to || stopped != null && stack.pos > stopped) &&
         stack.p.parser.stateFlag(stack.state, StateFlag.Accepting) &&
         (!best || best.score < stack.score))
       best = stack
