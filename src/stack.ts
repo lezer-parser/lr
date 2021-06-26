@@ -7,7 +7,7 @@ export const CanNest: WeakMap<Stack, {
   parser: Parser | ((node: Tree) => Parser)
 }> = new WeakMap
 
-const PlaceHolder = NodeType.define({id: 0, name: "<placeholder>"})
+const PlaceHolder = NodeType.define({id: 0, name: "<placeholder>", skipped: true})
 
 /// A parse stack. These are used internally by the parser to track
 /// parsing progress. They also provide some properties and methods
@@ -16,7 +16,7 @@ const PlaceHolder = NodeType.define({id: 0, name: "<placeholder>"})
 export class Stack {
   /// @internal
   constructor(
-    /// A the parse that this stack is part of @internal
+    /// The parse that this stack is part of @internal
     readonly p: Parse,
     /// Holds state, pos, value stack pos (15 bits array index, 15 bits
     /// buffer index) triplets for all but the top state
@@ -255,6 +255,7 @@ export class Stack {
     return node
   }
 
+  /// @internal
   mount(tree: Tree) {
     this.buffer.push(this.p.propValues.length, (NodeProp.mountedTree as any).id, 0, -2)
     this.p.propValues.push(tree)
@@ -505,7 +506,6 @@ export class Stack {
     if (this.curContext && this.curContext!.tracker.strict) this.emitContext()
     if (this.lookAhead > 0) this.emitLookAhead()
   }
-
 }
 
 class StackContext {

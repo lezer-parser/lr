@@ -13,6 +13,11 @@ const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LO
 
 let stackIDs: WeakMap<Stack, string> | null = null
 
+/// Data structure used to describe nested parsing. Associates [node
+/// ids](#tree.NodeType.id) with a function that determines whether to
+/// run a nested parse for that node after it has been reduced. When
+/// the function returns another function, the node is immediately
+/// allocated as a `Tree` and passed to that function.
 export type NestMap = {
   [term: number]: (input: Input, stack: Stack, from: number, to: number) => Parser | ((node: Tree) => Parser) | null
 }
@@ -233,9 +238,6 @@ const enum Rec {
   ForceReduceLimit = 10
 }
 
-/// A parse context can be used for step-by-step parsing. After
-/// creating it, you repeatedly call `.advance()` until it returns a
-/// tree to indicate it has reached the end of the parse.
 export class Parse implements PartialParse {
   // Active parse stacks.
   stacks: Stack[]
@@ -586,6 +588,9 @@ const id: <T>(x: T) => T = x => x
 ///
 /// Context values should be immutable, and can be updated (replaced)
 /// on shift or reduce actions.
+///
+/// The export used in a `@context` declaration should be of this
+/// type.
 export class ContextTracker<T> {
   /// @internal
   start: T
@@ -600,10 +605,9 @@ export class ContextTracker<T> {
   /// @internal
   strict: boolean
 
-  /// The export used in a `@context` declaration should be of this
-  /// type.
+  /// Define a context tracker.
   constructor(spec: {
-    /// The initial value of the context.
+    /// The initial value of the context at the start of the parse.
     start: T,
     /// Update the context when the parser executes a
     /// [shift](https://en.wikipedia.org/wiki/LR_parser#Shift_and_reduce_actions)
@@ -620,7 +624,7 @@ export class ContextTracker<T> {
     /// By default, nodes can only be reused during incremental
     /// parsing if they were created in the same context as the one in
     /// which they are reused. Set this to false to disable that
-    /// check.
+    /// check (and the overhead of storing the hashes).
     strict?: boolean
   }) {
     this.start = spec.start
@@ -654,12 +658,14 @@ type ParserSpec = {
   termNames?: {[id: number]: string}
 }
 
-/// Configuration options to pass to a parser.
+/// Configuration options when
+/// [reconfiguring](#lezer.LRParser.configure) a parser.
 export interface ParserConfig {
-  /// Node props to add to the parser's node set.
+  /// Node prop values to add to the parser's node set.
   props?: readonly NodePropSource[]
-  /// The name of the @top declaration to parse from. If not
-  /// specified, the first @top declaration is used.
+  /// The name of the `@top` declaration to parse from. If not
+  /// specified, the first top rule declaration in the grammar is
+  /// used.
   top?: string
   /// A space-separated string of dialects to enable.
   dialect?: string

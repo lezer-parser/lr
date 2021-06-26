@@ -13,6 +13,10 @@ export class CachedToken {
 
 const nullToken = new CachedToken
 
+/// [Tokenizers](#lezer.ExternalTokenizer) interact with the input
+/// through this interface. It presents the input as a stream of
+/// characters, hiding the complexity of [gaps](#tree.InputGap) from
+/// tokenizer code and tracking lookahead.
 export class InputStream {
   /// @internal
   chunk = ""
@@ -73,10 +77,10 @@ export class InputStream {
   /// on.
   ///
   /// Note that looking around during tokenizing creates dependencies
-  /// on potentially far-away content, which may hamper incremental
-  /// parsing (when looking forward) or even break it (when looking
-  /// backward more than 25 code units, since the library does not
-  /// track lookbehind dependency).
+  /// on potentially far-away content, which may reduce the
+  /// effectiveness incremental parsing—when looking forward—or even
+  /// cause invalid reparses when looking backward more than 25 code
+  /// units, since the library does not track lookbehind.
   peek(offset: number) {
     let idx = this.chunkOff + offset, pos, result
     if (idx >= 0 && idx < this.chunk.length) {
@@ -232,18 +236,18 @@ interface ExternalOptions {
   extend?: boolean
 }
 
-/// Exports that are used for `@external tokens` in the grammar should
-/// export an instance of this class.
+/// `@external tokens` declarations in the grammar should resolve to
+/// an instance of this class.
 export class ExternalTokenizer implements Tokenizer {
   contextual: boolean
   fallback: boolean
   extend: boolean
 
   /// Create a tokenizer. The first argument is the function that,
-  /// given an input stream and a token object,
-  /// [fills](#lezer.Token.accept) the token object if it recognizes a
-  /// token. `token.start` should be used as the start position to
-  /// scan from.
+  /// given an input stream, scans for the types of tokens it
+  /// recognizes at the stream's position, and calls
+  /// [`acceptToken`](#lezer.InputStream.acceptToken) when it finds
+  /// one.
   constructor(
     readonly token: (input: InputStream, stack: Stack) => void,
     options: ExternalOptions = {}
