@@ -36,7 +36,7 @@ export class InputStream {
   token = nullToken
 
   /// The current position of the stream. Note that, due to
-  /// [gaps](#lr.ParseSpec.gaps), advancing the stream does not
+  /// [gaps](#common.ParseSpec.gaps), advancing the stream does not
   /// always mean its position moves a single unit.
   pos: number
 
