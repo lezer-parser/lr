@@ -72,7 +72,7 @@ export class Stack {
     return new Stack(p, [], state, pos, pos, 0, [], 0, cx ? new StackContext(cx, cx.start) : null, 0, null)
   }
 
-  /// The stack's current [context](#lezer.ContextTracker) value, if
+  /// The stack's current [context](#lr.ContextTracker) value, if
   /// any. Its type will depend on the context tracker's type
   /// parameter, or it will be `null` if there is no context
   /// tracker.

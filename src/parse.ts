@@ -14,7 +14,7 @@ const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LO
 let stackIDs: WeakMap<Stack, string> | null = null
 
 /// Data structure used to describe nested parsing. Associates [node
-/// ids](#tree.NodeType.id) with a function that determines whether to
+/// ids](#common.NodeType.id) with a function that determines whether to
 /// run a nested parse for that node after it has been reduced. When
 /// the function returns another function, the node is immediately
 /// allocated as a `Tree` and passed to that function.
@@ -659,7 +659,7 @@ type ParserSpec = {
 }
 
 /// Configuration options when
-/// [reconfiguring](#lezer.LRParser.configure) a parser.
+/// [reconfiguring](#lr.LRParser.configure) a parser.
 export interface ParserConfig {
   /// Node prop values to add to the parser's node set.
   props?: readonly NodePropSource[]
@@ -677,7 +677,7 @@ export interface ParserConfig {
   nested?: NestMap
   /// Add new nested parsers to the existing set already present in
   /// the parser (as opposed to
-  /// [`nested`](#lezer.ParserConfig.nexted), which replaces all
+  /// [`nested`](#lr.ParserConfig.nested), which replaces all
   /// existing nested parsers).
   addNested?: NestMap
   /// Replace the given external tokenizers with new ones.

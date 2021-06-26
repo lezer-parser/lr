@@ -13,9 +13,9 @@ export class CachedToken {
 
 const nullToken = new CachedToken
 
-/// [Tokenizers](#lezer.ExternalTokenizer) interact with the input
+/// [Tokenizers](#lr.ExternalTokenizer) interact with the input
 /// through this interface. It presents the input as a stream of
-/// characters, hiding the complexity of [gaps](#tree.InputGap) from
+/// characters, hiding the complexity of [gaps](#common.InputGap) from
 /// tokenizer code and tracking lookahead.
 export class InputStream {
   /// @internal
@@ -36,7 +36,7 @@ export class InputStream {
   token = nullToken
 
   /// The current position of the stream. Note that, due to
-  /// [gaps](#lezer.ParseSpec.gaps), advancing the stream does not
+  /// [gaps](#lr.ParseSpec.gaps), advancing the stream does not
   /// always mean its position moves a single unit.
   pos: number
 
@@ -148,7 +148,7 @@ export class InputStream {
   }
 
   /// Move the stream forward N (defaults to 1) code units. Returns
-  /// the new value of [`next`](#lezer.InputStream.next).
+  /// the new value of [`next`](#lr.InputStream.next).
   advance(n = 1) {
     for (let i = 0; i < n; i++) {
       if (this.next < 0) return -1
@@ -246,7 +246,7 @@ export class ExternalTokenizer implements Tokenizer {
   /// Create a tokenizer. The first argument is the function that,
   /// given an input stream, scans for the types of tokens it
   /// recognizes at the stream's position, and calls
-  /// [`acceptToken`](#lezer.InputStream.acceptToken) when it finds
+  /// [`acceptToken`](#lr.InputStream.acceptToken) when it finds
   /// one.
   constructor(
     readonly token: (input: InputStream, stack: Stack) => void,
