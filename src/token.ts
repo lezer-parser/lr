@@ -24,6 +24,9 @@ export class InputStream {
   chunkOff = 0
   /// @internal
   chunkPos: number
+  /// Backup chunk
+  private chunk2 = ""
+  private chunk2Pos = 0
 
   /// The character code of the next code unit in the input, or -1
   /// when the stream is at the end of the input.
@@ -103,12 +106,20 @@ export class InputStream {
   }
 
   private getChunk() {
+    if (this.pos >= this.chunk2Pos && this.pos < this.chunk2Pos + this.chunk2.length) {
+      let {chunk, chunkPos} = this
+      this.chunk = this.chunk2; this.chunkPos = this.chunk2Pos
+      this.chunk2 = chunk; this.chunk2Pos = chunkPos
+      this.chunkOff = this.pos - this.chunkPos
+      return true
+    }
     if (this.pos >= this.end) {
       this.next = -1
       this.chunk = ""
       this.chunkOff = 0
       return false
     }
+    this.chunk2 = this.chunk; this.chunk2Pos = this.chunkPos
     let nextChunk = this.input.chunk(this.pos)
     let end = this.pos + nextChunk.length
     this.chunk = end > this.end ? nextChunk.slice(0, this.end - this.pos) : nextChunk
@@ -170,7 +181,6 @@ export class InputStream {
       this.token = nullToken
     }
     if (this.pos != pos) {
-      // FIXME keep a prev chunk to avoid have to re-query the input every time at the end of a chunk
       this.pos = pos
       if (pos >= this.chunkPos && pos < this.chunkPos + this.chunk.length) {
         this.chunkOff = pos - this.chunkPos
