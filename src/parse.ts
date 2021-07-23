@@ -1,6 +1,6 @@
-import {DefaultBufferLength, Tree, TreeBuffer, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource,
-        Input, PartialParse, Parser, InputGap, ParseSpec, FullParseSpec} from "@lezer/common"
-import {Stack, StackBufferCursor, CanNest} from "./stack"
+import {DefaultBufferLength, Tree, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource,
+        Input, PartialParse, Parser} from "@lezer/common"
+import {Stack, StackBufferCursor} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {Tokenizer, TokenGroup, ExternalTokenizer, CachedToken, InputStream} from "./token"
 import {decodeArray} from "./decode"
@@ -49,8 +49,7 @@ class FragmentCursor {
   nextStart!: number
 
   constructor(readonly fragments: readonly TreeFragment[],
-              readonly nodeSet: NodeSet,
-              readonly from: number, readonly to: number) {
+              readonly nodeSet: NodeSet) {
     this.nextFragment()
   }
 
@@ -94,29 +93,24 @@ class FragmentCursor {
         this.nextStart = start
         return null
       }
-      if (next instanceof TreeBuffer) {
-        this.index[last]++
-        this.nextStart = start + next.length
-      } else {
-        let mounted = next.prop(NodeProp.mountedTree)
-        // Enter mounted trees if this node doesn't occur in the parser's node set or it covers the entire parse.
-        if (mounted && (next.type != this.nodeSet.types[next.type.id] ||
-                        this.from >= start && this.to <= start + next.length))
-          next = mounted
+      if (next instanceof Tree) {
         if (start == pos) {
           if (start < this.safeFrom) return null
           let end = start + next.length
           if (end <= this.safeTo) {
-            let lookAhead = (next as Tree).prop(NodeProp.lookAhead)
-            if (!lookAhead || end + lookAhead < this.fragment.to) return next as Tree
+            let lookAhead = next.prop(NodeProp.lookAhead)
+            if (!lookAhead || end + lookAhead < this.fragment.to) return next
           }
         }
         this.index[last]++
         if (start + next.length >= Math.max(this.safeFrom, pos)) { // Enter this node
-          this.trees.push(next as Tree)
+          this.trees.push(next)
           this.start.push(start)
           this.index.push(0)
         }
+      } else {
+        this.index[last]++
+        this.nextStart = start + next.length
       }
     }
   }
@@ -244,38 +238,30 @@ export class Parse implements PartialParse {
   recovering = 0
   fragments: FragmentCursor | null
   nextStackID = 0x2654
-  nested: PartialParse | null = null
   minStackPos = 0
 
   reused: Tree[] = []
-  propValues: any[] = []
   stream: InputStream
   tokens: TokenCache
   topTerm: number
-  gaps: readonly InputGap[] | null
   stoppedAt: null | number = null
 
-  public input: Input
-
   constructor(
-    public parser: LRParser,
-    readonly spec: FullParseSpec
+    readonly parser: LRParser,
+    readonly input: Input,
+    fragments: readonly TreeFragment[],
+    readonly ranges: readonly {from: number, to: number}[]
   ) {
-    this.input = spec.input
-    this.stream = new InputStream(this.input, this.spec.from, this.spec.to, spec.gaps)
+    this.stream = new InputStream(input, ranges)
     this.tokens = new TokenCache(parser, this.stream)
     this.topTerm = parser.top[1]
-    this.gaps = spec.gaps ? spec.gaps.filter(g => g.mount) : null
-    this.stacks = [Stack.start(this, parser.top[0], this.spec.from)]
-    this.fragments = spec.fragments.length && spec.to - spec.from > parser.bufferLength * 4
-      ? new FragmentCursor(spec.fragments, parser.nodeSet, this.spec.from, this.spec.to) : null
+    let {from} = ranges[0]
+    this.stacks = [Stack.start(this, parser.top[0], from)]
+    this.fragments = fragments.length && this.stream.end - from > parser.bufferLength * 4
+      ? new FragmentCursor(fragments, parser.nodeSet) : null
   }
 
   get parsedPos() {
-    if (this.parser.nested) {
-      if (this.nested) return this.nested.parsedPos
-      return this.stacks.map(s => s.mayNestFrom(this.parser.nested!)).reduce((m, v) => Math.min(m, v))
-    }
     return this.minStackPos
   }
 
@@ -286,31 +272,19 @@ export class Parse implements PartialParse {
   // When the parse is finished, this will return a syntax tree. When
   // not, it returns `null`.
   advance() {
-    if (this.nested) {
-      let result = this.nested.advance()
-      if (result) {
-        this.finishNested(this.stacks[0], result)
-        this.nested = null
-      }
-      return null
-    }
-
     let stacks = this.stacks, pos = this.minStackPos
     // This will hold stacks beyond `pos`.
     let newStacks: Stack[] = this.stacks = []
     let stopped: Stack[] | undefined, stoppedTokens: number[] | undefined
-    let maybeNest
 
     // Keep advancing any stacks at `pos` until they either move
     // forward or can't be advanced. Gather stacks that can't be
     // advanced further in `stopped`.
     for (let i = 0; i < stacks.length; i++) {
-      let stack = stacks[i], nest
+      let stack = stacks[i]
       for (;;) {
         if (stack.pos > pos) {
           newStacks.push(stack)
-        } else if (nest = this.checkNest(stack)) {
-          if (!maybeNest || maybeNest.stack.score < stack.score) maybeNest = nest
         } else if (this.advanceStack(stack, newStacks, stacks)) {
           continue
         } else {
@@ -321,11 +295,6 @@ export class Parse implements PartialParse {
         }
         break
       }
-    }
-
-    if (maybeNest) {
-      this.startNested(maybeNest)
-      return null
     }
 
     if (!newStacks.length) {
@@ -381,7 +350,6 @@ export class Parse implements PartialParse {
   stopAt(pos: number) {
     if (this.stoppedAt != null && this.stoppedAt < pos) throw new RangeError("Can't move stoppedAt forward")
     this.stoppedAt = pos
-    if (this.nested) this.nested.stopAt(pos)
   }
 
   // Returns an updated version of the given stack, or null if the
@@ -399,8 +367,7 @@ export class Parse implements PartialParse {
       let strictCx = stack.curContext && stack.curContext.tracker.strict, cxHash = strictCx ? stack.curContext!.hash : 0
       for (let cached = this.fragments.nodeAt(start); cached;) {
         let match = this.parser.nodeSet.types[cached.type.id] == cached.type ? parser.getGoto(stack.state, cached.type.id) : -1
-        if (match > -1 && cached.length &&
-            (!strictCx || cached instanceof Tree && (cached.prop(NodeProp.contextHash) || 0) == cxHash)) {
+        if (match > -1 && cached.length && (!strictCx || (cached.prop(NodeProp.contextHash) || 0) == cxHash)) {
           stack.useNode(cached, match)
           if (verbose) console.log(base + this.stackID(stack) + ` (via reuse of ${parser.getName(cached.type.id)})`)
           return true
@@ -444,8 +411,6 @@ export class Parse implements PartialParse {
   private advanceFully(stack: Stack, newStacks: Stack[]) {
     let pos = stack.pos
     for (;;) {
-      let nest = this.checkNest(stack)
-      if (nest) return nest
       if (!this.advanceStack(stack, null, null)) return false
       if (stack.pos > pos) {
         pushStackDedup(stack, newStacks)
@@ -456,7 +421,6 @@ export class Parse implements PartialParse {
 
   private runRecovery(stacks: Stack[], tokens: number[], newStacks: Stack[]) {
     let finished: Stack | null = null, restarted = false
-    let maybeNest
     for (let i = 0; i < stacks.length; i++) {
       let stack = stacks[i], token = tokens[i << 1], tokenEnd = tokens[(i << 1) + 1]
       let base = verbose ? this.stackID(stack) + " -> " : ""
@@ -467,20 +431,14 @@ export class Parse implements PartialParse {
         stack.restart()
         if (verbose) console.log(base + this.stackID(stack) + " (restarted)")
         let done = this.advanceFully(stack, newStacks)
-        if (done) {
-          if (done !== true) maybeNest = done
-          continue
-        }
+        if (done) continue
       }
 
       let force = stack.split(), forceBase = base
       for (let j = 0; force.forceReduce() && j < Rec.ForceReduceLimit; j++) {
         if (verbose) console.log(forceBase + this.stackID(force) + " (via force-reduce)")
         let done = this.advanceFully(force, newStacks)
-        if (done) {
-          if (done !== true) maybeNest = done
-          break
-        }
+        if (done) break
         if (verbose) forceBase = this.stackID(force) + " -> "
       }
 
@@ -489,7 +447,7 @@ export class Parse implements PartialParse {
         this.advanceFully(insert, newStacks)
       }
 
-      if (this.spec.to > stack.pos) {
+      if (this.stream.end > stack.pos) {
         if (tokenEnd == stack.pos) {
           tokenEnd++
           token = Term.Err
@@ -502,55 +460,20 @@ export class Parse implements PartialParse {
       }
     }
 
-    if (finished) return finished
-
-    if (maybeNest) for (let s of this.stacks) if (s.score > maybeNest.stack.score) {
-      maybeNest = undefined
-      break
-    }
-    if (maybeNest) this.startNested(maybeNest)
-    return null
+    return finished
   }
 
   // Convert the stack's buffer to a syntax tree.
-  stackToTree(stack: Stack, pos: number = stack.pos): Tree {
+  stackToTree(stack: Stack): Tree {
     stack.close()
     return Tree.build({buffer: StackBufferCursor.create(stack),
                        nodeSet: this.parser.nodeSet,
                        topID: this.topTerm,
                        maxBufferLength: this.parser.bufferLength,
                        reused: this.reused,
-                       propValues: this.propValues,
-                       start: this.spec.from,
-                       length: pos - this.spec.from,
+                       start: this.ranges[0].from,
+                       length: stack.pos - this.ranges[0].from,
                        minRepeatType: this.parser.minRepeatTerm})
-  }
-
-  private checkNest(stack: Stack) {
-    let found = CanNest.get(stack)
-    if (!found) return null
-    CanNest.delete(stack)
-    return {stack, ...found}
-  }
-
-  private startNested({stack, from, to, parser}: {
-    stack: Stack,
-    from: number, to: number,
-    parser: Parser | ((node: Tree) => Parser)
-  }) {
-    if (typeof parser == "function") parser = parser(stack.materializeTopNode())
-    this.nested = parser.startParse({
-      ...this.spec,
-      from, to,
-      gaps: this.spec.gaps ? InputGap.inner(from, to, this.spec.gaps) : undefined
-    })
-    if (this.stoppedAt != null) this.nested.stopAt(this.stoppedAt)
-    this.stacks = [stack]
-  }
-
-  private finishNested(stack: Stack, tree: Tree) {
-    stack.mount(tree)
-    if (verbose) console.log(this.stackID(stack) + ` (via unnest)`)
   }
 
   private stackID(stack: Stack) {
@@ -599,7 +522,7 @@ export class ContextTracker<T> {
   /// @internal
   reduce: (context: T, term: number, stack: Stack, input: InputStream) => T
   /// @internal
-  reuse: (context: T, node: Tree | TreeBuffer, stack: Stack, input: InputStream) => T
+  reuse: (context: T, node: Tree, stack: Stack, input: InputStream) => T
   /// @internal
   hash: (context: T) => number
   /// @internal
@@ -617,7 +540,7 @@ export class ContextTracker<T> {
     reduce?(context: T, term: number, stack: Stack, input: InputStream): T
     /// Update the context when the parser reuses a node from a tree
     /// fragment.
-    reuse?(context: T, node: Tree | TreeBuffer, stack: Stack, input: InputStream): T
+    reuse?(context: T, node: Tree, stack: Stack, input: InputStream): T
     /// Reduce a context value to a number (for cheap storage and
     /// comparison). Only needed for strict contexts.
     hash?(context: T): number
@@ -650,7 +573,6 @@ type ParserSpec = {
   tokenizers: (Tokenizer | number)[],
   topRules: {[name: string]: [number, number]},
   context: ContextTracker<any> | null,
-  nested?: NestMap,
   dialects?: {[name: string]: number},
   dynamicPrecedences?: {[term: number]: number},
   specialized?: {term: number, get: (value: string, stack: Stack) => number}[],
@@ -669,17 +591,6 @@ export interface ParserConfig {
   top?: string
   /// A space-separated string of dialects to enable.
   dialect?: string
-  /// The nested grammars to use. This can be used to associate nested
-  /// parsers with specific node types. The functions passed here will
-  /// be called when such a node is created and, if they return a
-  /// parser, that parser will be used to parse the extent of that
-  /// node.
-  nested?: NestMap
-  /// Add new nested parsers to the existing set already present in
-  /// the parser (as opposed to
-  /// [`nested`](#lr.ParserConfig.nested), which replaces all
-  /// existing nested parsers).
-  addNested?: NestMap
   /// Replace the given external tokenizers with new ones.
   tokenizers?: {from: ExternalTokenizer, to: ExternalTokenizer}[]
   /// When true, the parser will raise an exception, rather than run
@@ -702,8 +613,6 @@ export class LRParser extends Parser {
   /// The goto table. See `computeGotoTable` in
   /// lezer-generator for details on the format @internal
   readonly goto: Readonly<Uint16Array>
-  /// A node set with the node types used by this parser.
-  readonly nodeSet: NodeSet
   /// The highest term id @internal
   readonly maxTerm: number
   /// The first repeat-related term id @internal
@@ -714,8 +623,6 @@ export class LRParser extends Parser {
   readonly topRules: {[name: string]: [number, number]}
   /// @internal
   readonly context: ContextTracker<unknown> | null
-  /// Metadata about nested grammars used in this grammar @internal
-  readonly nested: null | NestMap
   /// A mapping from dialect names to the tokens that are exclusive
   /// to them. @internal
   readonly dialects: {[name: string]: number}
@@ -739,22 +646,20 @@ export class LRParser extends Parser {
   /// @internal
   readonly top: [number, number]
   /// @internal
-  readonly bufferLength = DefaultBufferLength
+  readonly bufferLength: number
   /// @internal
-  readonly strict = false
+  readonly strict: boolean
 
-  private cachedDialect: Dialect | null = null
+  private cachedDialect: Dialect | null
 
   /// @internal
   constructor(spec: ParserSpec) {
-    super()
     if (spec.version != File.Version)
       throw new RangeError(`Parser version (${spec.version}) doesn't match runtime version (${File.Version})`)
-    let tokenArray = decodeArray<Uint16Array>(spec.tokenData)
     let nodeNames = spec.nodeNames.split(" ")
-    this.minRepeatTerm = nodeNames.length
-    this.context = spec.context
+    let minRepeatTerm = nodeNames.length
     for (let i = 0; i < spec.repeatNodeCount; i++) nodeNames.push("")
+    let topTerms = Object.keys(spec.topRules).map(r => spec.topRules[r][1])
     let nodeProps: [NodeProp<any>, any][][] = []
     for (let i = 0; i < nodeNames.length; i++) nodeProps.push([])
     function setProp(nodeID: number, prop: NodeProp<any>, value: any) {
@@ -773,6 +678,22 @@ export class LRParser extends Parser {
         }
       }
     }
+    let nodeSet = new NodeSet(nodeNames.map((name, i) => NodeType.define({
+      name: i >= minRepeatTerm ? undefined: name,
+      id: i,
+      props: nodeProps[i],
+      top: topTerms.indexOf(i) > -1,
+      error: i == 0,
+      skipped: spec.skippedNodes && spec.skippedNodes.indexOf(i) > -1
+    })))
+    super(nodeSet)
+    this.cachedDialect = null
+    this. strict = false
+    this.bufferLength = DefaultBufferLength
+
+    let tokenArray = decodeArray<Uint16Array>(spec.tokenData)
+    this.minRepeatTerm = minRepeatTerm
+    this.context = spec.context
     this.specialized = new Uint16Array(spec.specialized ? spec.specialized.length : 0)
     this.specializers = []
     if (spec.specialized) for (let i = 0; i < spec.specialized.length; i++) {
@@ -783,19 +704,9 @@ export class LRParser extends Parser {
     this.states = decodeArray(spec.states, Uint32Array)
     this.data = decodeArray(spec.stateData)
     this.goto = decodeArray(spec.goto)
-    let topTerms = Object.keys(spec.topRules).map(r => spec.topRules[r][1])
-    this.nodeSet = new NodeSet(nodeNames.map((name, i) => NodeType.define({
-      name: i >= this.minRepeatTerm ? undefined: name,
-      id: i,
-      props: nodeProps[i],
-      top: topTerms.indexOf(i) > -1,
-      error: i == 0,
-      skipped: spec.skippedNodes && spec.skippedNodes.indexOf(i) > -1
-    })))
     this.maxTerm = spec.maxTerm
     this.tokenizers = spec.tokenizers.map(value => typeof value == "number" ? new TokenGroup(tokenArray, value) : value)
     this.topRules = spec.topRules
-    this.nested = spec.nested || null
     this.dialects = spec.dialects || {}
     this.dynamicPrecedences = spec.dynamicPrecedences || null
     this.tokenPrecTable = spec.tokenPrec
@@ -806,8 +717,8 @@ export class LRParser extends Parser {
     this.top = this.topRules[Object.keys(this.topRules)[0]]
   }
 
-  startParse(spec: ParseSpec): PartialParse {
-    return new Parse(this, new FullParseSpec(spec))
+  startParseInner(input: Input, fragments: readonly TreeFragment[], ranges: readonly {from: number, to: number}[]): PartialParse {
+    return new Parse(this, input, fragments, ranges)
   }
 
   /// Get a goto table entry @internal
@@ -906,25 +817,11 @@ export class LRParser extends Parser {
       })
     if (config.dialect)
       copy.dialect = this.parseDialect(config.dialect)
-    if (config.nested) {
-      let count = this.checkNested(config.nested)
-      copy.nested = count ? config.nested : null
-    }
-    if (config.addNested) {
-      this.checkNested(config.addNested)
-      copy.nested = Object.assign(Object.create(null), config.nested, config.addNested)
-    }
     if (config.strict != null)
       copy.strict = config.strict
     if (config.bufferLength != null)
       copy.bufferLength = config.bufferLength
     return copy as LRParser
-  }
-
-  private checkNested(nested: {[id: number]: any}) {
-    let keys = Object.keys(nested)
-    for (let k of keys) if (+k > this.maxNode) throw new Error("Anonymous terms cannot be used for nesting")
-    return keys.length
   }
 
   /// Returns the name associated with a given term. This will only
@@ -938,9 +835,6 @@ export class LRParser extends Parser {
   /// The eof term id is always allocated directly after the node
   /// types. @internal
   get eofTerm() { return this.maxNode + 1 }
-
-  /// Tells you whether this grammar has any nested grammars.
-  get hasNested() { return !!this.nested }
 
   /// The type of top node produced by the parser.
   get topNode() { return this.nodeSet.types[this.top[1]] }
@@ -985,7 +879,7 @@ function findFinished(stacks: Stack[]) {
   let best: Stack | null = null
   for (let stack of stacks) {
     let stopped = stack.p.stoppedAt
-    if ((stack.pos == stack.p.spec.to || stopped != null && stack.pos > stopped) &&
+    if ((stack.pos == stack.p.stream.end || stopped != null && stack.pos > stopped) &&
         stack.p.parser.stateFlag(stack.state, StateFlag.Accepting) &&
         (!best || best.score < stack.score))
       best = stack

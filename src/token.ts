@@ -1,4 +1,4 @@
-import {Input, InputGap} from "@lezer/common"
+import {Input} from "@lezer/common"
 import {Stack} from "./stack"
 
 export class CachedToken {
@@ -15,8 +15,8 @@ const nullToken = new CachedToken
 
 /// [Tokenizers](#lr.ExternalTokenizer) interact with the input
 /// through this interface. It presents the input as a stream of
-/// characters, hiding the complexity of [gaps](#common.InputGap) from
-/// tokenizer code and tracking lookahead.
+/// characters, tracking lookahead and hiding the complexity of
+/// [ranges](#common.Parser.parse^ranges) from tokenizer code.
 export class InputStream {
   /// @internal
   chunk = ""
@@ -33,9 +33,6 @@ export class InputStream {
   next: number = -1
 
   /// @internal
-  gaps: null | readonly InputGap[]
-
-  /// @internal
   token = nullToken
 
   /// The current position of the stream. Note that, due to
@@ -44,35 +41,40 @@ export class InputStream {
   pos: number
 
   /// @internal
+  end: number
+
+  private rangeIndex = 0
+  private range: {from: number, to: number}
+
+  /// @internal
   constructor(
     /// @internal
     readonly input: Input,
     /// @internal
-    readonly start: number,
-    /// @internal
-    public end: number,
-    gaps: undefined | readonly InputGap[]
+    readonly ranges: readonly {from: number, to: number}[]
   ) {
-    this.pos = this.chunkPos = start
-    this.gaps = gaps && gaps.length ? gaps : null
+    this.pos = this.chunkPos = ranges[0].from
+    this.range = ranges[0]
+    this.end = ranges[ranges.length - 1].to
     this.readNext()
   }
 
-  private resolvePos(pos: number, offset: number) {
-    if (!this.gaps || !offset) return pos + offset
-    if (offset < 0) {
-      for (let i = this.gaps.length - 1; i >= 0; i--) {
-        let gap = this.gaps[i]
-        if (gap.to <= pos - offset) break
-        if (gap.to <= pos) offset -= gap.to - gap.from
-      }
-    } else {
-      for (let gap of this.gaps) {
-        if (gap.from > pos + offset) break
-        if (gap.from > pos) offset += gap.to - gap.from
-      }
+  resolveOffset(offset: number) {
+    let range = this.range, index = this.rangeIndex
+    let pos = this.pos + offset
+    while (pos < range.from) {
+      if (!index) return null
+      let next = this.ranges[--index]
+      pos -= range.from - next.to
+      range = next
     }
-    return pos + offset
+    while (pos >= range.to) {
+      if (index == this.ranges.length - 1) return null
+      let next = this.ranges[++index]
+      pos += next.from - range.to
+      range = next
+    }
+    return pos
   }
 
   /// Look at a code unit near the stream position. `.peek(0)` equals
@@ -90,8 +92,11 @@ export class InputStream {
       pos = this.pos + offset
       result = this.chunk.charCodeAt(idx)
     } else {
-      pos = this.resolvePos(this.pos, offset)
-      result = pos < this.start || pos >= this.end ? -1 : this.input.read(pos, pos + 1).charCodeAt(0)
+      let resolved = this.resolveOffset(offset)
+      if (resolved == null) return -1
+      pos = resolved
+      // FIXME potentially slow
+      result = this.input.read(pos, pos + 1).charCodeAt(0)
     }
     if (pos > this.token.lookAhead) this.token.lookAhead = pos
     return result
@@ -101,8 +106,11 @@ export class InputStream {
   /// current stream position, but you can pass an offset (relative to
   /// the stream position) to change that.
   acceptToken(token: number, endOffset = 0) {
+    let end = endOffset ? this.resolveOffset(endOffset) : this.pos
+    if (end == null || end < this.token.start)
+      throw new RangeError("Token end out of bounds")
     this.token.value = token
-    this.token.end = this.resolvePos(this.pos, endOffset)
+    this.token.end = end
   }
 
   private getChunk() {
@@ -111,64 +119,39 @@ export class InputStream {
       this.chunk = this.chunk2; this.chunkPos = this.chunk2Pos
       this.chunk2 = chunk; this.chunk2Pos = chunkPos
       this.chunkOff = this.pos - this.chunkPos
-      return true
-    }
-    if (this.pos >= this.end) {
-      this.next = -1
-      this.chunk = ""
-      this.chunkOff = 0
-      return false
     }
     this.chunk2 = this.chunk; this.chunk2Pos = this.chunkPos
     let nextChunk = this.input.chunk(this.pos)
     let end = this.pos + nextChunk.length
-    this.chunk = end > this.end ? nextChunk.slice(0, this.end - this.pos) : nextChunk
+    this.chunk = end > this.range.to ? nextChunk.slice(0, this.range.to - this.pos) : nextChunk
     this.chunkPos = this.pos
     this.chunkOff = 0
-    return this.gaps ? this.removeGapsFromChunk() : true
-  }
-
-  private removeGapsFromChunk(): boolean {
-    let from = this.pos, to = this.pos + this.chunk.length
-    for (let g of this.gaps!) {
-      if (g.from >= to) break
-      if (g.to > from) {
-        if (from < g.from) {
-          this.chunk = this.chunk.slice(0, g.from - from)
-          return true
-        } else {
-          this.pos = this.chunkPos = g.to
-          if (to > g.to) {
-            this.chunk = this.chunk.slice(g.to - from)
-            from = g.to
-          } else {
-            this.chunk = ""
-            return this.getChunk()
-          }
-        }
-      }
-    }
-    return true
   }
 
   private readNext() {
-    if (this.chunkOff == this.chunk.length) {
-      if (!this.getChunk()) return
-    }
-    this.next = this.chunk.charCodeAt(this.chunkOff)
+    if (this.chunkOff >= this.chunk.length) this.getChunk()
+    return this.next = this.chunk.charCodeAt(this.chunkOff)
   }
 
   /// Move the stream forward N (defaults to 1) code units. Returns
   /// the new value of [`next`](#lr.InputStream.next).
   advance(n = 1) {
-    for (let i = 0; i < n; i++) {
-      if (this.next < 0) return -1
-      this.chunkOff++
-      this.pos++
-      if (this.pos > this.token.lookAhead) this.token.lookAhead = this.pos
-      this.readNext()
+    this.chunkOff += n
+    while (this.pos + n >= this.range.to) {
+      if (this.rangeIndex == this.ranges.length - 1) return this.setDone()
+      n -= this.range.to - this.pos
+      this.range = this.ranges[++this.rangeIndex]
+      this.pos = this.range.from
     }
-    return this.next
+    this.pos += n
+    if (this.pos > this.token.lookAhead) this.token.lookAhead = this.pos
+    return this.readNext()
+  }
+
+  private setDone() {
+    this.pos = this.chunkPos = this.end
+    this.chunk = ""
+    return this.next = -1
   }
 
   /// @internal
@@ -182,6 +165,11 @@ export class InputStream {
     }
     if (this.pos != pos) {
       this.pos = pos
+      if (pos == this.end) {
+        this.setDone()
+        return this
+      }
+      while (pos < this.range.from) this.range = this.ranges[--this.rangeIndex]
       if (pos >= this.chunkPos && pos < this.chunkPos + this.chunk.length) {
         this.chunkOff = pos - this.chunkPos
       } else {
@@ -195,17 +183,16 @@ export class InputStream {
 
   /// @internal
   read(from: number, to: number) {
-    let val = from >= this.chunkPos && to <= this.chunkPos + this.chunk.length
-      ? this.chunk.slice(from - this.chunkPos, to - this.chunkPos)
-      : this.input.read(from, to)
-    if (this.gaps) {
-      for (let i = this.gaps.length - 1; i >= 0; i--) {
-        let g = this.gaps[i]
-        if (g.to > from && g.from < to)
-          val = val.slice(0, Math.max(0, g.from - from)) + val.slice(Math.min(val.length, g.to - from))
-      }
+    if (from >= this.chunkPos && to <= this.chunkPos + this.chunk.length)
+      return this.chunk.slice(from - this.chunkPos, to - this.chunkPos)
+    if (from >= this.range.from && to <= this.range.to)
+      return this.input.read(from, to)
+    let result = ""
+    for (let r of this.ranges) {
+      if (r.from >= to) break
+      if (r.to > from) result += this.input.read(Math.max(r.from, from), Math.min(r.to, to))
     }
-    return val
+    return result
   }
 }
 

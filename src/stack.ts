@@ -1,13 +1,6 @@
 import {Action, Term, StateFlag, ParseState, Seq} from "./constants"
 import {Parse, ContextTracker} from "./parse"
-import {Tree, BufferCursor, NodeProp, NodeType, Parser} from "@lezer/common"
-
-export const CanNest: WeakMap<Stack, {
-  from: number, to: number,
-  parser: Parser | ((node: Tree) => Parser)
-}> = new WeakMap
-
-const PlaceHolder = NodeType.define({id: 0, name: "<placeholder>", skipped: true})
+import {Tree, BufferCursor} from "@lezer/common"
 
 /// A parse stack. These are used internally by the parser to track
 /// parsing progress. They also provide some properties and methods
@@ -160,13 +153,12 @@ export class Stack {
       this.buffer[index + 2] = end
       this.buffer[index + 3] = size
     }
-    this.checkNesting(term, start, end)
   }
 
   // Apply a shift action
   /// @internal
   shift(action: number, next: number, nextEnd: number) {
-    let size = 4 + (this.p.gaps ? this.maybeInsertGapNode(nextEnd) : 0), start = this.pos
+    let start = this.pos
     if (action & Action.GotoFlag) {
       this.pushState(action & Action.ValueMask, this.pos)
     } else if ((action & Action.StayFlag) == 0) { // Regular shift
@@ -177,24 +169,14 @@ export class Stack {
       }
       this.pushState(nextState, start)
       this.shiftContext(next, start)
-      if (next <= parser.maxNode) {
-        this.buffer.push(next, start, nextEnd, size)
-        this.checkNesting(next, start, nextEnd)
-      }
+      if (next <= parser.maxNode)
+        this.buffer.push(next, start, nextEnd, 4)
     } else { // Shift-and-stay, which means this is a skipped token
       this.pos = nextEnd
       this.shiftContext(next, start)
-      if (next <= this.p.parser.maxNode) {
-        this.buffer.push(next, start, nextEnd, size)
-        this.checkNesting(next, start, nextEnd)
-      }
+      if (next <= this.p.parser.maxNode)
+        this.buffer.push(next, start, nextEnd, 4)
     }
-  }
-
-  private checkNesting(term: number, from: number, to: number) {
-    let table = this.p.parser.nested, nest, parser
-    if (table && (nest = table[term]) && (parser = nest(this.p.input, this, from, to)))
-      CanNest.set(this, {from, to, parser})
   }
 
   // Apply an action
@@ -204,9 +186,7 @@ export class Stack {
     else this.shift(action, next, nextEnd)
   }
 
-  // Add a prebuilt node into the buffer. This may be a reused node or
-  // the result of running a nested parser.
-  /// @internal
+  // Add a prebuilt (reused) node into the buffer. @internal
   useNode(value: Tree, next: number) {
     let index = this.p.reused.length - 1
     if (index < 0 || this.p.reused[index] != value) {
@@ -220,45 +200,6 @@ export class Stack {
     if (this.curContext)
       this.updateContext(this.curContext.tracker.reuse(this.curContext.context, value, this,
                                                        this.p.stream.reset(this.pos - value.length)))
-  }
-
-  /// This will parse the last node in the buffer, and replace its
-  /// representation with a use-node record. @internal
-  materializeTopNode() {
-    let before = this.buffer.length - 4
-    let [type, from, to, size] = this.buffer.slice(before)
-    let cx = this.p, cursor = StackBufferCursor.create(this, this.bufferBase + before)
-    let node = Tree.build({
-      buffer: cursor,
-      nodeSet: cx.parser.nodeSet,
-      topID: type,
-      maxBufferLength: cx.parser.bufferLength,
-      reused: cx.reused,
-      propValues: cx.propValues,
-      start: from,
-      bufferStart: cursor.pos - size,
-      length: to - from,
-      minRepeatType: cx.parser.minRepeatTerm
-    })
-    let at = this as Stack
-    while (at.buffer.length < size) {
-      size -= at.buffer.length
-      at = at.parent!
-    }
-    this.buffer = at.buffer.slice(0, at.buffer.length - size)
-    if (at != this) {
-      this.parent = at.parent
-      this.bufferBase = at.bufferBase
-    }
-    let idx = cx.reused.push(node) - 1
-    this.buffer.push(idx, from, to, -1)
-    return node
-  }
-
-  /// @internal
-  mount(tree: Tree) {
-    this.buffer.push(this.p.propValues.length, (NodeProp.mountedTree as any).id, 0, -2)
-    this.p.propValues.push(tree)
   }
 
   // Split the stack. Due to the buffer sharing and the fact
@@ -283,25 +224,11 @@ export class Stack {
   // Try to recover from an error by 'deleting' (ignoring) one token.
   /// @internal
   recoverByDelete(next: number, nextEnd: number) {
-    let size = 4 + (this.p.gaps ? this.maybeInsertGapNode(nextEnd) : 0)
     let isNode = next <= this.p.parser.maxNode
-    if (isNode) this.storeNode(next, this.pos, nextEnd, size)
-    this.storeNode(Term.Err, this.pos, nextEnd, size + (isNode ? 4 : 0))
+    if (isNode) this.storeNode(next, this.pos, nextEnd, 4)
+    this.storeNode(Term.Err, this.pos, nextEnd, isNode ? 8 : 4)
     this.pos = this.reducePos = nextEnd
     this.score -= Recover.Delete
-  }
-
-  private maybeInsertGapNode(end: number) {
-    let start = this.pos, size = 0
-    for (let g of this.p.gaps!) {
-      if (g.to >= end) break
-      if (g.to >= start) {
-        let index = this.p.reused.push(new Tree(PlaceHolder, [], [], g.to - g.from, [[NodeProp.mountedTree, g.mount]])) - 1
-        this.buffer.push(index, g.from, g.to, -1)
-        size += 4
-      }
-    }
-    return size
   }
 
   /// Check if the given term would be able to be shifted (optionally
@@ -357,20 +284,6 @@ export class Stack {
         frame -= 3 * (depth - 1)
         state = parser.getGoto(this.stack[frame - 3], term, true)
       }
-    }
-  }
-
-  /// @internal
-  mayNestFrom(nested: {[id: number]: any}) {
-    let sim = new SimulatedStack(this), pos = this.pos, {parser} = this.p
-    for (;;) {
-      let force = parser.stateSlot(sim.state, ParseState.ForcedReduce)
-      if (nested[force & Action.ValueMask]) {
-        let base = sim.base - (3 * (force >> Action.ReduceDepthShift))
-        pos = sim.stack[base + 1]
-      }
-      if (sim.base == 0) return pos
-      sim.reduce(force)
     }
   }
 
