@@ -649,6 +649,8 @@ export class LRParser extends Parser {
   readonly bufferLength: number
   /// @internal
   readonly strict: boolean
+  /// The nodes used in the trees emitted by this parser.
+  readonly nodeSet: NodeSet
 
   private cachedDialect: Dialect | null
 
@@ -656,8 +658,9 @@ export class LRParser extends Parser {
   constructor(spec: ParserSpec) {
     if (spec.version != File.Version)
       throw new RangeError(`Parser version (${spec.version}) doesn't match runtime version (${File.Version})`)
+    super()
     let nodeNames = spec.nodeNames.split(" ")
-    let minRepeatTerm = nodeNames.length
+    this.minRepeatTerm = nodeNames.length
     for (let i = 0; i < spec.repeatNodeCount; i++) nodeNames.push("")
     let topTerms = Object.keys(spec.topRules).map(r => spec.topRules[r][1])
     let nodeProps: [NodeProp<any>, any][][] = []
@@ -678,21 +681,19 @@ export class LRParser extends Parser {
         }
       }
     }
-    let nodeSet = new NodeSet(nodeNames.map((name, i) => NodeType.define({
-      name: i >= minRepeatTerm ? undefined: name,
+    this.nodeSet = new NodeSet(nodeNames.map((name, i) => NodeType.define({
+      name: i >= this.minRepeatTerm ? undefined: name,
       id: i,
       props: nodeProps[i],
       top: topTerms.indexOf(i) > -1,
       error: i == 0,
       skipped: spec.skippedNodes && spec.skippedNodes.indexOf(i) > -1
     })))
-    super(nodeSet)
     this.cachedDialect = null
-    this. strict = false
+    this.strict = false
     this.bufferLength = DefaultBufferLength
 
     let tokenArray = decodeArray<Uint16Array>(spec.tokenData)
-    this.minRepeatTerm = minRepeatTerm
     this.context = spec.context
     this.specialized = new Uint16Array(spec.specialized ? spec.specialized.length : 0)
     this.specializers = []
