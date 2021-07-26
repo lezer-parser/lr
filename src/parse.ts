@@ -374,7 +374,7 @@ export class Parse implements PartialParse {
         }
         if (!(cached instanceof Tree) || cached.children.length == 0 || cached.positions[0] > 0) break
         let inner = cached.children[0]
-        if (inner instanceof Tree) cached = inner
+        if (inner instanceof Tree && cached.positions[0] == 0) cached = inner
         else break
       }
     }
