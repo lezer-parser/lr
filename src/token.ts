@@ -128,7 +128,10 @@ export class InputStream {
   }
 
   private readNext() {
-    if (this.chunkOff >= this.chunk.length) this.getChunk()
+    if (this.chunkOff >= this.chunk.length) {
+      this.getChunk()
+      if (this.chunkOff == this.chunk.length) return this.next = -1
+    }
     return this.next = this.chunk.charCodeAt(this.chunkOff)
   }
 
