@@ -1,5 +1,5 @@
 import {DefaultBufferLength, Tree, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource,
-        Input, PartialParse, Parser} from "@lezer/common"
+        Input, PartialParse, Parser, ParseWrapper} from "@lezer/common"
 import {Stack, StackBufferCursor} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {Tokenizer, TokenGroup, ExternalTokenizer, CachedToken, InputStream} from "./token"
@@ -597,6 +597,10 @@ export interface ParserConfig {
   /// its error-recovery strategies, when the input doesn't match the
   /// grammar.
   strict?: boolean
+  /// Add a wrapper, which can extend parses created by this parser
+  /// with additional logic (usually used to add
+  /// [mixed-language](#common.parseMixed) parsing).
+  wrap?: ParseWrapper
   /// The maximum length of the TreeBuffers generated in the output
   /// tree. Defaults to 1024.
   bufferLength?: number
@@ -644,6 +648,8 @@ export class LRParser extends Parser {
   /// @internal
   readonly dialect: Dialect
   /// @internal
+  readonly wrappers: readonly ParseWrapper[] = []
+  /// @internal
   readonly top: [number, number]
   /// @internal
   readonly bufferLength: number
@@ -652,13 +658,11 @@ export class LRParser extends Parser {
   /// The nodes used in the trees emitted by this parser.
   readonly nodeSet: NodeSet
 
-  private cachedDialect: Dialect | null
-
   /// @internal
   constructor(spec: ParserSpec) {
+    super()
     if (spec.version != File.Version)
       throw new RangeError(`Parser version (${spec.version}) doesn't match runtime version (${File.Version})`)
-    super()
     let nodeNames = spec.nodeNames.split(" ")
     this.minRepeatTerm = nodeNames.length
     for (let i = 0; i < spec.repeatNodeCount; i++) nodeNames.push("")
@@ -689,7 +693,6 @@ export class LRParser extends Parser {
       error: i == 0,
       skipped: spec.skippedNodes && spec.skippedNodes.indexOf(i) > -1
     })))
-    this.cachedDialect = null
     this.strict = false
     this.bufferLength = DefaultBufferLength
 
@@ -719,7 +722,9 @@ export class LRParser extends Parser {
   }
 
   startParseInner(input: Input, fragments: readonly TreeFragment[], ranges: readonly {from: number, to: number}[]): PartialParse {
-    return new Parse(this, input, fragments, ranges)
+    let parse: PartialParse = new Parse(this, input, fragments, ranges)
+    for (let w of this.wrappers) parse = w(parse, input, fragments, ranges)
+    return parse
   }
 
   /// Get a goto table entry @internal
@@ -820,6 +825,8 @@ export class LRParser extends Parser {
       copy.dialect = this.parseDialect(config.dialect)
     if (config.strict != null)
       copy.strict = config.strict
+    if (config.wrap)
+      copy.wrappers = copy.wrappers.concat(config.wrap)
     if (config.bufferLength != null)
       copy.bufferLength = config.bufferLength
     return copy as LRParser
@@ -848,7 +855,6 @@ export class LRParser extends Parser {
 
   /// @internal
   parseDialect(dialect?: string) {
-    if (this.cachedDialect && this.cachedDialect.source == dialect) return this.cachedDialect
     let values = Object.keys(this.dialects), flags = values.map(() => false)
     if (dialect) for (let part of dialect.split(" ")) {
       let id = values.indexOf(part)
@@ -859,7 +865,7 @@ export class LRParser extends Parser {
       for (let j = this.dialects[values[i]], id; (id = this.data[j++]) != Seq.End;)
         (disabled || (disabled = new Uint8Array(this.maxTerm + 1)))[id] = 1
     }
-    return this.cachedDialect = new Dialect(dialect, flags, disabled)
+    return new Dialect(dialect, flags, disabled)
   }
 
   /// (used by the output of the parser generator) @internal
