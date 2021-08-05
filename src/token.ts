@@ -118,13 +118,14 @@ export class InputStream {
       this.chunk = this.chunk2; this.chunkPos = this.chunk2Pos
       this.chunk2 = chunk; this.chunk2Pos = chunkPos
       this.chunkOff = this.pos - this.chunkPos
+    } else {
+      this.chunk2 = this.chunk; this.chunk2Pos = this.chunkPos
+      let nextChunk = this.input.chunk(this.pos)
+      let end = this.pos + nextChunk.length
+      this.chunk = end > this.range.to ? nextChunk.slice(0, this.range.to - this.pos) : nextChunk
+      this.chunkPos = this.pos
+      this.chunkOff = 0
     }
-    this.chunk2 = this.chunk; this.chunk2Pos = this.chunkPos
-    let nextChunk = this.input.chunk(this.pos)
-    let end = this.pos + nextChunk.length
-    this.chunk = end > this.range.to ? nextChunk.slice(0, this.range.to - this.pos) : nextChunk
-    this.chunkPos = this.pos
-    this.chunkOff = 0
   }
 
   private readNext() {
@@ -152,6 +153,7 @@ export class InputStream {
 
   private setDone() {
     this.pos = this.chunkPos = this.end
+    this.range = this.ranges[this.rangeIndex = this.ranges.length - 1]
     this.chunk = ""
     return this.next = -1
   }
@@ -172,6 +174,7 @@ export class InputStream {
         return this
       }
       while (pos < this.range.from) this.range = this.ranges[--this.rangeIndex]
+      while (pos >= this.range.to) this.range = this.ranges[++this.rangeIndex]
       if (pos >= this.chunkPos && pos < this.chunkPos + this.chunk.length) {
         this.chunkOff = pos - this.chunkPos
       } else {
