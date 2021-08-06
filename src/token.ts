@@ -95,8 +95,15 @@ export class InputStream {
       let resolved = this.resolveOffset(offset, 1)
       if (resolved == null) return -1
       pos = resolved
-      // FIXME potentially slow
-      result = this.input.read(pos, pos + 1).charCodeAt(0)
+      if (pos >= this.chunk2Pos && pos < this.chunk2Pos + this.chunk2.length) {
+        result = this.chunk2.charCodeAt(pos - this.chunk2Pos)
+      } else {
+        let i = this.rangeIndex, range = this.range
+        while (range.to <= pos) range = this.ranges[++i]
+        this.chunk2 = this.input.chunk(this.chunk2Pos = pos)
+        if (pos + this.chunk2.length > range.to) this.chunk2 = this.chunk2.slice(0, range.to - pos)
+        result = this.chunk2.charCodeAt(0)
+      }
     }
     if (pos > this.token.lookAhead) this.token.lookAhead = pos
     return result
