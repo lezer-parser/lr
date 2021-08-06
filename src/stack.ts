@@ -244,49 +244,6 @@ export class Stack {
     }
   }
 
-  /// Find the start position of an instance of any of the given term
-  /// types, or return `null` when none of them are found.
-  ///
-  /// **Note:** this is only reliable when there is at least some
-  /// state that unambiguously matches the given rule on the stack.
-  /// I.e. if you have a grammar like this, where the difference
-  /// between `a` and `b` is only apparent at the third token:
-  ///
-  ///     a { b | c }
-  ///     b { "x" "y" "x" }
-  ///     c { "x" "y" "z" }
-  ///
-  /// Then a parse state after `"x"` will not reliably tell you that
-  /// `b` is on the stack. You _can_ pass `[b, c]` to reliably check
-  /// for either of those two rules (assuming that `a` isn't part of
-  /// some rule that includes other things starting with `"x"`).
-  ///
-  /// When `before` is given, this keeps scanning up the stack until
-  /// it finds a match that starts before that position.
-  ///
-  /// Note that you have to be careful when using this in tokenizers,
-  /// since it's relatively easy to introduce data dependencies that
-  /// break incremental parsing by using this method.
-  startOf(types: readonly number[], before?: number) {
-    let state = this.state, frame = this.stack.length, {parser} = this.p
-    for (;;) {
-      let force = parser.stateSlot(state, ParseState.ForcedReduce)
-      let depth = force >> Action.ReduceDepthShift, term = force & Action.ValueMask
-      if (types.indexOf(term) > -1) {
-        let base = frame - (3 * depth), pos = this.stack[base + 1]
-        if (before == null || before > pos) return pos
-      }
-      if (frame == 0) return null
-      if (depth == 0) {
-        frame -= 3
-        state = this.stack[frame]
-      } else {
-        frame -= 3 * (depth - 1)
-        state = parser.getGoto(this.stack[frame - 3], term, true)
-      }
-    }
-  }
-
   // Apply up to Recover.MaxNext recovery actions that conceptually
   // inserts some missing token or rule.
   /// @internal
