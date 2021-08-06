@@ -721,7 +721,7 @@ export class LRParser extends Parser {
     this.top = this.topRules[Object.keys(this.topRules)[0]]
   }
 
-  startParseInner(input: Input, fragments: readonly TreeFragment[], ranges: readonly {from: number, to: number}[]): PartialParse {
+  createParse(input: Input, fragments: readonly TreeFragment[], ranges: readonly {from: number, to: number}[]): PartialParse {
     let parse: PartialParse = new Parse(this, input, fragments, ranges)
     for (let w of this.wrappers) parse = w(parse, input, fragments, ranges)
     return parse

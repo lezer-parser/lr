@@ -35,9 +35,10 @@ export class InputStream {
   /// @internal
   token = nullToken
 
-  /// The current position of the stream. Note that, due to
-  /// [gaps](#common.ParseSpec.gaps), advancing the stream does not
-  /// always mean its position moves a single unit.
+  /// The current position of the stream. Note that, due to parses
+  /// being able to cover non-contiguous
+  /// [ranges](#common.Parser.startParse), advancing the stream does
+  /// not always mean its position moves a single unit.
   pos: number
 
   /// @internal
