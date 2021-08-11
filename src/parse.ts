@@ -13,15 +13,6 @@ const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LO
 
 let stackIDs: WeakMap<Stack, string> | null = null
 
-/// Data structure used to describe nested parsing. Associates [node
-/// ids](#common.NodeType.id) with a function that determines whether to
-/// run a nested parse for that node after it has been reduced. When
-/// the function returns another function, the node is immediately
-/// allocated as a `Tree` and passed to that function.
-export type NestMap = {
-  [term: number]: (input: Input, stack: Stack, from: number, to: number) => Parser | ((node: Tree) => Parser) | null
-}
-
 const enum Safety { Margin = 25 }
 
 function cutAt(tree: Tree, pos: number, side: 1 | -1) {

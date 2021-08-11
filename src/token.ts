@@ -249,8 +249,11 @@ interface ExternalOptions {
 /// `@external tokens` declarations in the grammar should resolve to
 /// an instance of this class.
 export class ExternalTokenizer implements Tokenizer {
+  /// @internal
   contextual: boolean
+  /// @internal
   fallback: boolean
+  /// @internal
   extend: boolean
 
   /// Create a tokenizer. The first argument is the function that,
@@ -259,6 +262,7 @@ export class ExternalTokenizer implements Tokenizer {
   /// [`acceptToken`](#lr.InputStream.acceptToken) when it finds
   /// one.
   constructor(
+    /// @internal
     readonly token: (input: InputStream, stack: Stack) => void,
     options: ExternalOptions = {}
   ) {
