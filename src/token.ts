@@ -210,9 +210,13 @@ export class InputStream {
 }
 
 export interface Tokenizer {
+  /// @internal
   token(input: InputStream, stack: Stack): void
+  /// @internal
   contextual: boolean
+  /// @internal
   fallback: boolean
+  /// @internal
   extend: boolean
 }
 
