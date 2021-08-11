@@ -1,3 +1,33 @@
+## 0.15.0 (2021-08-11)
+
+### Breaking changes
+
+The module's name changed from `lezer` to `@lezer/lr`.
+
+The `Parser` class was renamed to `LRParser` (`Parser` is now the abstract class that all parsers extend).
+
+Nested parsing is no longer handled inside the LR parser (instead, it is done by using `parseMixed` from the `@lezer/common` package as a wrapper).
+
+External tokenizers are passed different arguments and get a different input stream abstraction (to make accidental uncontrolled lookahead and lookbehind, which were easy ways to break incremental parsing, harder).
+
+Drops support for `Stack.startOf` (which is no longer useful without lookbehind).
+
+Context trackers also get passed different arguments, following the changed input stream format.
+
+This package no longer re-exports bindings from `@lezer/common`.
+
+### Bug fixes
+
+Slightly prefer deleting token to inserting them to avoid far-fetched parses.
+
+Fix a problem where node reuse didn't take the amount of look-ahead done by the tokenizer into account, and could reuse nodes whose content would tokenize differently due to changes after them.
+
+Track tokenizer lookahead to fix a problem where some incremental parses would produce incorrect results.
+
+### New features
+
+LR parsers now support a `wrapper` configuration option that allows you to inject additional logic by wrapping the `PartialParse` object it returns.
+
 ## 0.13.5 (2021-05-14)
 
 ### Bug fixes

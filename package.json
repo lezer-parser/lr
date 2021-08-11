@@ -1,6 +1,6 @@
 {
   "name": "@lezer/lr",
-  "version": "0.13.5",
+  "version": "0.15.0",
   "description": "Incremental parser",
   "main": "dist/index.cjs",
   "type": "module",
@@ -24,10 +24,11 @@
     "typescript": "^4.3.4"
   },
   "dependencies": {
-    "@lezer/common": "^0.13.2"
+    "@lezer/common": "^0.15.0"
   },
   "files": ["dist"],
   "scripts": {
+    "test": "echo 'Tests are in @lezer/generator'",
     "watch": "rollup -w -c rollup.config.js",
     "prepare": "rollup -c rollup.config.js"
   }
