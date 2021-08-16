@@ -1,3 +1,13 @@
+## 0.15.1 (2021-08-16)
+
+### Bug fixes
+
+Fix an inconsistency in the .d.ts emitted by the build.
+
+### New features
+
+`LRParser.configure` now takes a `contextTracker` option to replace the context tracker used by the parser.
+
 ## 0.15.0 (2021-08-11)
 
 ### Breaking changes
