@@ -584,6 +584,8 @@ export interface ParserConfig {
   dialect?: string
   /// Replace the given external tokenizers with new ones.
   tokenizers?: {from: ExternalTokenizer, to: ExternalTokenizer}[]
+  /// Replace the context tracker with a new one.
+  contextTracker?: ContextTracker<any>,
   /// When true, the parser will raise an exception, rather than run
   /// its error-recovery strategies, when the input doesn't match the
   /// grammar.
@@ -812,6 +814,8 @@ export class LRParser extends Parser {
         let found = config.tokenizers!.find(r => r.from == t)
         return found ? found.to : t
       })
+    if (config.contextTracker)
+      copy.context = config.contextTracker
     if (config.dialect)
       copy.dialect = this.parseDialect(config.dialect)
     if (config.strict != null)
