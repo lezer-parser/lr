@@ -107,11 +107,9 @@ class FragmentCursor {
   }
 }
 
-const dummyToken = new CachedToken
-
 class TokenCache {
   tokens: CachedToken[] = []
-  mainToken: CachedToken = dummyToken
+  mainToken: CachedToken | null = null
 
   actions: number[] = []
 
@@ -152,20 +150,23 @@ class TokenCache {
 
     while (this.actions.length > actionIndex) this.actions.pop()
     if (lookAhead) stack.setLookAhead(lookAhead)
-    if (!main) {
-      main = dummyToken
-      main.start = stack.pos
-      if (stack.pos == this.stream.end) {
-        main.value = stack.p.parser.eofTerm
-        main.end = stack.pos
-        actionIndex = this.addActions(stack, main.value, main.end, actionIndex)
-      } else {
-        main.value = Term.Err
-        main.end = stack.pos + 1
-      }
+    if (!main && stack.pos == this.stream.end) {
+      main = new CachedToken
+      main.value = stack.p.parser.eofTerm
+      main.start = main.end = stack.pos
+      actionIndex = this.addActions(stack, main.value, main.end, actionIndex)
     }
     this.mainToken = main
     return this.actions
+  }
+
+  getMainToken(stack: Stack) {
+    if (this.mainToken) return this.mainToken
+    let main = new CachedToken, {pos, p} = stack
+    main.start = pos
+    main.end = Math.min(pos + 1, p.stream.end)
+    main.value = pos == p.stream.end ? p.parser.eofTerm : Term.Err
+    return main
   }
 
   updateCachedToken(token: CachedToken, tokenizer: Tokenizer, stack: Stack) {
@@ -183,7 +184,7 @@ class TokenCache {
       }
     } else {
       token.value = Term.Err
-      token.end = stack.pos + 1
+      token.end = Math.min(stack.p.stream.end, stack.pos + 1)
     }
   }
 
@@ -274,6 +275,7 @@ export class Parse implements PartialParse {
     for (let i = 0; i < stacks.length; i++) {
       let stack = stacks[i]
       for (;;) {
+        this.tokens.mainToken = null
         if (stack.pos > pos) {
           newStacks.push(stack)
         } else if (this.advanceStack(stack, newStacks, stacks)) {
@@ -281,7 +283,7 @@ export class Parse implements PartialParse {
         } else {
           if (!stopped) { stopped = []; stoppedTokens = [] }
           stopped.push(stack)
-          let tok = this.tokens.mainToken
+          let tok = this.tokens.getMainToken(stack)
           stoppedTokens!.push(tok.value, tok.end)
         }
         break
@@ -294,7 +296,7 @@ export class Parse implements PartialParse {
 
       if (this.parser.strict) {
         if (verbose && stopped)
-          console.log("Stuck with token " + this.parser.getName(this.tokens.mainToken.value))
+          console.log("Stuck with token " + (this.tokens.mainToken ? this.parser.getName(this.tokens.mainToken.value) : "none"))
         throw new SyntaxError("No parse at " + pos)
       }
       if (!this.recovering) this.recovering = Rec.Distance
