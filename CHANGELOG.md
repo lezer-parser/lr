@@ -1,3 +1,9 @@
+## 0.15.2 (2021-08-31)
+
+### Bug fixes
+
+Fix a bug where the parse position could get corrupted during a parse, leading to crashes or nonsensical output.
+
 ## 0.15.1 (2021-08-16)
 
 ### Bug fixes
