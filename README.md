@@ -1,6 +1,6 @@
 # @lezer/lr
 
-[ [**WEBSITE**](http://lezer.codemirror.net) | [**ISSUES**](https://github.com/lezer-parser/lezer/issues) | [**FORUM**](https://discuss.codemirror.net/c/lezer) | [**CHANGELOG**](https://github.com/lezer-parser/lezer/blob/master/CHANGELOG.md) ]
+[ [**WEBSITE**](http://lezer.codemirror.net) | [**ISSUES**](https://github.com/lezer-parser/lezer/issues) | [**FORUM**](https://discuss.codemirror.net/c/lezer) | [**CHANGELOG**](https://github.com/lezer-parser/lr/blob/master/CHANGELOG.md) ]
 
 Lezer ("reader" in Dutch, pronounced pretty much as laser) is an
 incremental GLR parser intended for use in an editor or similar
