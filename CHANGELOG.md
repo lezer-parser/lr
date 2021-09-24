@@ -1,3 +1,9 @@
+## 0.15.3 (2021-09-24)
+
+### Bug fixes
+
+Fix crashes or infinite recursion caused by applying forced reductions in situations where they were not valid.
+
 ## 0.15.2 (2021-08-31)
 
 ### Bug fixes
