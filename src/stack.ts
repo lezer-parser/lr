@@ -284,7 +284,11 @@ export class Stack {
   forceReduce() {
     let reduce = this.p.parser.stateSlot(this.state, ParseState.ForcedReduce)
     if ((reduce & Action.ReduceFlag) == 0) return false
-    if (!this.p.parser.validAction(this.state, reduce)) {
+    let {parser} = this.p
+    if (!parser.validAction(this.state, reduce)) {
+      let depth = reduce >> Action.ReduceDepthShift, term = reduce & Action.ValueMask
+      let target = this.stack.length - depth * 3
+      if (target < 0 || parser.getGoto(this.stack[target], term, true) < 0) return false
       this.storeNode(Term.Err, this.reducePos, this.reducePos, 4, true)
       this.score -= Recover.Reduce
     }
