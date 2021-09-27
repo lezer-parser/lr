@@ -1,3 +1,9 @@
+## 0.15.4 (2021-09-27)
+
+### Bug fixes
+
+Fix a mistake in the way forced reductions are checked.
+
 ## 0.15.3 (2021-09-24)
 
 ### Bug fixes
