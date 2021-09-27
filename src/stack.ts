@@ -11,9 +11,8 @@ export class Stack {
   constructor(
     /// The parse that this stack is part of @internal
     readonly p: Parse,
-    /// Holds state, pos, value stack pos (15 bits array index, 15 bits
-    /// buffer index) triplets for all but the top state
-    /// @internal
+    /// Holds state, input pos, buffer index triplets for all but the
+    /// top state @internal
     readonly stack: number[],
     /// The current parse state @internal
     public state: number,
@@ -288,7 +287,7 @@ export class Stack {
     if (!parser.validAction(this.state, reduce)) {
       let depth = reduce >> Action.ReduceDepthShift, term = reduce & Action.ValueMask
       let target = this.stack.length - depth * 3
-      if (target < 0 || parser.getGoto(this.stack[target], term, true) < 0) return false
+      if (target < 0 || parser.getGoto(this.stack[target], term, false) < 0) return false
       this.storeNode(Term.Err, this.reducePos, this.reducePos, 4, true)
       this.score -= Recover.Reduce
     }
