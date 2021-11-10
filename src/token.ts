@@ -106,7 +106,7 @@ export class InputStream {
         result = this.chunk2.charCodeAt(0)
       }
     }
-    if (pos > this.token.lookAhead) this.token.lookAhead = pos
+    if (pos >= this.token.lookAhead) this.token.lookAhead = pos + 1
     return result
   }
 
@@ -155,7 +155,7 @@ export class InputStream {
       this.pos = this.range.from
     }
     this.pos += n
-    if (this.pos > this.token.lookAhead) this.token.lookAhead = this.pos
+    if (this.pos >= this.token.lookAhead) this.token.lookAhead = this.pos + 1
     return this.readNext()
   }
 
@@ -170,7 +170,8 @@ export class InputStream {
   reset(pos: number, token?: CachedToken) {
     if (token) {
       this.token = token
-      token.start = token.lookAhead = pos
+      token.start = pos
+      token.lookAhead = pos + 1
       token.value = token.extended = -1
     } else {
       this.token = nullToken
