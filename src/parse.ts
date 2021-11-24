@@ -303,7 +303,8 @@ export class Parse implements PartialParse {
     }
 
     if (this.recovering && stopped) {
-      let finished = this.runRecovery(stopped, stoppedTokens!, newStacks)
+      let finished = this.stoppedAt != null && stopped[0].pos > this.stoppedAt ? stopped[0]
+        : this.runRecovery(stopped, stoppedTokens!, newStacks)
       if (finished) return this.stackToTree(finished.forceAll())
     }
 
