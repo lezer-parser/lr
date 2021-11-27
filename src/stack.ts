@@ -297,7 +297,12 @@ export class Stack {
 
   /// @internal
   forceAll() {
-    while (!this.p.parser.stateFlag(this.state, StateFlag.Accepting) && this.forceReduce()) {}
+    while (!this.p.parser.stateFlag(this.state, StateFlag.Accepting)) {
+      if (!this.forceReduce()) {
+        this.storeNode(Term.Err, this.pos, this.pos, 4, true)
+        break
+      }
+    }
     return this
   }
 
