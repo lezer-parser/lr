@@ -229,7 +229,7 @@ export class Parse implements PartialParse {
   stacks: Stack[]
   recovering = 0
   fragments: FragmentCursor | null
-  nextStackID = 0x2654 // ♔
+  nextStackID = 0x2654 // ♔, ♕, ♖, ♗, ♘, ♙, ♠, ♡, ♢, ♣, ♤, ♥, ♦, ♧
   minStackPos = 0
 
   reused: Tree[] = []
