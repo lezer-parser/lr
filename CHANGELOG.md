@@ -1,3 +1,11 @@
+## 0.15.5 (2021-12-01)
+
+### Bug fixes
+
+Fix a bug that caused node lookahead to be one less than it should be.
+
+Fix an issue that could cause the parser to, when recovering, parse beyond the position given to `stopAt`.
+
 ## 0.15.4 (2021-09-27)
 
 ### Bug fixes
