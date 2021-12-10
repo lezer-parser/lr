@@ -221,7 +221,12 @@ const enum Rec {
   Distance = 5,
   MaxRemainingPerStep = 3,
   MinBufferLengthPrune = 200,
-  ForceReduceLimit = 10
+  ForceReduceLimit = 10,
+  // Once a stack reaches this depth (in .stack.length) force-reduce
+  // it back to CutTo to avoid creating trees that overflow the stack
+  // on recursive traversal.
+  CutDepth = 5000 * 3,
+  CutTo = 3000 * 3,
 }
 
 export class Parse implements PartialParse {
@@ -379,6 +384,10 @@ export class Parse implements PartialParse {
       if (verbose)
         console.log(base + this.stackID(stack) + ` (via always-reduce ${parser.getName(defaultReduce & Action.ValueMask)})`)
       return true
+    }
+
+    if (stack.stack.length >= Rec.CutDepth) {
+      while (stack.stack.length > Rec.CutTo && stack.forceReduce()) {}
     }
 
     let actions = this.tokens.getActions(stack)
