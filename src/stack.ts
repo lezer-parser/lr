@@ -185,7 +185,8 @@ export class Stack {
     else this.shift(action, next, nextEnd)
   }
 
-  // Add a prebuilt (reused) node into the buffer. @internal
+  // Add a prebuilt (reused) node into the buffer.
+  /// @internal
   useNode(value: Tree, next: number) {
     let index = this.p.reused.length - 1
     if (index < 0 || this.p.reused[index] != value) {
