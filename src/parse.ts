@@ -220,7 +220,9 @@ class TokenCache {
 const enum Rec {
   Distance = 5,
   MaxRemainingPerStep = 3,
-  MinBufferLengthPrune = 200,
+  // When two stacks have been running independently long enough to
+  // add this many elements to their buffers, prune one.
+  MinBufferLengthPrune = 500,
   ForceReduceLimit = 10,
   // Once a stack reaches this depth (in .stack.length) force-reduce
   // it back to CutTo to avoid creating trees that overflow the stack
