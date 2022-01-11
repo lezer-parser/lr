@@ -1,3 +1,11 @@
+## 0.15.6 (2022-01-11)
+
+### Bug fixes
+
+Make sure tree depth does not grow unbounded, so that recursive tree traversal is safe from overflowing the stack.
+
+Be less agressive about pruning long-running GLR parse splits.
+
 ## 0.15.5 (2021-12-01)
 
 ### Bug fixes
