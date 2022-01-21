@@ -206,7 +206,7 @@ class TokenCache {
             i = pair(data, i + 2)
           } else {
             if (index == 0 && data[i + 1] == Seq.Other)
-              index = this.putAction(pair(data, i + 1), token, end, index)
+              index = this.putAction(pair(data, i + 2), token, end, index)
             break
           }
         }
