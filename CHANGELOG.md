@@ -1,3 +1,9 @@
+## 0.15.7 (2022-01-21)
+
+### Bug fixes
+
+Fix a bug that could cause some kinds of composite skipped expressions to not be parsed correctly.
+
 ## 0.15.6 (2022-01-11)
 
 ### Bug fixes
