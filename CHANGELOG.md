@@ -1,3 +1,9 @@
+## 0.15.8 (2022-02-04)
+
+### Bug fixes
+
+Fix a bug that caused reductions that didn't consume anything to sometimes end up outside their parent node in the tree.
+
 ## 0.15.7 (2022-01-21)
 
 ### Bug fixes
