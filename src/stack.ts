@@ -88,10 +88,10 @@ export class Stack {
     if (dPrec) this.score += dPrec
 
     if (depth == 0) {
+      this.pushState(parser.getGoto(this.state, type, true), this.reducePos)
       // Zero-depth reductions are a special case—they add stuff to
       // the stack without popping anything off.
       if (type < parser.minRepeatTerm) this.storeNode(type, this.reducePos, this.reducePos, 4, true)
-      this.pushState(parser.getGoto(this.state, type, true), this.reducePos)
       this.reduceContext(type, this.reducePos)
       return
     }
