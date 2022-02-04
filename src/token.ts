@@ -199,6 +199,8 @@ export class InputStream {
   read(from: number, to: number) {
     if (from >= this.chunkPos && to <= this.chunkPos + this.chunk.length)
       return this.chunk.slice(from - this.chunkPos, to - this.chunkPos)
+    if (from >= this.chunk2Pos && to <= this.chunk2Pos + this.chunk2.length)
+      return this.chunk2.slice(from - this.chunk2Pos, to - this.chunk2Pos)
     if (from >= this.range.from && to <= this.range.to)
       return this.input.read(from, to)
     let result = ""
