@@ -1,5 +1,5 @@
 import {DefaultBufferLength, Tree, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource,
-        Input, PartialParse, Parser, ParseWrapper} from "@lezer/common"
+        Input, PartialParse, Parser, ParseWrapper, IterMode} from "@lezer/common"
 import {Stack, StackBufferCursor} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {Tokenizer, TokenGroup, ExternalTokenizer, CachedToken, InputStream} from "./token"
@@ -16,7 +16,7 @@ let stackIDs: WeakMap<Stack, string> | null = null
 const enum Safety { Margin = 25 }
 
 function cutAt(tree: Tree, pos: number, side: 1 | -1) {
-  let cursor = tree.fullCursor()
+  let cursor = tree.cursor(IterMode.IncludeAnonymous)
   cursor.moveTo(pos)
   for (;;) {
     if (!(side < 0 ? cursor.childBefore(pos) : cursor.childAfter(pos))) for (;;) {
