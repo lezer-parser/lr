@@ -573,6 +573,7 @@ type ParserSpec = {
   maxTerm: number,
   repeatNodeCount: number,
   nodeProps?: [NodeProp<any>, ...(string | number)[]][],
+  propSources?: NodePropSource[],
   skippedNodes?: number[],
   tokenData: string,
   tokenizers: (Tokenizer | number)[],
@@ -700,6 +701,7 @@ export class LRParser extends Parser {
       error: i == 0,
       skipped: spec.skippedNodes && spec.skippedNodes.indexOf(i) > -1
     })))
+    if (spec.propSources) this.nodeSet = this.nodeSet.extend(...spec.propSources)
     this.strict = false
     this.bufferLength = DefaultBufferLength
 
