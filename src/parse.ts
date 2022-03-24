@@ -569,7 +569,7 @@ type ParserSpec = {
   nodeNames: string,
   maxTerm: number,
   repeatNodeCount: number,
-  nodeProps?: [NodeProp<any>, ...(string | number)[]][],
+  nodeProps?: [NodeProp<any> | string, ...(string | number)[]][],
   propSources?: NodePropSource[],
   skippedNodes?: number[],
   tokenData: string,
@@ -679,6 +679,7 @@ export class LRParser extends Parser {
     }
     if (spec.nodeProps) for (let propSpec of spec.nodeProps) {
       let prop = propSpec[0]
+      if (typeof prop == "string") prop = (NodeProp as unknown as {[name: string]: NodeProp<any>})[prop]
       for (let i = 1; i < propSpec.length;) {
         let next = propSpec[i++]
         if (next >= 0) {
