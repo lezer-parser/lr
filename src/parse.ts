@@ -5,9 +5,6 @@ import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./cons
 import {Tokenizer, TokenGroup, ExternalTokenizer, CachedToken, InputStream} from "./token"
 import {decodeArray} from "./decode"
 
-// FIXME find some way to reduce recovery work done when the input
-// doesn't match the grammar at all.
-
 // Environment variable used to control console output
 const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
 
