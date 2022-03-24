@@ -840,6 +840,12 @@ export class LRParser extends Parser {
     return copy as LRParser
   }
 
+  /// Tells you whether any [parse wrappers](#lr.ParserConfig.wrap)
+  /// are registered for this parser.
+  hasWrappers() {
+    return this.wrappers.length > 0
+  }
+
   /// Returns the name associated with a given term. This will only
   /// work for all terms when the parser was generated with the
   /// `--names` option. By default, only the names of tagged terms are
