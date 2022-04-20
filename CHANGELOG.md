@@ -1,3 +1,9 @@
+## 0.16.0 (2022-04-20)
+
+### Bug fixes
+
+Avoid the need for generated parser files to directly import @lezer/common.
+
 ## 0.15.8 (2022-02-04)
 
 ### Bug fixes
