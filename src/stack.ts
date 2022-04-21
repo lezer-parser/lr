@@ -122,7 +122,9 @@ export class Stack {
   // Shift a value into the buffer
   /// @internal
   storeNode(term: number, start: number, end: number, size = 4, isReduce = false) {
-    if (term == Term.Err) { // Try to omit/merge adjacent error nodes
+    if (term == Term.Err &&
+        (!this.stack.length || this.stack[this.stack.length - 1] < this.buffer.length + this.bufferBase)) {
+      // Try to omit/merge adjacent error nodes
       let cur: Stack | null = this, top = this.buffer.length
       if (top == 0 && cur.parent) {
         top = cur.bufferBase - cur.parent.bufferBase
