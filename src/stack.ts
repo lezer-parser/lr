@@ -269,8 +269,8 @@ export class Stack {
       let s = nextStates[i + 1]
       if (s == this.state) continue
       let stack = this.split()
-      stack.storeNode(Term.Err, stack.pos, stack.pos, 4, true)
       stack.pushState(s, this.pos)
+      stack.storeNode(Term.Err, stack.pos, stack.pos, 4, true)
       stack.shiftContext(nextStates[i], this.pos)
       stack.score -= Recover.Insert
       result.push(stack)
