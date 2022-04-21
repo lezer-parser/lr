@@ -1,3 +1,9 @@
+## 0.16.1 (2022-04-21)
+
+### Bug fixes
+
+Fix an issue that caused error nodes created for inserted tokens to sometimes end up in the wrong parent node.
+
 ## 0.16.0 (2022-04-20)
 
 ### Bug fixes
