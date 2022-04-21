@@ -1,3 +1,9 @@
+## 0.16.2 (2022-04-21)
+
+### Bug fixes
+
+Fix an issue that could make the parser merge adjacent error nodes even when they had different parent nodes.
+
 ## 0.16.1 (2022-04-21)
 
 ### Bug fixes
