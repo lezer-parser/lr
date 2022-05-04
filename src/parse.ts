@@ -6,7 +6,7 @@ import {Tokenizer, TokenGroup, ExternalTokenizer, CachedToken, InputStream} from
 import {decodeArray} from "./decode"
 
 // Environment variable used to control console output
-const verbose = typeof process != "undefined" && /\bparse\b/.test(process.env.LOG!)
+const verbose = typeof process != "undefined" && process.env && /\bparse\b/.test(process.env.LOG!)
 
 let stackIDs: WeakMap<Stack, string> | null = null
 
