@@ -294,6 +294,7 @@ export class Stack {
       this.storeNode(Term.Err, this.reducePos, this.reducePos, 4, true)
       this.score -= Recover.Reduce
     }
+    this.reducePos = this.pos
     this.reduce(reduce)
     return true
   }
