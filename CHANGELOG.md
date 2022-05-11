@@ -1,3 +1,11 @@
+## 0.16.3 (2022-05-11)
+
+### Bug fixes
+
+Don't crash when a non-Node environment defines a `process` global that doesn't have an `env` property.
+
+Fix a bug that could cause partially-parsed nodes to be reused when they ended in skipped nodes, when parsing incrementally.
+
 ## 0.16.2 (2022-04-21)
 
 ### Bug fixes
