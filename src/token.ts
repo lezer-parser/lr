@@ -60,6 +60,7 @@ export class InputStream {
     this.readNext()
   }
 
+  /// @internal
   resolveOffset(offset: number, assoc: -1 | 1) {
     let range = this.range, index = this.rangeIndex
     let pos = this.pos + offset
@@ -255,7 +256,7 @@ interface ExternalOptions {
 
 /// `@external tokens` declarations in the grammar should resolve to
 /// an instance of this class.
-export class ExternalTokenizer implements Tokenizer {
+export class ExternalTokenizer {
   /// @internal
   contextual: boolean
   /// @internal
