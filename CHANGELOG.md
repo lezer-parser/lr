@@ -1,3 +1,9 @@
+## 1.0.0 (2022-06-06)
+
+### New features
+
+First stable version.
+
 ## 0.16.3 (2022-05-11)
 
 ### Bug fixes
