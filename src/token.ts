@@ -1,5 +1,6 @@
 import {Input} from "@lezer/common"
 import {Stack} from "./stack"
+import {Seq} from "./constants"
 
 export class CachedToken {
   start = -1
@@ -299,7 +300,7 @@ export class ExternalTokenizer {
 //
 // This function interprets that data, running through a stream as
 // long as new states with the a matching group mask can be reached,
-// and updating `token` when it matches a token.
+// and updating `input.token` when it matches a token.
 function readToken(data: Readonly<Uint16Array>,
                    input: InputStream,
                    stack: Stack,
@@ -319,8 +320,14 @@ function readToken(data: Readonly<Uint16Array>,
         break
       }
     }
+    let next = input.next, low = 0, high = data[state + 2]
+    // Special case for EOF
+    if (input.next < 0 && high > low && data[accEnd + high * 3 - 3] == Seq.End) {
+      state = data[accEnd + high * 3 - 1]
+      continue scan
+    }
     // Do a binary search on the state's edges
-    for (let next = input.next, low = 0, high = data[state + 2]; low < high;) {
+    for (; low < high;) {
       let mid = (low + high) >> 1
       let index = accEnd + mid + (mid << 1)
       let from = data[index], to = data[index + 1]
