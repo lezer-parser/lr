@@ -1,3 +1,9 @@
+## 1.1.0 (2022-06-27)
+
+### New features
+
+Support the output produced by the new `@eof` marker in lezer-generator.
+
 ## 1.0.0 (2022-06-06)
 
 ### New features
