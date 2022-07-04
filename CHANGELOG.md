@@ -1,3 +1,9 @@
+## 1.2.0 (2022-07-04)
+
+### New features
+
+External specializers can now be replaced when reconfiguring an `LRParser`.
+
 ## 1.1.0 (2022-06-27)
 
 ### New features
