@@ -596,6 +596,8 @@ export interface ParserConfig {
   dialect?: string
   /// Replace the given external tokenizers with new ones.
   tokenizers?: {from: ExternalTokenizer, to: ExternalTokenizer}[]
+  /// Replace external specializers with new ones.
+  specializers?: {from: (value: string, stack: Stack) => number, to: (value: string, stack: Stack) => number}[],
   /// Replace the context tracker with a new one.
   contextTracker?: ContextTracker<any>,
   /// When true, the parser will raise an exception, rather than run
@@ -828,6 +830,11 @@ export class LRParser extends Parser {
       copy.tokenizers = this.tokenizers.map(t => {
         let found = config.tokenizers!.find(r => r.from == t)
         return found ? found.to : t
+      })
+    if (config.specializers)
+      copy.specializers = this.specializers.map(s => {
+        let found = config.specializers!.find(r => r.from == s)
+        return found ? found.to : s
       })
     if (config.contextTracker)
       copy.context = config.contextTracker
