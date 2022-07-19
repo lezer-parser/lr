@@ -891,9 +891,10 @@ export class LRParser extends Parser {
     return new Dialect(dialect, flags, disabled)
   }
 
-  /// (used by the output of the parser generator) @internal
-  static deserialize(spec: ParserSpec) {
-    return new LRParser(spec)
+  /// Used by the output of the parser generator. Not available to
+  /// user code.
+  static deserialize(spec: any): LRParser {
+    return new LRParser(spec as ParserSpec)
   }
 }
 
