@@ -1,3 +1,11 @@
+## 1.2.1 (2022-08-03)
+
+### Bug fixes
+
+Include `LRParser.deserialize` in the TypeScript declarations.
+
+Fix a bug that broke `ParserConfig.specializers` (requires @lezer/generator 1.1.1).
+
 ## 1.2.0 (2022-07-04)
 
 ### New features
