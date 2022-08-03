@@ -561,6 +561,13 @@ export class ContextTracker<T> {
   }
 }
 
+type SpecializerSpec = {
+  term: number,
+  get?: (value: string, stack: Stack) => number,
+  external?: any,
+  exend?: boolean
+}
+
 type ParserSpec = {
   version: number,
   states: string | Uint32Array,
@@ -578,7 +585,7 @@ type ParserSpec = {
   context: ContextTracker<any> | null,
   dialects?: {[name: string]: number},
   dynamicPrecedences?: {[term: number]: number},
-  specialized?: {term: number, get: (value: string, stack: Stack) => number}[],
+  specialized?: SpecializerSpec[],
   tokenPrec: number,
   termNames?: {[id: number]: string}
 }
@@ -645,6 +652,8 @@ export class LRParser extends Parser {
   readonly specialized: Uint16Array
   /// The specializer functions for the token types in specialized @internal
   readonly specializers: ((value: string, stack: Stack) => number)[]
+  /// FIXME @internal
+  readonly specializerSpecs: SpecializerSpec[]
   /// Points into this.data at an array that holds the
   /// precedence order (higher precedence first) for ambiguous
   /// tokens @internal
@@ -708,12 +717,10 @@ export class LRParser extends Parser {
 
     let tokenArray = decodeArray<Uint16Array>(spec.tokenData)
     this.context = spec.context
-    this.specialized = new Uint16Array(spec.specialized ? spec.specialized.length : 0)
-    this.specializers = []
-    if (spec.specialized) for (let i = 0; i < spec.specialized.length; i++) {
-      this.specialized[i] = spec.specialized[i].term
-      this.specializers[i] = spec.specialized[i].get
-    }
+    this.specializerSpecs = spec.specialized || []
+    this.specialized = new Uint16Array(this.specializerSpecs.length)
+    for (let i = 0; i < this.specializerSpecs.length; i++) this.specialized[i] = this.specializerSpecs[i].term
+    this.specializers = this.specializerSpecs.map(getSpecializer)
 
     this.states = decodeArray(spec.states, Uint32Array)
     this.data = decodeArray(spec.stateData)
@@ -831,11 +838,16 @@ export class LRParser extends Parser {
         let found = config.tokenizers!.find(r => r.from == t)
         return found ? found.to : t
       })
-    if (config.specializers)
-      copy.specializers = this.specializers.map(s => {
-        let found = config.specializers!.find(r => r.from == s)
-        return found ? found.to : s
+    if (config.specializers) {
+      copy.specializers = this.specializers.slice()
+      copy.specializerSpecs = this.specializerSpecs.map((s, i) => {
+        let found = config.specializers!.find(r => r.from == s.external)
+        if (!found) return s
+        let spec = {...s, external: found.to}
+        copy.specializers[i] = getSpecializer(spec)
+        return spec
       })
+    }
     if (config.contextTracker)
       copy.context = config.contextTracker
     if (config.dialect)
@@ -916,4 +928,12 @@ function findFinished(stacks: Stack[]) {
       best = stack
   }
   return best
+}
+
+function getSpecializer(spec: SpecializerSpec) {
+  if (spec.external) {
+    let mask = spec.extend ? Specialize.Extend : Specialize.Specialize
+    return (value: string, stack: Stack) => (spec.external!(value, stack) << 1) | mask
+  }
+  return spec.get!
 }
