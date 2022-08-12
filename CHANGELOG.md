@@ -1,3 +1,9 @@
+## 1.2.2 (2022-08-12)
+
+### Bug fixes
+
+Fix an issue that could cause the tokenizer to crash when tokens ended directly on a gap in the input ranges.
+
 ## 1.2.1 (2022-08-03)
 
 ### Bug fixes
