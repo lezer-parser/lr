@@ -62,9 +62,8 @@ export class InputStream {
   }
 
   /// @internal
-  resolveOffset(offset: number, assoc: -1 | 1) {
+  resolvePos(pos: number, assoc: -1 | 1) {
     let range = this.range, index = this.rangeIndex
-    let pos = this.pos + offset
     while (pos < range.from) {
       if (!index) return null
       let next = this.ranges[--index]
@@ -95,7 +94,7 @@ export class InputStream {
       pos = this.pos + offset
       result = this.chunk.charCodeAt(idx)
     } else {
-      let resolved = this.resolveOffset(offset, 1)
+      let resolved = this.resolvePos(this.pos + offset, 1)
       if (resolved == null) return -1
       pos = resolved
       if (pos >= this.chunk2Pos && pos < this.chunk2Pos + this.chunk2.length) {
@@ -116,7 +115,7 @@ export class InputStream {
   /// current stream position, but you can pass an offset (relative to
   /// the stream position) to change that.
   acceptToken(token: number, endOffset = 0) {
-    let end = endOffset ? this.resolveOffset(endOffset, -1) : this.pos
+    let end = endOffset ? this.resolvePos(this.pos + endOffset, -1) : this.pos
     if (end == null || end < this.token.start) throw new RangeError("Token end out of bounds")
     this.token.value = token
     this.token.end = end
