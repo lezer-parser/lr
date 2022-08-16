@@ -167,8 +167,7 @@ class TokenCache {
   }
 
   updateCachedToken(token: CachedToken, tokenizer: Tokenizer, stack: Stack) {
-    let start = this.stream.resolvePos(stack.pos, 1) ?? stack.pos
-    tokenizer.token(this.stream.reset(start, token), stack)
+    tokenizer.token(this.stream.reset(stack.pos, token), stack)
     if (token.value > -1) {
       let {parser} = stack.p
 
@@ -182,7 +181,7 @@ class TokenCache {
       }
     } else {
       token.value = Term.Err
-      token.end = this.stream.resolvePos(start + 1, -1) ?? this.stream.end
+      token.end = Math.min(stack.p.stream.end, stack.pos + 1)
     }
   }
 
