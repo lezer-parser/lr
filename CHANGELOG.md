@@ -1,3 +1,9 @@
+## 1.2.3 (2022-08-16)
+
+### Bug fixes
+
+Fix a regression in the way tokenizers read input when parsing multiple separate ranges.
+
 ## 1.2.2 (2022-08-12)
 
 ### Bug fixes
