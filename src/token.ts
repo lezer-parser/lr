@@ -80,6 +80,13 @@ export class InputStream {
     return pos
   }
 
+  /// @internal
+  clipPos(pos: number) {
+    if (pos >= this.range.from && pos < this.range.to) return pos
+    for (let range of this.ranges) if (range.to > pos) return Math.max(pos, range.from)
+    return this.end
+  }
+
   /// Look at a code unit near the stream position. `.peek(0)` equals
   /// `.next`, `.peek(-1)` gives you the previous character, and so
   /// on.
