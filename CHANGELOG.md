@@ -1,3 +1,9 @@
+## 1.2.4 (2022-11-05)
+
+### Bug fixes
+
+Fix a tokenizer bug that broke tokenizing of the character \uffff.
+
 ## 1.2.3 (2022-08-16)
 
 ### Bug fixes
