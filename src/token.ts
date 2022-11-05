@@ -329,7 +329,7 @@ function readToken(data: Readonly<Uint16Array>,
     }
     let next = input.next, low = 0, high = data[state + 2]
     // Special case for EOF
-    if (input.next < 0 && high > low && data[accEnd + high * 3 - 3] == Seq.End) {
+    if (input.next < 0 && high > low && data[accEnd + high * 3 - 3] == Seq.End && data[accEnd + high * 3 - 3] == Seq.End) {
       state = data[accEnd + high * 3 - 1]
       continue scan
     }
@@ -337,7 +337,7 @@ function readToken(data: Readonly<Uint16Array>,
     for (; low < high;) {
       let mid = (low + high) >> 1
       let index = accEnd + mid + (mid << 1)
-      let from = data[index], to = data[index + 1]
+      let from = data[index], to = data[index + 1] || 0x10000
       if (next < from) high = mid
       else if (next >= to) low = mid + 1
       else { state = data[index + 2]; input.advance(); continue scan }
