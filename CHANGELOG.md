@@ -1,3 +1,9 @@
+## 1.2.5 (2022-11-16)
+
+### Bug fixes
+
+Fix a bug that made `Stack.canShift` incorrectly return true in some circumstances.
+
 ## 1.2.4 (2022-11-05)
 
 ### Bug fixes
