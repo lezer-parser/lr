@@ -240,8 +240,8 @@ export class Stack {
   canShift(term: number) {
     for (let sim = new SimulatedStack(this);;) {
       let action = this.p.parser.stateSlot(sim.state, ParseState.DefaultReduce) || this.p.parser.hasAction(sim.state, term)
-      if ((action & Action.ReduceFlag) == 0) return true
       if (action == 0) return false
+      if ((action & Action.ReduceFlag) == 0) return true
       sim.reduce(action)
     }
   }
