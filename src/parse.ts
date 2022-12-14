@@ -227,6 +227,7 @@ const enum Rec {
   // on recursive traversal.
   CutDepth = 5000 * 3,
   CutTo = 3000 * 3,
+  MaxLeftAssociativeReductionCount = 1000
 }
 
 export class Parse implements PartialParse {
@@ -242,6 +243,10 @@ export class Parse implements PartialParse {
   tokens: TokenCache
   topTerm: number
   stoppedAt: null | number = null
+
+  lastBigReductionStart = -1
+  lastBigReductionSize = 0
+  bigReductionCount = 0
 
   constructor(
     readonly parser: LRParser,
@@ -273,6 +278,19 @@ export class Parse implements PartialParse {
     // This will hold stacks beyond `pos`.
     let newStacks: Stack[] = this.stacks = []
     let stopped: Stack[] | undefined, stoppedTokens: number[] | undefined
+
+    // If a large amount of reductions happened with the same start
+    // position, force the stack out of that production in order to
+    // avoid creating a tree too deep to recurse through.
+    // (This is an ugly kludge, because unfortunately there is no
+    // straightforward, cheap way to check for this happening, due to
+    // the history of reductions only being available in an
+    // expensive-to-access format in the stack buffers.)
+    if (this.bigReductionCount > Rec.MaxLeftAssociativeReductionCount && stacks.length == 1) {
+      let [s] = stacks
+      while (s.forceReduce() && s.stack.length && s.stack[s.stack.length - 2] >= this.lastBigReductionStart) {}
+      this.bigReductionCount = this.lastBigReductionSize = 0
+    }
 
     // Keep advancing any stacks at `pos` until they either move
     // forward or can't be advanced. Gather stacks that can't be

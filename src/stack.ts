@@ -102,8 +102,24 @@ export class Stack {
     // expression and the state that we'll be staying in, which should
     // be moved to `this.state`).
     let base = this.stack.length - ((depth - 1) * 3) - (action & Action.StayFlag ? 6 : 0)
-    let start = this.stack[base - 2]
+    let start = this.stack[base - 2], size = this.reducePos - start
+
+    // This is a kludge to try and detect overly deep left-associative
+    // trees, which will not increase the parse stack depth and thus
+    // won't be caught by the regular stack-depth limit check.
+    if (size >= Recover.MinBigReduction) {
+      if (start == this.p.lastBigReductionStart) {
+        this.p.bigReductionCount++
+        this.p.lastBigReductionSize = size
+      } else if (this.p.lastBigReductionSize < size) {
+        this.p.bigReductionCount = 1
+        this.p.lastBigReductionStart = start
+        this.p.lastBigReductionSize = size
+      }
+    }
+
     let bufferBase = this.stack[base - 1], count = this.bufferBase + this.buffer.length - bufferBase
+
     // Store normal terms or `R -> R R` repeat reductions
     if (type < parser.minRepeatTerm || (action & Action.RepeatFlag)) {
       let pos = parser.stateFlag(this.state, StateFlag.Skipped) ? this.pos : this.reducePos
@@ -403,7 +419,8 @@ export const enum Recover {
   Reduce = 100,
   MaxNext = 4,
   MaxInsertStackDepth = 300,
-  DampenInsertStackDepth = 120
+  DampenInsertStackDepth = 120,
+  MinBigReduction = 2000
 }
 
 // Used to cheaply run some reductions to scan ahead without mutating
