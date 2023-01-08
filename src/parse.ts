@@ -584,7 +584,7 @@ type SpecializerSpec = {
   term: number,
   get?: (value: string, stack: Stack) => number,
   external?: any,
-  exend?: boolean
+  extend?: boolean
 }
 
 type ParserSpec = {
@@ -832,12 +832,6 @@ export class LRParser extends Parser {
     return result
   }
 
-  /// @internal
-  overrides(token: number, prev: number) {
-    let iPrev = findOffset(this.data, this.tokenPrecTable, prev)
-    return iPrev < 0 || findOffset(this.data, this.tokenPrecTable, token) < iPrev
-  }
-
   /// Configure the parser. Returns a new parser instance that has the
   /// given settings modified. Settings not provided in `config` are
   /// kept from the original parser.
@@ -923,19 +917,13 @@ export class LRParser extends Parser {
   }
 
   /// Used by the output of the parser generator. Not available to
-  /// user code.
+  /// user code. @hide
   static deserialize(spec: any): LRParser {
     return new LRParser(spec as ParserSpec)
   }
 }
 
 function pair(data: Readonly<Uint16Array>, off: number) { return data[off] | (data[off + 1] << 16) }
-
-function findOffset(data: Readonly<Uint16Array>, start: number, term: number) {
-  for (let i = start, next; (next = data[i]) != Seq.End; i++)
-    if (next == term) return i - start
-  return -1
-}
 
 function findFinished(stacks: Stack[]) {
   let best: Stack | null = null

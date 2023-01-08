@@ -1,6 +1,7 @@
 import {Input} from "@lezer/common"
 import {Stack} from "./stack"
 import {Seq} from "./constants"
+import {decodeArray} from "./decode"
 
 export class CachedToken {
   start = -1
@@ -240,10 +241,44 @@ export class TokenGroup implements Tokenizer {
 
   constructor(readonly data: Readonly<Uint16Array>, readonly id: number) {}
 
-  token(input: InputStream, stack: Stack) { readToken(this.data, input, stack, this.id) }
+  token(input: InputStream, stack: Stack) {
+    let {parser} = stack.p
+    readToken(this.data, input, stack, this.id, parser.data, parser.tokenPrecTable)
+  }
 }
 
 TokenGroup.prototype.contextual = TokenGroup.prototype.fallback = TokenGroup.prototype.extend = false
+
+/// @hide
+export class LocalTokenGroup implements Tokenizer {
+  contextual!: boolean
+  fallback!: boolean
+  extend!: boolean
+  readonly data: Readonly<Uint16Array>
+
+  constructor(data: Readonly<Uint16Array> | string, readonly precTable: number, readonly elseToken?: number) {
+    this.data = typeof data == "string" ? decodeArray<Readonly<Uint16Array>>(data) : data
+  }
+
+  token(input: InputStream, stack: Stack) {
+    let start = input.pos, cur
+    for (;;) {
+      cur = input.pos
+      readToken(this.data, input, stack, 0, this.data, this.precTable)
+      if (input.token.value > -1) break
+      if (this.elseToken == null) return
+      if (input.next < 0) break
+      input.advance()
+      input.reset(cur + 1, input.token)
+    }
+    if (cur > start) {
+      input.reset(start, input.token)
+      input.acceptToken(this.elseToken!, cur - start)
+    }
+  }
+}
+
+LocalTokenGroup.prototype.contextual = TokenGroup.prototype.fallback = TokenGroup.prototype.extend = false
 
 interface ExternalOptions {
   /// When set to true, mark this tokenizer as depending on the
@@ -311,8 +346,10 @@ export class ExternalTokenizer {
 function readToken(data: Readonly<Uint16Array>,
                    input: InputStream,
                    stack: Stack,
-                   group: number) {
-  let state = 0, groupMask = 1 << group, {parser} = stack.p, {dialect} = parser
+                   group: number,
+                   precTable: Readonly<Uint16Array>,
+                   precOffset: number) {
+  let state = 0, groupMask = 1 << group, {dialect} = stack.p.parser
   scan: for (;;) {
     if ((groupMask & data[state]) == 0) break
     let accEnd = data[state + 1]
@@ -322,7 +359,8 @@ function readToken(data: Readonly<Uint16Array>,
     for (let i = state + 3; i < accEnd; i += 2) if ((data[i + 1] & groupMask) > 0) {
       let term = data[i]
       if (dialect.allows(term) &&
-          (input.token.value == -1 || input.token.value == term || parser.overrides(term, input.token.value))) {
+          (input.token.value == -1 || input.token.value == term ||
+           overrides(term, input.token.value, precTable, precOffset))) {
         input.acceptToken(term)
         break
       }
@@ -344,4 +382,15 @@ function readToken(data: Readonly<Uint16Array>,
     }
     break
   }
+}
+
+function findOffset(data: Readonly<Uint16Array>, start: number, term: number) {
+  for (let i = start, next; (next = data[i]) != Seq.End; i++)
+    if (next == term) return i - start
+  return -1
+}
+
+function overrides(token: number, prev: number, tableData: Readonly<Uint16Array>, tableOffset: number) {
+  let iPrev = findOffset(tableData, tableOffset, prev)
+  return iPrev < 0 || findOffset(tableData, tableOffset, token) < iPrev
 }
