@@ -1,3 +1,13 @@
+## 1.3.0 (2023-01-09)
+
+### Bug fixes
+
+Avoid the problem of huge numbers of repeated left-associative operator applications creating a stack too deep to recurse on by detecting such parses and force-reducing out of them.
+
+### New features
+
+Add support for grammars that use `@local tokens` declarations.
+
 ## 1.2.5 (2022-11-16)
 
 ### Bug fixes
