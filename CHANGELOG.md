@@ -1,3 +1,9 @@
+## 1.3.1 (2023-01-13)
+
+### Bug fixes
+
+Fix a bug that could corrupt the parse stack when parsing a non-single-token skippable expression from the initial parse state.
+
 ## 1.3.0 (2023-01-09)
 
 ### Bug fixes
