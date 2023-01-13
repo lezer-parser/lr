@@ -102,7 +102,7 @@ export class Stack {
     // expression and the state that we'll be staying in, which should
     // be moved to `this.state`).
     let base = this.stack.length - ((depth - 1) * 3) - (action & Action.StayFlag ? 6 : 0)
-    let start = this.stack[base - 2], size = this.reducePos - start
+    let start = base ? this.stack[base - 2] : 0, size = this.reducePos - start
 
     // This is a kludge to try and detect overly deep left-associative
     // trees, which will not increase the parse stack depth and thus
@@ -118,7 +118,7 @@ export class Stack {
       }
     }
 
-    let bufferBase = this.stack[base - 1], count = this.bufferBase + this.buffer.length - bufferBase
+    let bufferBase = base ? this.stack[base - 1] : 0, count = this.bufferBase + this.buffer.length - bufferBase
 
     // Store normal terms or `R -> R R` repeat reductions
     if (type < parser.minRepeatTerm || (action & Action.RepeatFlag)) {
