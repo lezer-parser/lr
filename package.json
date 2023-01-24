@@ -10,7 +10,7 @@
   },
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
-  "author": "Marijn Haverbeke <marijnh@gmail.com>",
+  "author": "Marijn Haverbeke <marijn@haverbeke.berlin>",
   "license": "MIT",
   "repository": {
     "type" : "git",
