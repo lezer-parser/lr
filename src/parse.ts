@@ -227,7 +227,11 @@ const enum Rec {
   // on recursive traversal.
   CutDepth = 5000 * 3,
   CutTo = 3000 * 3,
-  MaxLeftAssociativeReductionCount = 1000
+  MaxLeftAssociativeReductionCount = 1000,
+  // The maximum number of non-recovering stacks to explore (to avoid
+  // getting bogged down with exponentially multiplying stacks in
+  // ambiguous content)
+  MaxStackCount = 12
 }
 
 export class Parse implements PartialParse {
@@ -357,6 +361,8 @@ export class Parse implements PartialParse {
           }
         }
       }
+      if (newStacks.length > Rec.MaxStackCount)
+        newStacks.splice(Rec.MaxStackCount, newStacks.length - Rec.MaxStackCount)
     }
 
     this.minStackPos = newStacks[0].pos
