@@ -227,7 +227,7 @@ const enum Rec {
   // on recursive traversal.
   CutDepth = 5000 * 3,
   CutTo = 3000 * 3,
-  MaxLeftAssociativeReductionCount = 1000,
+  MaxLeftAssociativeReductionCount = 300,
   // The maximum number of non-recovering stacks to explore (to avoid
   // getting bogged down with exponentially multiplying stacks in
   // ambiguous content)
