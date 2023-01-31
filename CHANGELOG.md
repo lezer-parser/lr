@@ -1,3 +1,11 @@
+## 1.3.2 (2023-01-31)
+
+### Bug fixes
+
+Place a limit on the amount of (non-recovering) parse stacks active at the same time to avoid exponential slowdown on inputs that nest ambiguous constructs.
+
+Reduce the maximum left-associative nesting depth, since the old value could still cause Chrome (but not Firefox) to overflow its call stack.
+
 ## 1.3.1 (2023-01-13)
 
 ### Bug fixes
