@@ -102,7 +102,7 @@ export class Stack {
     // expression and the state that we'll be staying in, which should
     // be moved to `this.state`).
     let base = this.stack.length - ((depth - 1) * 3) - (action & Action.StayFlag ? 6 : 0)
-    let start = base ? this.stack[base - 2] : 0, size = this.reducePos - start
+    let start = base ? this.stack[base - 2] : this.p.ranges[0].from, size = this.reducePos - start
 
     // This is a kludge to try and detect overly deep left-associative
     // trees, which will not increase the parse stack depth and thus
