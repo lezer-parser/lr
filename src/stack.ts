@@ -107,7 +107,7 @@ export class Stack {
     // This is a kludge to try and detect overly deep left-associative
     // trees, which will not increase the parse stack depth and thus
     // won't be caught by the regular stack-depth limit check.
-    if (size >= Recover.MinBigReduction) {
+    if (size >= Recover.MinBigReduction && !this.p.parser.nodeSet.types[type].isAnonymous) {
       if (start == this.p.lastBigReductionStart) {
         this.p.bigReductionCount++
         this.p.lastBigReductionSize = size
