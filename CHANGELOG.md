@@ -1,3 +1,11 @@
+## 1.3.3 (2023-02-02)
+
+### Bug fixes
+
+Fix a crash when parsing a non-atomic skippable at the top of a nested parse.
+
+Fix a bug that caused the tree-depth limit on left-associative rules to be applied to rules generated for repeat operators.
+
 ## 1.3.2 (2023-01-31)
 
 ### Bug fixes
