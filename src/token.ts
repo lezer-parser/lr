@@ -261,19 +261,19 @@ export class LocalTokenGroup implements Tokenizer {
   }
 
   token(input: InputStream, stack: Stack) {
-    let start = input.pos, cur
+    let start = input.pos, skipped = 0
     for (;;) {
-      cur = input.pos
       readToken(this.data, input, stack, 0, this.data, this.precTable)
       if (input.token.value > -1) break
       if (this.elseToken == null) return
       if (input.next < 0) break
       input.advance()
-      input.reset(cur + 1, input.token)
+      input.reset(input.pos, input.token)
+      skipped++
     }
-    if (cur > start) {
+    if (skipped) {
       input.reset(start, input.token)
-      input.acceptToken(this.elseToken!, cur - start)
+      input.acceptToken(this.elseToken!, skipped)
     }
   }
 }
