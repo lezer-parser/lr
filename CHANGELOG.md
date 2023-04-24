@@ -1,3 +1,9 @@
+## 1.3.4 (2023-04-24)
+
+### Bug fixes
+
+Fix tokenizing of `@else` tokens that span separate input ranges.
+
 ## 1.3.3 (2023-02-02)
 
 ### Bug fixes
