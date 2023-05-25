@@ -1,3 +1,9 @@
+## 1.3.5 (2023-05-25)
+
+### Bug fixes
+
+Fix an issue where some grammars could make the parser unable to force reductions on invalid input, leading to trees that were missing some wrapping nodes around the broken input.
+
 ## 1.3.4 (2023-04-24)
 
 ### Bug fixes
