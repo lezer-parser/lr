@@ -811,14 +811,21 @@ export class LRParser extends Parser {
 
   /// @internal
   validAction(state: number, action: number) {
-    if (action == this.stateSlot(state, ParseState.DefaultReduce)) return true
-    for (let i = this.stateSlot(state, ParseState.Actions);; i += 3) {
+    return !!this.allActions(state, a => a == action ? true : null)
+  }
+
+  /// @internal
+  allActions<T>(state: number, action: (action: number) => void | T): void | T {
+    let deflt = this.stateSlot(state, ParseState.DefaultReduce)
+    let result: void | T = deflt ? action(deflt) : undefined
+    for (let i = this.stateSlot(state, ParseState.Actions); result == null; i += 3) {
       if (this.data[i] == Seq.End) {
         if (this.data[i + 1] == Seq.Next) i = pair(this.data, i + 2)
-        else return false
+        else break
       }
-      if (action == pair(this.data, i + 1)) return true
+      result = action(pair(this.data, i + 1))
     }
+    return result
   }
 
   /// Get the states that can follow this one through shift actions or

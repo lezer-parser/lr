@@ -300,19 +300,49 @@ export class Stack {
   // be done.
   /// @internal
   forceReduce() {
-    let reduce = this.p.parser.stateSlot(this.state, ParseState.ForcedReduce)
-    if ((reduce & Action.ReduceFlag) == 0) return false
     let {parser} = this.p
+    let reduce = parser.stateSlot(this.state, ParseState.ForcedReduce)
+    if ((reduce & Action.ReduceFlag) == 0) return false
     if (!parser.validAction(this.state, reduce)) {
       let depth = reduce >> Action.ReduceDepthShift, term = reduce & Action.ValueMask
       let target = this.stack.length - depth * 3
-      if (target < 0 || parser.getGoto(this.stack[target], term, false) < 0) return false
+      if (target < 0 || parser.getGoto(this.stack[target], term, false) < 0) {
+        let backup = this.findForcedReduction()
+        if (backup == null) return false
+        reduce = backup
+      }
       this.storeNode(Term.Err, this.reducePos, this.reducePos, 4, true)
       this.score -= Recover.Reduce
     }
     this.reducePos = this.pos
     this.reduce(reduce)
     return true
+  }
+
+  /// Try to scan through the automaton to find some kind of reduction
+  /// that can be applied. Used when the regular ForcedReduce field
+  /// isn't a valid action. @internal
+  findForcedReduction() {
+    let {parser} = this.p, seen: number[] = []
+    let explore = (state: number, depth: number): number | void => {
+      if (seen.includes(state)) return
+      seen.push(state)
+      return parser.allActions(state, (action): number | void => {
+        if (action & (Action.StayFlag | Action.GotoFlag)) {
+        } else if (action & Action.ReduceFlag) {
+          let rDepth = (action >> Action.ReduceDepthShift) - depth
+          if (rDepth > 1) {
+            let term = action & Action.ValueMask, target = this.stack.length - rDepth * 3
+            if (target >= 0 && parser.getGoto(this.stack[target], term, false) >= 0)
+              return (rDepth << Action.ReduceDepthShift) | Action.ReduceFlag | term
+          }
+        } else {
+          let found = explore(action, depth + 1)
+          if (found != null) return found
+        }
+      })
+    }
+    return explore(this.state, 0)
   }
 
   /// @internal
