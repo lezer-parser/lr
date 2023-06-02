@@ -1,3 +1,9 @@
+## 1.3.6 (2023-06-02)
+
+### Bug fixes
+
+Fix an issue where context-tracking parsers, in specific circumstances, could create incorrectly nested trees.
+
 ## 1.3.5 (2023-05-25)
 
 ### Bug fixes
