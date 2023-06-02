@@ -403,14 +403,14 @@ export class Stack {
   private emitContext() {
     let last = this.buffer.length - 1
     if (last < 0 || this.buffer[last] != -3)
-      this.buffer.push(this.curContext!.hash, this.reducePos, this.reducePos, -3)
+      this.buffer.push(this.curContext!.hash, this.pos, this.pos, -3)
   }
 
   /// @internal
   emitLookAhead() {
     let last = this.buffer.length - 1
     if (last < 0 || this.buffer[last] != -4)
-      this.buffer.push(this.lookAhead, this.reducePos, this.reducePos, -4)
+      this.buffer.push(this.lookAhead, this.pos, this.pos, -4)
   }
 
   private updateContext(context: any) {
