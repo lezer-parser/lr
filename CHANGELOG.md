@@ -1,3 +1,9 @@
+## 1.3.7 (2023-06-22)
+
+### Bug fixes
+
+Fix a bug where the parser could skip characters while tokenizing in a local token group.
+
 ## 1.3.6 (2023-06-02)
 
 ### Bug fixes
