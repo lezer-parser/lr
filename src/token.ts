@@ -263,13 +263,13 @@ export class LocalTokenGroup implements Tokenizer {
   token(input: InputStream, stack: Stack) {
     let start = input.pos, skipped = 0
     for (;;) {
-      let nextPos = input.resolveOffset(1, -1)
+      let atEof = input.next < 0, nextPos = input.resolveOffset(1, 1)
       readToken(this.data, input, stack, 0, this.data, this.precTable)
       if (input.token.value > -1) break
       if (this.elseToken == null) return
+      if (!atEof) skipped++
       if (nextPos == null) break
       input.reset(nextPos, input.token)
-      skipped++
     }
     if (skipped) {
       input.reset(start, input.token)
