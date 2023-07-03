@@ -1,3 +1,9 @@
+## 1.3.9 (2023-07-03)
+
+### Bug fixes
+
+Fix another issue in the way local token groups and input gaps interact.
+
 ## 1.3.8 (2023-07-03)
 
 ### Bug fixes
