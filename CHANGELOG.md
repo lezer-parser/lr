@@ -1,3 +1,9 @@
+## 1.3.8 (2023-07-03)
+
+### Bug fixes
+
+Fix an issue that caused incorrect trees to be emitted when a forced reduction happened inside a skipped term.
+
 ## 1.3.7 (2023-06-22)
 
 ### Bug fixes
