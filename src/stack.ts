@@ -311,7 +311,7 @@ export class Stack {
         if (backup == null) return false
         reduce = backup
       }
-      this.storeNode(Term.Err, this.reducePos, this.reducePos, 4, true)
+      this.storeNode(Term.Err, this.pos, this.pos, 4, true)
       this.score -= Recover.Reduce
     }
     this.reducePos = this.pos
