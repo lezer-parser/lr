@@ -319,7 +319,10 @@ export class Parse implements PartialParse {
 
     if (!newStacks.length) {
       let finished = stopped && findFinished(stopped)
-      if (finished) return this.stackToTree(finished)
+      if (finished) {
+        if (verbose) console.log("Finish with " + this.stackID(finished))
+        return this.stackToTree(finished)
+      }
 
       if (this.parser.strict) {
         if (verbose && stopped)
@@ -332,7 +335,10 @@ export class Parse implements PartialParse {
     if (this.recovering && stopped) {
       let finished = this.stoppedAt != null && stopped[0].pos > this.stoppedAt ? stopped[0]
         : this.runRecovery(stopped, stoppedTokens!, newStacks)
-      if (finished) return this.stackToTree(finished.forceAll())
+      if (finished) {
+        if (verbose) console.log("Force-finish " + this.stackID(finished))
+        return this.stackToTree(finished.forceAll())
+      }
     }
 
     if (this.recovering) {
