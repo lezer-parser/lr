@@ -1,3 +1,9 @@
+## 1.3.10 (2023-08-17)
+
+### Bug fixes
+
+Make this package usable in TypeScript setups using node16/nodenext resolution.
+
 ## 1.3.9 (2023-07-03)
 
 ### Bug fixes
