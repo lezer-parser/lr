@@ -174,33 +174,32 @@ export class Stack {
 
   // Apply a shift action
   /// @internal
-  shift(action: number, next: number, nextEnd: number) {
-    let start = this.pos
+  shift(action: number, type: number, start: number, end: number) {
     if (action & Action.GotoFlag) {
       this.pushState(action & Action.ValueMask, this.pos)
     } else if ((action & Action.StayFlag) == 0) { // Regular shift
       let nextState = action, {parser} = this.p
-      if (nextEnd > this.pos || next <= parser.maxNode) {
-        this.pos = nextEnd
-        if (!parser.stateFlag(nextState, StateFlag.Skipped)) this.reducePos = nextEnd
+      if (end > this.pos || type <= parser.maxNode) {
+        this.pos = end
+        if (!parser.stateFlag(nextState, StateFlag.Skipped)) this.reducePos = end
       }
       this.pushState(nextState, start)
-      this.shiftContext(next, start)
-      if (next <= parser.maxNode)
-        this.buffer.push(next, start, nextEnd, 4)
+      this.shiftContext(type, start)
+      if (type <= parser.maxNode)
+        this.buffer.push(type, start, end, 4)
     } else { // Shift-and-stay, which means this is a skipped token
-      this.pos = nextEnd
-      this.shiftContext(next, start)
-      if (next <= this.p.parser.maxNode)
-        this.buffer.push(next, start, nextEnd, 4)
+      this.pos = end
+      this.shiftContext(type, start)
+      if (type <= this.p.parser.maxNode)
+        this.buffer.push(type, start, end, 4)
     }
   }
 
   // Apply an action
   /// @internal
-  apply(action: number, next: number, nextEnd: number) {
+  apply(action: number, next: number, nextStart: number, nextEnd: number) {
     if (action & Action.ReduceFlag) this.reduce(action)
-    else this.shift(action, next, nextEnd)
+    else this.shift(action, next, nextStart, nextEnd)
   }
 
   // Add a prebuilt (reused) node into the buffer.

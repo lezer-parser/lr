@@ -425,7 +425,8 @@ export class Parse implements PartialParse {
       let action = actions[i++], term = actions[i++], end = actions[i++]
       let last = i == actions.length || !split
       let localStack = last ? stack : stack.split()
-      localStack.apply(action, term, end)
+      let main = this.tokens.mainToken
+      localStack.apply(action, term, main ? main.start : localStack.pos, end)
       if (verbose)
         console.log(base + this.stackID(localStack) + ` (via ${(action & Action.ReduceFlag) == 0 ? "shift"
                      : `reduce of ${parser.getName(action & Action.ValueMask)}`} for ${
