@@ -17,7 +17,8 @@
     "url" : "https://github.com/lezer-parser/lr.git"
   },
   "devDependencies": {
-    "@marijn/buildtool": "^0.1.5"
+    "@marijn/buildtool": "^0.1.5",
+    "@types/node": "^20.6.2"
   },
   "dependencies": {
     "@lezer/common": "^1.0.0"

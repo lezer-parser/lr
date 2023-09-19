@@ -724,7 +724,7 @@ export class LRParser extends Parser {
       let prop = propSpec[0]
       if (typeof prop == "string") prop = (NodeProp as unknown as {[name: string]: NodeProp<any>})[prop]
       for (let i = 1; i < propSpec.length;) {
-        let next = propSpec[i++]
+        let next = propSpec[i++] as number
         if (next >= 0) {
           setProp(next as number, prop, propSpec[i++] as string)
         } else {

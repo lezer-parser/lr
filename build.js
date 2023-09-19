@@ -4,6 +4,7 @@ import {dirname, join} from "path"
 
 let tsOptions = {
   lib: ["es5", "es6"],
+  types: ["node"],
   target: "es6"
 }
 
