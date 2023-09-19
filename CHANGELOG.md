@@ -1,3 +1,9 @@
+## 1.3.11 (2023-09-19)
+
+### Bug fixes
+
+When parsing input ranges with gaps, don't treat the token after a gap as covering the entire gap.
+
 ## 1.3.10 (2023-08-17)
 
 ### Bug fixes
