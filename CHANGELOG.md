@@ -1,3 +1,9 @@
+## 1.3.12 (2023-09-22)
+
+### Bug fixes
+
+Reduce tree depth limit to avoid V8 overflowing its stack.
+
 ## 1.3.11 (2023-09-19)
 
 ### Bug fixes
