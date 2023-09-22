@@ -225,8 +225,8 @@ const enum Rec {
   // Once a stack reaches this depth (in .stack.length) force-reduce
   // it back to CutTo to avoid creating trees that overflow the stack
   // on recursive traversal.
-  CutDepth = 5000 * 3,
-  CutTo = 3000 * 3,
+  CutDepth = 3000 * 3,
+  CutTo = 2000 * 3,
   MaxLeftAssociativeReductionCount = 300,
   // The maximum number of non-recovering stacks to explore (to avoid
   // getting bogged down with exponentially multiplying stacks in
