@@ -369,6 +369,7 @@ export class Stack {
   /// when this.stack.length == 3 (state is directly below the top
   /// state). @internal
   restart() {
+    this.storeNode(Term.Err, this.pos, this.pos, 4, true)
     this.state = this.stack[0]
     this.stack.length = 0
   }
