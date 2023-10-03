@@ -289,6 +289,7 @@ export class Stack {
       stack.pushState(s, this.pos)
       stack.storeNode(Term.Err, stack.pos, stack.pos, 4, true)
       stack.shiftContext(nextStates[i], this.pos)
+      stack.reducePos = this.pos
       stack.score -= Recover.Insert
       result.push(stack)
     }
