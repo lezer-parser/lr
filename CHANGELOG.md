@@ -1,3 +1,11 @@
+## 1.3.13 (2023-10-03)
+
+### Bug fixes
+
+The parser will now emit an error node when it reaches the end of the top rule but not the end of the input, and restarts parsing the top rule.
+
+Fix an issue that could, when error-recovery happened after a skipped token, cause the parser to emit nodes whose start position was after their end position.
+
 ## 1.3.12 (2023-09-22)
 
 ### Bug fixes
