@@ -367,7 +367,7 @@ function readToken(data: Readonly<Uint16Array>,
     }
     let next = input.next, low = 0, high = data[state + 2]
     // Special case for EOF
-    if (input.next < 0 && high > low && data[accEnd + high * 3 - 3] == Seq.End && data[accEnd + high * 3 - 3] == Seq.End) {
+    if (input.next < 0 && high > low && data[accEnd + high * 3 - 3] == Seq.End) {
       state = data[accEnd + high * 3 - 1]
       continue scan
     }
