@@ -1,3 +1,9 @@
+## 1.3.14 (2023-11-02)
+
+### Bug fixes
+
+Further reduce maximum parse depth—the old limit could still cause the tree building function to overflow the stack on V8 when all rules on the stack produce actual visible tree nodes.
+
 ## 1.3.13 (2023-10-03)
 
 ### Bug fixes
