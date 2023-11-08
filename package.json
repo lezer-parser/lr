@@ -27,6 +27,6 @@
   "scripts": {
     "test": "echo 'Tests are in @lezer/generator'",
     "watch": "node build.js --watch",
-    "prepare": "node build.js; tsc src/constants.ts -d --outDir dist"
+    "prepare": "node build.js"
   }
 }
