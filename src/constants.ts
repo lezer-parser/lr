@@ -13,7 +13,7 @@
 // The value 0 (which is not a valid action because no shift goes to
 // state 0, the start state), is often used to denote the absence of a
 // valid action.
-export const enum Action {
+export enum Action {
   // Distinguishes between shift (off) and reduce (on) actions.
   ReduceFlag = 1 << 16,
   // The first 16 bits hold the target state's id for shift actions,
@@ -43,7 +43,7 @@ export const enum Action {
 }
 
 // Each parser state has a `flags` field.
-export const enum StateFlag {
+export enum StateFlag {
   // Set if this state is part of a skip expression (which means nodes
   // produced by it should be moved out of any node reduced directly
   // after them).
@@ -56,19 +56,19 @@ export const enum StateFlag {
 // indicate whether this specialization replaced the original token
 // (`Specialize`) or adds a second interpretation while also leaving
 // the first (`Extend`).
-export const enum Specialize {
+export enum Specialize {
   Specialize = 0,
   Extend = 1
 }
 
 // Terms are 16-bit numbers
-export const enum Term {
+export enum Term {
   // The value of the error term is hard coded, the others are
   // allocated per grammar.
   Err = 0
 }
 
-export const enum Seq {
+export enum Seq {
   // Used as end marker for most of the sequences stored in uint16
   // arrays
   End = 0xffff,
@@ -78,7 +78,7 @@ export const enum Seq {
 }
 
 // Memory layout of parse states
-export const enum ParseState {
+export enum ParseState {
   // Offsets into the record of the individual fields
   Flags = 0,
   Actions = 1,
@@ -90,7 +90,7 @@ export const enum ParseState {
   Size = 6
 }
 
-export const enum Encode {
+export enum Encode {
   BigValCode = 126,
   BigVal = 0xffff,
   Start = 32,
@@ -99,6 +99,6 @@ export const enum Encode {
   Base = 46 // (126 - 32 - 2) / 2
 }
 
-export const enum File {
+export enum File {
   Version = 14
 }
