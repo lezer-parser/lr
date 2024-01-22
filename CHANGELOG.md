@@ -1,3 +1,9 @@
+## 1.4.0 (2024-01-22)
+
+### New features
+
+The new `InputStream.acceptTokenTo` method allows a tokenizer to create a token that ends at some absolute position.
+
 ## 1.3.14 (2023-11-02)
 
 ### Bug fixes
