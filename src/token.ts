@@ -130,6 +130,12 @@ export class InputStream {
     this.token.end = end
   }
 
+  /// Accept a token ending at a specific given position.
+  acceptTokenTo(token: number, endPos: number) {
+    this.token.value = token
+    this.token.end = endPos
+  }
+
   private getChunk() {
     if (this.pos >= this.chunk2Pos && this.pos < this.chunk2Pos + this.chunk2.length) {
       let {chunk, chunkPos} = this
