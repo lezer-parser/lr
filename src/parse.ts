@@ -1,6 +1,6 @@
 import {DefaultBufferLength, Tree, TreeFragment, NodeSet, NodeType, NodeProp, NodePropSource,
         Input, PartialParse, Parser, ParseWrapper, IterMode} from "@lezer/common"
-import {Stack, StackBufferCursor} from "./stack"
+import {Stack, StackBufferCursor, Lookahead} from "./stack"
 import {Action, Specialize, Term, Seq, StateFlag, ParseState, File} from "./constants"
 import {Tokenizer, TokenGroup, ExternalTokenizer, CachedToken, InputStream} from "./token"
 import {decodeArray} from "./decode"
@@ -10,16 +10,14 @@ const verbose = typeof process != "undefined" && process.env && /\bparse\b/.test
 
 let stackIDs: WeakMap<Stack, string> | null = null
 
-const enum Safety { Margin = 25 }
-
 function cutAt(tree: Tree, pos: number, side: 1 | -1) {
   let cursor = tree.cursor(IterMode.IncludeAnonymous)
   cursor.moveTo(pos)
   for (;;) {
     if (!(side < 0 ? cursor.childBefore(pos) : cursor.childAfter(pos))) for (;;) {
       if ((side < 0 ? cursor.to < pos : cursor.from > pos) && !cursor.type.isError)
-        return side < 0 ? Math.max(0, Math.min(cursor.to - 1, pos - Safety.Margin))
-          : Math.min(tree.length, Math.max(cursor.from + 1, pos + Safety.Margin))
+        return side < 0 ? Math.max(0, Math.min(cursor.to - 1, pos - Lookahead.Margin))
+          : Math.min(tree.length, Math.max(cursor.from + 1, pos + Lookahead.Margin))
       if (side < 0 ? cursor.prevSibling() : cursor.nextSibling()) break
       if (!cursor.parent()) return side < 0 ? 0 : tree.length
     }
@@ -131,7 +129,7 @@ class TokenCache {
         token.mask = mask
         token.context = context
       }
-      if (token.lookAhead > token.end + Safety.Margin)
+      if (token.lookAhead > token.end + Lookahead.Margin)
         lookAhead = Math.max(token.lookAhead, lookAhead)
 
       if (token.value != Term.Err) {

@@ -2,6 +2,13 @@ import {Action, Term, StateFlag, ParseState, Seq} from "./constants"
 import {Parse, ContextTracker} from "./parse"
 import {Tree, BufferCursor} from "@lezer/common"
 
+export const enum Lookahead {
+  // Every token is assumed to have looked this far ahead, so that
+  // small lookahead values don't have to be separately stored.
+  // Lookaheads further than this are attached to the tree with props.
+  Margin = 25
+}
+
 /// A parse stack. These are used internally by the parser to track
 /// parsing progress. They also provide some properties and methods
 /// that external code such as a tokenizer can use to get information
@@ -83,6 +90,8 @@ export class Stack {
   reduce(action: number) {
     let depth = action >> Action.ReduceDepthShift, type = action & Action.ValueMask
     let {parser} = this.p
+
+    if (this.reducePos < this.pos - Lookahead.Margin) this.setLookAhead(this.pos)
 
     let dPrec = parser.dynamicPrecedence(type)
     if (dPrec) this.score += dPrec
