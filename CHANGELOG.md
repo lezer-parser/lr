@@ -1,3 +1,9 @@
+## 1.4.1 (2024-05-30)
+
+### Bug fixes
+
+Fix a bug where incremental parsing could inappropriately reuse a node when it ended in a repeat or optional part, and was followed by a sequence of skipped nodes longer than 25 characters.
+
 ## 1.4.0 (2024-01-22)
 
 ### New features
