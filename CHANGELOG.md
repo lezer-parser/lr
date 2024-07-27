@@ -1,3 +1,9 @@
+## 1.4.2 (2024-07-27)
+
+### Bug fixes
+
+Fix a tree corruption issue caused by lookahead records in some circumstances.
+
 ## 1.4.1 (2024-05-30)
 
 ### Bug fixes
