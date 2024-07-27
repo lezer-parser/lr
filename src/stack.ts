@@ -91,7 +91,8 @@ export class Stack {
     let depth = action >> Action.ReduceDepthShift, type = action & Action.ValueMask
     let {parser} = this.p
 
-    if (this.reducePos < this.pos - Lookahead.Margin) this.setLookAhead(this.pos)
+    let lookaheadRecord = this.reducePos < this.pos - Lookahead.Margin
+    if (lookaheadRecord) this.setLookAhead(this.pos)
 
     let dPrec = parser.dynamicPrecedence(type)
     if (dPrec) this.score += dPrec
@@ -100,7 +101,7 @@ export class Stack {
       this.pushState(parser.getGoto(this.state, type, true), this.reducePos)
       // Zero-depth reductions are a special case—they add stuff to
       // the stack without popping anything off.
-      if (type < parser.minRepeatTerm) this.storeNode(type, this.reducePos, this.reducePos, 4, true)
+      if (type < parser.minRepeatTerm) this.storeNode(type, this.reducePos, this.reducePos, lookaheadRecord ? 8 : 4, true)
       this.reduceContext(type, this.reducePos)
       return
     }
@@ -146,7 +147,7 @@ export class Stack {
 
   // Shift a value into the buffer
   /// @internal
-  storeNode(term: number, start: number, end: number, size = 4, isReduce = false) {
+  storeNode(term: number, start: number, end: number, size = 4, mustSink = false) {
     if (term == Term.Err &&
         (!this.stack.length || this.stack[this.stack.length - 1] < this.buffer.length + this.bufferBase)) {
       // Try to omit/merge adjacent error nodes
@@ -161,18 +162,24 @@ export class Stack {
       }
     }
 
-    if (!isReduce || this.pos == end) { // Simple case, just append
+    if (!mustSink || this.pos == end) { // Simple case, just append
       this.buffer.push(term, start, end, size)
     } else { // There may be skipped nodes that have to be moved forward
       let index = this.buffer.length
-      if (index > 0 && this.buffer[index - 4] != Term.Err) while (index > 0 && this.buffer[index - 2] > end) {
-        // Move this record forward
-        this.buffer[index] = this.buffer[index - 4]
-        this.buffer[index + 1] = this.buffer[index - 3]
-        this.buffer[index + 2] = this.buffer[index - 2]
-        this.buffer[index + 3] = this.buffer[index - 1]
-        index -= 4
-        if (size > 4) size -= 4
+      if (index > 0 && this.buffer[index - 4] != Term.Err) {
+        let mustMove = false
+        for (let scan = index; scan > 0 && this.buffer[scan - 2] > end; scan -= 4) {
+          if (this.buffer[scan - 1] >= 0) { mustMove = true; break }
+        }
+        if (mustMove) while (index > 0 && this.buffer[index - 2] > end) {
+          // Move this record forward
+          this.buffer[index] = this.buffer[index - 4]
+          this.buffer[index + 1] = this.buffer[index - 3]
+          this.buffer[index + 2] = this.buffer[index - 2]
+          this.buffer[index + 3] = this.buffer[index - 1]
+          index -= 4
+          if (size > 4) size -= 4
+        }
       }
       this.buffer[index] = term
       this.buffer[index + 1] = start
