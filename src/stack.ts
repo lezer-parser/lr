@@ -166,7 +166,7 @@ export class Stack {
       this.buffer.push(term, start, end, size)
     } else { // There may be skipped nodes that have to be moved forward
       let index = this.buffer.length
-      if (index > 0 && this.buffer[index - 4] != Term.Err) {
+      if (index > 0 && (this.buffer[index - 4] != Term.Err || this.buffer[index - 1] < 0)) {
         let mustMove = false
         for (let scan = index; scan > 0 && this.buffer[scan - 2] > end; scan -= 4) {
           if (this.buffer[scan - 1] >= 0) { mustMove = true; break }
