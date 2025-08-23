@@ -467,7 +467,7 @@ export class Parse implements PartialParse {
       }
 
       let force = stack.split(), forceBase = base
-      for (let j = 0; force.forceReduce() && j < Rec.ForceReduceLimit; j++) {
+      for (let j = 0; j < Rec.ForceReduceLimit && force.forceReduce(); j++) {
         if (verbose) console.log(forceBase + this.stackID(force) + " (via force-reduce)")
         let done = this.advanceFully(force, newStacks)
         if (done) break
