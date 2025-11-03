@@ -1,3 +1,9 @@
+## 1.4.3 (2025-11-03)
+
+### Bug fixes
+
+Fix an issue that caused some skipped nodes to incorrectly become children of the node before them.
+
 ## 1.4.2 (2024-07-27)
 
 ### Bug fixes
