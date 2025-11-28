@@ -91,8 +91,7 @@ export class Stack {
     let depth = action >> Action.ReduceDepthShift, type = action & Action.ValueMask
     let {parser} = this.p
 
-    let lookaheadRecord = this.reducePos < this.pos - Lookahead.Margin
-    if (lookaheadRecord) this.setLookAhead(this.pos)
+    let lookaheadRecord = this.reducePos < this.pos - Lookahead.Margin && this.setLookAhead(this.pos)
 
     let dPrec = parser.dynamicPrecedence(type)
     if (dPrec) this.score += dPrec
@@ -440,10 +439,10 @@ export class Stack {
 
   /// @internal
   setLookAhead(lookAhead: number) {
-    if (lookAhead > this.lookAhead) {
-      this.emitLookAhead()
-      this.lookAhead = lookAhead
-    }
+    if (lookAhead <= this.lookAhead) return false
+    this.emitLookAhead()
+    this.lookAhead = lookAhead
+    return true
   }
 
   /// @internal
