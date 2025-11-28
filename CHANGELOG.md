@@ -1,3 +1,9 @@
+## 1.4.4 (2025-11-28)
+
+### Bug fixes
+
+Fix a bug that caused the parser to corrupt its output tree in some situations when attaching a look-ahead prop to a node.
+
 ## 1.4.3 (2025-11-03)
 
 ### Bug fixes
