@@ -1,3 +1,9 @@
+## 1.4.5 (2025-12-09)
+
+### Bug fixes
+
+When pruning excessive recovery parse stacks, prefer to drop those with worse parse scores.
+
 ## 1.4.4 (2025-11-28)
 
 ### Bug fixes
