@@ -365,8 +365,10 @@ export class Parse implements PartialParse {
           }
         }
       }
-      if (newStacks.length > Rec.MaxStackCount)
+      if (newStacks.length > Rec.MaxStackCount) {
+        newStacks.sort((a, b) => b.score - a.score)
         newStacks.splice(Rec.MaxStackCount, newStacks.length - Rec.MaxStackCount)
+      }
     }
 
     this.minStackPos = newStacks[0].pos
