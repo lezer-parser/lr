@@ -196,7 +196,9 @@ export class Stack {
       let nextState = action, {parser} = this.p
       if (end > this.pos || type <= parser.maxNode) {
         this.pos = end
-        if (!parser.stateFlag(nextState, StateFlag.Skipped)) this.reducePos = end
+      }
+      if (!parser.stateFlag(nextState, StateFlag.Skipped)) {
+        this.reducePos = end
       }
       this.pushState(nextState, start)
       this.shiftContext(type, start)
