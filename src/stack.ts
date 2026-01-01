@@ -194,10 +194,8 @@ export class Stack {
       this.pushState(action & Action.ValueMask, this.pos)
     } else if ((action & Action.StayFlag) == 0) { // Regular shift
       let nextState = action, {parser} = this.p
-      if (end > this.pos || type <= parser.maxNode) {
-        this.pos = end
-        if (!parser.stateFlag(nextState, StateFlag.Skipped)) this.reducePos = end
-      }
+      this.pos = end
+      if (!parser.stateFlag(nextState, StateFlag.Skipped)) this.reducePos = end
       this.pushState(nextState, start)
       this.shiftContext(type, start)
       if (type <= parser.maxNode)
