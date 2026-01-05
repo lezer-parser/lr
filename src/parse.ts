@@ -489,8 +489,8 @@ export class Parse implements PartialParse {
         stack.recoverByDelete(token, tokenEnd)
         if (verbose) console.log(base + this.stackID(stack) + ` (via recover-delete ${this.parser.getName(token)})`)
         pushStackDedup(stack, newStacks)
-      } else if (!finished || finished.score < stack.score) {
-        finished = stack
+      } else if (!finished || finished.score < force.score) {
+        finished = force
       }
     }
 
