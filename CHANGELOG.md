@@ -1,3 +1,11 @@
+## 1.4.6 (2026-01-05)
+
+### Bug fixes
+
+Fix an issue where zero-length tokens could fail to properly set the parser's reduce pos.
+
+Improve heuristic for picking a stack during error-recovery at the end of the input.
+
 ## 1.4.5 (2025-12-09)
 
 ### Bug fixes
