@@ -1,3 +1,9 @@
+## 1.4.7 (2026-01-06)
+
+### Bug fixes
+
+Fix an issue that caused zero-length non-tree tokens to grow the extent of their parent node.
+
 ## 1.4.6 (2026-01-05)
 
 ### Bug fixes
