@@ -1,3 +1,9 @@
+## 1.4.8 (2026-01-25)
+
+### Bug fixes
+
+Fix an issue where the wrong start position was emitted for composite skipped nodes in some circumstances.
+
 ## 1.4.7 (2026-01-06)
 
 ### Bug fixes
