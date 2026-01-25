@@ -195,9 +195,10 @@ export class Stack {
     } else if ((action & Action.StayFlag) == 0) { // Regular shift
       let nextState = action, {parser} = this.p
       this.pos = end
+      let skipped = parser.stateFlag(nextState, StateFlag.Skipped)
       // Skipped or zero-length non-tree tokens don't move reducePos
-      if (!parser.stateFlag(nextState, StateFlag.Skipped) && (end > start || type <= parser.maxNode)) this.reducePos = end
-      this.pushState(nextState, Math.min(start, this.reducePos))
+      if (!skipped && (end > start || type <= parser.maxNode)) this.reducePos = end
+      this.pushState(nextState, skipped ? start : Math.min(start, this.reducePos))
       this.shiftContext(type, start)
       if (type <= parser.maxNode)
         this.buffer.push(type, start, end, 4)
