@@ -13,8 +13,8 @@
   "author": "Marijn Haverbeke <marijn@haverbeke.berlin>",
   "license": "MIT",
   "repository": {
-    "type" : "git",
-    "url" : "https://github.com/lezer-parser/lr.git"
+    "type": "git",
+    "url": "git+https://code.haverbeke.berlin/lezer/lr.git"
   },
   "devDependencies": {
     "@marijn/buildtool": "^0.1.5",
